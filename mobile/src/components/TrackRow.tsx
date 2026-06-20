@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
+import { Portal } from './Portal'
 
 function fmt(sec?: number): string {
   if (!sec || !Number.isFinite(sec)) return ''
@@ -95,6 +96,7 @@ function AddToPlaylistSheet({ track, onClose }: { track: Track; onClose: () => v
   }
 
   return (
+    <Portal>
     <div className="sheet-backdrop" onClick={(e) => { e.stopPropagation(); onClose() }}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
@@ -126,5 +128,6 @@ function AddToPlaylistSheet({ track, onClose }: { track: Track; onClose: () => v
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

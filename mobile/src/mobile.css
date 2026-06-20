@@ -101,6 +101,31 @@ button {
   background: linear-gradient(rgba(7, 7, 12, 0.62), rgba(7, 7, 12, 0.8));
 }
 
+/* Glow under the status bar / notch. The content scrolls inside `.screen`,
+   which is padded down by the safe-area inset, leaving that top band showing
+   only the bare app background — on a real device (where env(safe-area) is
+   non-zero) that reads as a black strip behind the clock/battery. This fills the
+   band with the accent glow on every screen so the status bar blends in. */
+.app::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--safe-top) + 200px);
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    130% 100% at 50% 0%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+    transparent 60%
+  );
+}
+/* When a custom background image is set, the scrim owns the look — drop the glow. */
+.app.has-bg::before {
+  display: none;
+}
+
 .screen {
   flex: 1;
   overflow-y: auto;

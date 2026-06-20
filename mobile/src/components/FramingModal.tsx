@@ -2,6 +2,7 @@
 // object-position (%) + zoom (scale) applied to the target <img> via cover.
 import { useRef, useState } from 'react'
 import { useT } from '../i18n'
+import { Portal } from './Portal'
 
 export interface Framing {
   posX: number
@@ -53,6 +54,7 @@ export function FramingModal({
   }
 
   return (
+    <Portal>
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="frame-modal" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
@@ -93,5 +95,6 @@ export function FramingModal({
         </button>
       </div>
     </div>
+    </Portal>
   )
 }

@@ -92,6 +92,19 @@ SWIFT
   echo "==> AppDelegate patched with AVAudioSession .playback"
 fi
 
+# ---------------------------------------------------------------------------
+# 3. App icon — replace the single 1024 slot with our logo (sips ships with macOS)
+# ---------------------------------------------------------------------------
+ICON_SRC="$MOBILE_DIR/assets/appicon-source.png"
+ICON_DST="$APP_DIR/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+if [ -f "$ICON_SRC" ] && [ -d "$(dirname "$ICON_DST")" ]; then
+  # Capacitor 8 uses a single universal 1024x1024 icon; resize ours into it.
+  sips -s format png -z 1024 1024 "$ICON_SRC" --out "$ICON_DST" >/dev/null
+  echo "==> app icon set from assets/appicon-source.png"
+else
+  echo "WARNING: icon source or appiconset missing — keeping default Capacitor icon" >&2
+fi
+
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"
 cat "$APPDELEGATE"

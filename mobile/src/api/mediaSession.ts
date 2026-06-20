@@ -23,15 +23,12 @@ export function installMediaSession(): void {
   ms.setActionHandler('seekto', (d) => {
     if (typeof d.seekTime === 'number') get().seek(d.seekTime)
   })
-  // seek by offset (some platforms surface ±10s buttons)
-  ms.setActionHandler('seekbackward', (d) => {
-    const s = get()
-    get().seek(Math.max(0, s.positionSec - (d.seekOffset || 10)))
-  })
-  ms.setActionHandler('seekforward', (d) => {
-    const s = get()
-    get().seek(Math.min(s.durationSec || s.positionSec, s.positionSec + (d.seekOffset || 10)))
-  })
+  // Deliberately DO NOT register seekbackward/seekforward. When those handlers
+  // exist, the iOS lock screen replaces the prev/next-track buttons with ±10s
+  // skip buttons — so on device the user got scrubbing instead of track changes.
+  // Clearing them forces iOS to surface the previoustrack/nexttrack buttons.
+  ms.setActionHandler('seekbackward', null)
+  ms.setActionHandler('seekforward', null)
 
   let lastTrackId = ''
   usePlayer.subscribe((s) => {

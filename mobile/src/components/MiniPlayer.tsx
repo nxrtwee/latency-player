@@ -57,8 +57,9 @@ export function MiniPlayer({ onExpand }: { onExpand: () => void }): JSX.Element 
             <rect x="13.5" y="6" width="3.5" height="12" rx="1" />
           </svg>
         ) : (
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style={{ transform: 'translateX(1px)' }}>
-            <path d="M8 5.5v13l11-6.5z" />
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            {/* centroid at x=12 so the triangle sits centred in its circle */}
+            <path d="M9 6v12l9-6z" />
           </svg>
         )}
       </button>

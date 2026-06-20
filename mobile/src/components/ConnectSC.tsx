@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { usePlayer } from '@renderer/store'
 import { setToken } from '../api/soundcloud'
 import { useT } from '../i18n'
+import { Portal } from './Portal'
 
 export function ConnectSC({ onClose }: { onClose: () => void }): JSX.Element {
   const t = useT()
@@ -32,6 +33,7 @@ export function ConnectSC({ onClose }: { onClose: () => void }): JSX.Element {
   }
 
   return (
+    <Portal>
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
@@ -52,5 +54,6 @@ export function ConnectSC({ onClose }: { onClose: () => void }): JSX.Element {
         </button>
       </div>
     </div>
+    </Portal>
   )
 }
