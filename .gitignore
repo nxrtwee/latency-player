@@ -1,0 +1,24 @@
+node_modules/
+out/
+dist/
+.DS_Store
+*.log
+
+# Build output (large, machine-specific)
+release/
+Latency-*-win/
+*.tsbuildinfo
+
+# iOS / Capacitor build artifacts — the native project is regenerated in CI
+# (cap add ios) on every run, so it's never committed.
+mobile/ios/
+mobile/dist/
+Payload/
+*.ipa
+DerivedData/
+Pods/
+
+# Local/runtime secrets — SoundCloud token lives in userData, never commit a copy
+soundcloud.json
+.env
+.env.*

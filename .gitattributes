@@ -1,0 +1,6 @@
+# Normalize line endings. Shell scripts and the CI workflow MUST be LF so the
+# macOS GitHub Actions runner's bash doesn't choke on CR characters.
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

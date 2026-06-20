@@ -1,0 +1,93 @@
+name: iOS build (unsigned .ipa)
+
+# Builds the Latency mobile target into an UNSIGNED .ipa on a cloud macOS runner.
+# No Apple secrets live in this repo — the artifact is signed on Windows by
+# Sideloadly / AltStore with a free Apple ID at install time (re-sign every 7 days).
+#
+# Trigger it manually from the Actions tab (Run workflow), or it runs on push to main.
+# Result: an artifact "Latency-unsigned-ipa" containing Latency-unsigned.ipa.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-ipa:
+    # macos-15 ships Xcode 16.x, required by Capacitor 8.
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Root deps (Vite/React/zustand for the web build). Skip downloading the
+      # Electron binary — it's a desktop-only dep we never run here, and the
+      # download is slow. esbuild/other postinstall scripts still run.
+      - name: Install root deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci
+
+      - name: Build mobile web bundle
+        run: npm run build:mobile   # -> mobile/dist
+
+      - name: Install Capacitor (mobile/)
+        working-directory: mobile
+        run: npm ci
+
+      - name: Scaffold + sync iOS project
+        working-directory: mobile
+        run: |
+          npx cap add ios
+          npx cap sync ios          # also runs `pod install`
+
+      - name: Apply native patches (background audio)
+        working-directory: mobile
+        run: bash scripts/patch-ios.sh
+
+      - name: Build unsigned .ipa
+        working-directory: mobile/ios/App
+        run: |
+          set -euo pipefail
+          # CocoaPods scaffold (default) produces App.xcworkspace; an SPM scaffold
+          # has only App.xcodeproj. Pick whichever exists.
+          if [ -d App.xcworkspace ]; then
+            CONTAINER=(-workspace App.xcworkspace)
+          else
+            CONTAINER=(-project App.xcodeproj)
+          fi
+          echo "==> building with ${CONTAINER[*]}"
+          xcodebuild \
+            "${CONTAINER[@]}" \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+          APP="build/Build/Products/Release-iphoneos/App.app"
+          [ -d "$APP" ] || { echo "ERROR: $APP not found"; ls -R build/Build/Products || true; exit 1; }
+          rm -rf Payload Latency-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Latency-unsigned.ipa Payload
+          echo "==> built $(du -h Latency-unsigned.ipa | cut -f1) ipa"
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Latency-unsigned-ipa
+          path: mobile/ios/App/Latency-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error

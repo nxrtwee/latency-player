@@ -1,0 +1,140 @@
+// Mobile i18n. Reads the language from the shared store (usePlayer.lang, already
+// persisted) so the Settings toggle drives a live re-render everywhere t() is used.
+import { usePlayer } from '@renderer/store'
+
+type Lang = 'en' | 'ru'
+
+const STRINGS: Record<string, { ru: string; en: string }> = {
+  // tabs
+  home: { ru: 'Главная', en: 'Home' },
+  search: { ru: 'Поиск', en: 'Search' },
+  library: { ru: 'Библиотека', en: 'Library' },
+  profile: { ru: 'Профиль', en: 'Profile' },
+  settings: { ru: 'Настройки', en: 'Settings' },
+  // home
+  greetMorning: { ru: 'Доброе утро', en: 'Good morning' },
+  greetDay: { ru: 'Добрый день', en: 'Good afternoon' },
+  greetEvening: { ru: 'Добрый вечер', en: 'Good evening' },
+  greetNight: { ru: 'Доброй ночи', en: 'Good night' },
+  whatListen1: { ru: 'Что хотите', en: 'What do you want' },
+  whatListen2: { ru: 'послушать?', en: 'to hear?' },
+  liked: { ru: 'Любимое', en: 'Liked' },
+  recent: { ru: 'Недавнее', en: 'Recent' },
+  activity: { ru: 'Активность', en: 'Activity' },
+  stats: { ru: 'статистика', en: 'stats' },
+  yourMixes: { ru: 'Ваши миксы', en: 'Your mixes' },
+  mixesEmpty: {
+    ru: 'Послушай что-нибудь или добавь в Любимое — соберём персональные миксы.',
+    en: 'Play something or add to Liked — we’ll build personal mixes.'
+  },
+  jumpBack: { ru: 'Вернуться к', en: 'Jump back in' },
+  yourPlaylists: { ru: 'Ваши плейлисты', en: 'Your playlists' },
+  all: { ru: 'Все', en: 'All' },
+  foot: { ru: 'latency · стриминг и музыка в одном месте', en: 'latency · streaming and music in one place' },
+  // search
+  searchPh: { ru: 'Поиск трека, артиста или микса', en: 'Search a track, artist or mix' },
+  popular: { ru: 'Популярные запросы', en: 'Popular searches' },
+  recentArtists: { ru: 'Недавние авторы', en: 'Recent artists' },
+  results: { ru: 'Результаты', en: 'Results' },
+  nothingFound: { ru: 'Ничего не нашлось — попробуй другой запрос.', en: 'Nothing found — try another query.' },
+  // library
+  myLibrary: { ru: 'Моя библиотека', en: 'My library' },
+  playlists: { ru: 'Плейлисты', en: 'Playlists' },
+  tracks: { ru: 'Треки', en: 'Tracks' },
+  artists: { ru: 'Артисты', en: 'Artists' },
+  albums: { ru: 'Альбомы', en: 'Albums' },
+  newPlaylist: { ru: 'Создать новый плейлист', en: 'Create new playlist' },
+  addToPlaylist: { ru: 'Добавить в плейлист', en: 'Add to playlist' },
+  create: { ru: 'Создать', en: 'Create' },
+  localFiles: { ru: 'Локальные файлы', en: 'Local files' },
+  ownAudio: { ru: 'Свои аудиофайлы', en: 'Your own audio' },
+  noPlaylists: { ru: 'Плейлистов пока нет — создай первый.', en: 'No playlists yet — create one.' },
+  promptName: { ru: 'Название плейлиста', en: 'Playlist name' },
+  // player / common
+  nowPlaying: { ru: 'Сейчас играет', en: 'Now playing' },
+  queue: { ru: 'Очередь', en: 'Queue' },
+  lyrics: { ru: 'Текст', en: 'Lyrics' },
+  noLyrics: { ru: 'Текст не найден.', en: 'No lyrics found.' },
+  manualSync: { ru: 'Синхронизировать', en: 'Sync manually' },
+  editSync: { ru: 'Изменить синхрон', en: 'Edit sync' },
+  tapBeat: { ru: 'Тапай в начале каждой строки', en: 'Tap at the start of each line' },
+  save: { ru: 'Сохранить', en: 'Save' },
+  reset: { ru: 'Сброс', en: 'Reset' },
+  listen: { ru: 'Слушать', en: 'Play' },
+  empty: { ru: 'Пока пусто.', en: 'Nothing here yet.' },
+  // settings
+  appearance: { ru: 'Оформление', en: 'Appearance' },
+  accent: { ru: 'Акцент', en: 'Accent' },
+  acc_magenta: { ru: 'Магента', en: 'Magenta' },
+  acc_violet: { ru: 'Фиолет', en: 'Violet' },
+  acc_blue: { ru: 'Синий', en: 'Blue' },
+  acc_green: { ru: 'Зелёный', en: 'Green' },
+  acc_orange: { ru: 'Оранж', en: 'Orange' },
+  appBg: { ru: 'Фон приложения', en: 'App background' },
+  choose: { ru: 'Выбрать изображение', en: 'Choose image' },
+  replace: { ru: 'Заменить', en: 'Replace' },
+  remove: { ru: 'Убрать', en: 'Remove' },
+  language: { ru: 'Язык', en: 'Language' },
+  playback: { ru: 'Воспроизведение', en: 'Playback' },
+  resumeSession: { ru: 'Возобновлять сессию', en: 'Resume session' },
+  resumeSub: { ru: 'Восстанавливать очередь при запуске', en: 'Restore the queue on launch' },
+  scAccount: { ru: 'Аккаунт SoundCloud', en: 'SoundCloud account' },
+  scSoon: { ru: 'Вход скоро (нужен натив)', en: 'Sign-in soon (needs native)' },
+  scSub: { ru: 'Личные миксы и лайки появятся после нативного входа.', en: 'Personal mixes and likes after native sign-in.' },
+  connectSC: { ru: 'Подключить SoundCloud', en: 'Connect SoundCloud' },
+  connect: { ru: 'Подключить', en: 'Connect' },
+  disconnect: { ru: 'Отключить', en: 'Disconnect' },
+  mySCLikes: { ru: 'Мои лайки SoundCloud', en: 'My SoundCloud likes' },
+  scTokenHint: {
+    ru: 'Войди на soundcloud.com, открой DevTools → Network → любой запрос к api-v2 → скопируй заголовок Authorization (OAuth …) и вставь сюда. На устройстве авто-вход появится позже.',
+    en: 'Sign in at soundcloud.com, open DevTools → Network → any api-v2 request → copy the Authorization (OAuth …) header and paste it here. On-device auto sign-in comes later.'
+  },
+  scTokenBad: { ru: 'Токен не подошёл. Проверь и попробуй снова.', en: 'Token didn’t work. Check it and retry.' },
+  data: { ru: 'Данные', en: 'Data' },
+  savedQueue: { ru: 'Сохранённая очередь', en: 'Saved queue' },
+  clear: { ru: 'Очистить', en: 'Clear' },
+  cleared: { ru: 'Очищено', en: 'Cleared' },
+  about: { ru: 'О приложении', en: 'About' },
+  aboutText: {
+    ru: 'Latency — медиаплеер с локальными файлами и стримингом в одном месте. Мобильная версия.',
+    en: 'Latency — a media player with local files and streaming in one place. Mobile edition.'
+  },
+  developers: { ru: 'Разработка', en: 'Developers' },
+  // activity
+  yourStats: { ru: 'Ваша статистика', en: 'Your stats' },
+  played: { ru: 'Прослушано', en: 'Played' },
+  time: { ru: 'Время', en: 'Time' },
+  likes: { ru: 'Лайки', en: 'Likes' },
+  topArtist: { ru: 'Топ-артист', en: 'Top artist' },
+  sources: { ru: 'Источники', en: 'Sources' },
+  local: { ru: 'локальные', en: 'local' },
+  recentActivity: { ru: 'Недавняя активность', en: 'Recent activity' },
+  nothingPlayed: { ru: 'Пока ничего не прослушано.', en: 'Nothing played yet.' },
+  // local files
+  available: { ru: 'доступно', en: 'available' },
+  addFiles: { ru: 'Добавить файлы', en: 'Add files' },
+  playAll: { ru: 'Слушать всё', en: 'Play all' },
+  localEmpty: {
+    ru: 'Добавьте свои аудиофайлы — они играют локально, с живым визуализатором.',
+    en: 'Add your audio files — they play locally with a live visualizer.'
+  },
+  localFile: { ru: 'Локальный файл', en: 'Local file' },
+  unavailable: { ru: 'Недоступно — переимпортируйте', en: 'Unavailable — re-import' },
+  clearList: { ru: 'Очистить список', en: 'Clear list' },
+  // profile
+  listener: { ru: 'Слушатель', en: 'Listener' },
+  bio: { ru: 'Слушаю музыку и делюсь вайбом', en: 'Listening and sharing the vibe' },
+  followers: { ru: 'Подписчики', en: 'Followers' },
+  changePhoto: { ru: 'Сменить фото', en: 'Change photo' },
+  changeName: { ru: 'Сменить имя', en: 'Change name' },
+  crop: { ru: 'Кадрировать', en: 'Crop' },
+  done: { ru: 'Готово', en: 'Done' }
+}
+
+export type TKey = keyof typeof STRINGS
+
+/** Hook: returns a translator bound to the current store language. */
+export function useT(): (key: TKey) => string {
+  const lang = usePlayer((s) => s.lang) as Lang
+  return (key: TKey) => STRINGS[key]?.[lang] ?? STRINGS[key]?.en ?? String(key)
+}
