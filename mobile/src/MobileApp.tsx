@@ -47,7 +47,12 @@ function tracksLabel(n: number, lang: string): string {
 export function MobileApp(): JSX.Element {
   const [tab, setTab] = useState<TabId>('home')
   const [npOpen, setNpOpen] = useState(false)
-  const [detail, setDetail] = useState<Detail | null>(null)
+  // Detail screens form a back stack so "back" returns to the previous screen
+  // (e.g. Liked → artist → back lands on Liked), not always the tab root.
+  const [detailStack, setDetailStack] = useState<Detail[]>([])
+  const detail = detailStack[detailStack.length - 1] ?? null
+  const pushDetail = (d: Detail): void => setDetailStack((s) => [...s, d])
+  const popDetail = (): void => setDetailStack((s) => s.slice(0, -1))
   // custom background (data URL persisted locally) — applied app-wide
   const [customBg, setCustomBg] = useState<string | null>(() => {
     try {
@@ -107,11 +112,11 @@ export function MobileApp(): JSX.Element {
   }, [loadLikes, loadPlaylists, loadScAuth, generateMixes])
 
   const openTab = (id: TabId): void => {
-    setDetail(null)
+    setDetailStack([])
     setTab(id)
   }
-  // tap an artist anywhere → open their page
-  const openArtist = (track: Track): void => setDetail({ kind: 'artist', track })
+  // tap an artist anywhere → push their page onto the back stack
+  const openArtist = (track: Track): void => pushDetail({ kind: 'artist', track })
 
   // Resolve the active detail to a concrete track list + heading.
   let detailView: JSX.Element | null = null
@@ -122,25 +127,25 @@ export function MobileApp(): JSX.Element {
         (tr, i, a) => a.findIndex((x) => x.id === tr.id) === i
       )
       detailView = (
-        <ListView title={t('liked')} subtitle={label(merged.length)} tracks={merged} onClose={() => setDetail(null)} onArtist={openArtist} />
+        <ListView title={t('liked')} subtitle={label(merged.length)} tracks={merged} onClose={popDetail} onArtist={openArtist} />
       )
     } else if (detail.kind === 'recent') {
       detailView = (
-        <ListView title={t('recent')} subtitle={label(recent.length)} tracks={recent} onClose={() => setDetail(null)} onArtist={openArtist} />
+        <ListView title={t('recent')} subtitle={label(recent.length)} tracks={recent} onClose={popDetail} onArtist={openArtist} />
       )
     } else if (detail.kind === 'activity') {
-      detailView = <ActivityScreen onClose={() => setDetail(null)} />
+      detailView = <ActivityScreen onClose={popDetail} />
     } else if (detail.kind === 'local') {
-      detailView = <LocalScreen onClose={() => setDetail(null)} />
+      detailView = <LocalScreen onClose={popDetail} />
     } else if (detail.kind === 'downloads') {
-      detailView = <DownloadsScreen onClose={() => setDetail(null)} onArtist={openArtist} />
+      detailView = <DownloadsScreen onClose={popDetail} onArtist={openArtist} />
     } else if (detail.kind === 'sclikes') {
       detailView = (
-        <ListView title={t('mySCLikes')} subtitle={label(scLikes.length)} tracks={scLikes} onClose={() => setDetail(null)} onArtist={openArtist} />
+        <ListView title={t('mySCLikes')} subtitle={label(scLikes.length)} tracks={scLikes} onClose={popDetail} onArtist={openArtist} />
       )
     } else if (detail.kind === 'artist') {
       detailView = (
-        <ArtistScreen from={{ track: detail.track, artist: detail.artist }} onClose={() => setDetail(null)} />
+        <ArtistScreen from={{ track: detail.track, artist: detail.artist }} onClose={popDetail} />
       )
     } else if (detail.kind === 'mix') {
       const mix = mixes.find((m) => m.id === detail.id)
@@ -149,7 +154,7 @@ export function MobileApp(): JSX.Element {
           title={mix?.title || 'Mix'}
           subtitle={mix?.subtitle || label(mix?.tracks.length ?? 0)}
           tracks={mix?.tracks ?? []}
-          onClose={() => setDetail(null)}
+          onClose={popDetail}
           onArtist={openArtist}
         />
       )
@@ -160,7 +165,7 @@ export function MobileApp(): JSX.Element {
           title={pl?.name || t('playlists')}
           subtitle={label(pl?.tracks.length ?? 0)}
           tracks={pl?.tracks ?? []}
-          onClose={() => setDetail(null)}
+          onClose={popDetail}
         />
       )
     }
@@ -181,15 +186,15 @@ export function MobileApp(): JSX.Element {
           <div className="app-bg-scrim" />
         </div>
       )}
-      <main className="screen" key={detail ? 'detail' : tab}>
+      <main className="screen" key={detail ? 'detail-' + detailStack.length : tab}>
         {detail ? (
           detailView
         ) : (
           <>
-            {tab === 'home' && <HomeScreen onOpenDetail={setDetail} onOpenTab={openTab} />}
+            {tab === 'home' && <HomeScreen onOpenDetail={pushDetail} onOpenTab={openTab} />}
             {tab === 'search' && <SearchScreen onArtist={openArtist} />}
-            {tab === 'library' && <LibraryScreen onOpenDetail={setDetail} onArtist={openArtist} />}
-            {tab === 'profile' && <ProfileScreen onOpenDetail={setDetail} />}
+            {tab === 'library' && <LibraryScreen onOpenDetail={pushDetail} onArtist={openArtist} />}
+            {tab === 'profile' && <ProfileScreen onOpenDetail={pushDetail} />}
             {tab === 'settings' && (
               <SettingsScreen
                 customBg={customBg}

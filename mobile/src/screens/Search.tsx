@@ -7,10 +7,21 @@ import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
 import type { Track } from '@shared/types'
 
-const POPULAR = ['sqwore', '17 seventeen', 'dream', 'yandere', 'greyrock', 'hikariii', 'phonk']
+// Seed suggestions shown until the user has their own search history.
+const SEED = ['sqwore', '17 seventeen', 'dream', 'yandere', 'greyrock', 'hikariii', 'phonk']
+const HISTORY_KEY = 'lp.m.searchHistory'
+
+function loadHistory(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as string[]
+  } catch {
+    return []
+  }
+}
 
 export function SearchScreen({ onArtist }: { onArtist?: (t: Track) => void }): JSX.Element {
   const [q, setQ] = useState('')
+  const [history, setHistory] = useState<string[]>(loadHistory)
   const search = usePlayer((s) => s.searchSoundCloud)
   const results = usePlayer((s) => s.scResults)
   const loading = usePlayer((s) => s.scLoading)
@@ -34,12 +45,30 @@ export function SearchScreen({ onArtist }: { onArtist?: (t: Track) => void }): J
     return out
   })()
 
+  const record = (term: string): void => {
+    const tt = term.trim()
+    if (!tt) return
+    setHistory((h) => {
+      const next = [tt, ...h.filter((x) => x.toLowerCase() !== tt.toLowerCase())].slice(0, 12)
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+      } catch {
+        /* quota — non-fatal */
+      }
+      return next
+    })
+  }
+
   const run = (term: string): void => {
     setQ(term)
+    record(term)
     void search(term)
   }
 
   const hasSearched = query.trim().length > 0 || loading
+  // personal chips — the user's own recent searches, seeded until they have any
+  const chips = history.length > 0 ? history : SEED
+  const chipsLabel = history.length > 0 ? t('recentSearches') : t('popular')
 
   return (
     <div className="view">
@@ -47,7 +76,7 @@ export function SearchScreen({ onArtist }: { onArtist?: (t: Track) => void }): J
         className="search-bar"
         onSubmit={(e) => {
           e.preventDefault()
-          void search(q)
+          run(q)
         }}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
@@ -69,9 +98,9 @@ export function SearchScreen({ onArtist }: { onArtist?: (t: Track) => void }): J
       </form>
 
       <section>
-        <h2>{t('popular')}</h2>
+        <h2>{chipsLabel}</h2>
         <div className="chips">
-          {POPULAR.map((c) => (
+          {chips.map((c) => (
             <button key={c} className="chip" onClick={() => run(c)}>
               {c}
             </button>

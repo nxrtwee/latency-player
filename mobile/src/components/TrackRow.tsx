@@ -17,12 +17,13 @@ function fmt(sec?: number): string {
 export function TrackRow({
   track,
   onPlay,
-  onArtist,
   dim,
   onOfflineChange
 }: {
   track: Track
   onPlay: () => void
+  // onArtist kept for call-site compatibility; artist names in lists are no
+  // longer tappable (easy to hit by accident when you just want to play).
   onArtist?: (track: Track) => void
   dim?: boolean
   onOfflineChange?: () => void
@@ -68,16 +69,7 @@ export function TrackRow({
       </div>
       <div className="track-meta">
         <div className="track-title">{track.title}</div>
-        <button
-          className="track-artist as-link"
-          onClick={(e) => {
-            if (!onArtist) return
-            e.stopPropagation()
-            onArtist(track)
-          }}
-        >
-          {track.artist || 'SoundCloud'}
-        </button>
+        <div className="track-artist">{track.artist || 'SoundCloud'}</div>
       </div>
       <div className="track-dur">{fmt(track.durationSec)}</div>
       <button

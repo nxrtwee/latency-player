@@ -34,6 +34,7 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   // search
   searchPh: { ru: 'Поиск трека, артиста или микса', en: 'Search a track, artist or mix' },
   popular: { ru: 'Популярные запросы', en: 'Popular searches' },
+  recentSearches: { ru: 'Недавние запросы', en: 'Recent searches' },
   recentArtists: { ru: 'Недавние авторы', en: 'Recent artists' },
   results: { ru: 'Результаты', en: 'Results' },
   nothingFound: { ru: 'Ничего не нашлось — попробуй другой запрос.', en: 'Nothing found — try another query.' },

@@ -1,13 +1,14 @@
 // Fullscreen "Now Playing" — big artwork, a clean seek bar, transport controls
 // and the queue. Wired to the shared player store; opens by tapping the
 // mini-player, closes with a slide-down animation.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { Waveform } from '@renderer/components/Waveform'
 import { useT } from '../i18n'
 import { LyricsPanel } from '../components/LyricsPanel'
 import { SyncEditor } from '../components/SyncEditor'
+import { downloadTrack, isDownloaded, removeDownload } from '../api/offline'
 
 function fmt(sec: number): string {
   if (!sec || !Number.isFinite(sec)) return '0:00'
@@ -45,6 +46,28 @@ export function NowPlaying({
   const [closing, setClosing] = useState(false)
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [dl, setDl] = useState<'idle' | 'busy' | 'done'>(() =>
+    track && isDownloaded(track.id) ? 'done' : 'idle'
+  )
+  useEffect(() => {
+    setDl(track && isDownloaded(track.id) ? 'done' : 'idle')
+  }, [track?.id])
+
+  const toggleDownload = async (): Promise<void> => {
+    if (!track || dl === 'busy') return
+    if (dl === 'done') {
+      await removeDownload(track.id)
+      setDl('idle')
+      return
+    }
+    setDl('busy')
+    try {
+      await downloadTrack(track)
+      setDl('done')
+    } catch {
+      setDl('idle')
+    }
+  }
 
   if (!track) return null
 
@@ -80,6 +103,23 @@ export function NowPlaying({
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 6h16M4 12h12M4 18h9" />
           </svg>
+        </button>
+        <button
+          className={'np-icon' + (dl === 'done' ? ' on' : '')}
+          aria-label={tr('downloads')}
+          onClick={toggleDownload}
+        >
+          {dl === 'busy' ? (
+            <span className="row-dl-spin" />
+          ) : dl === 'done' ? (
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12l5 5 9-11" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
+            </svg>
+          )}
         </button>
         <button
           className={'np-icon' + (liked ? ' on' : '')}
