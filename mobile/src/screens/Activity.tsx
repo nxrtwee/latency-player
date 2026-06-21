@@ -37,7 +37,6 @@ export function ActivityScreen({ onClose }: { onClose: () => void }): JSX.Elemen
 
   return (
     <div className="view">
-      <div className="aurora" />
       <header className="lv-head">
         <button className="np-icon" aria-label="Назад" onClick={onClose}>
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none">

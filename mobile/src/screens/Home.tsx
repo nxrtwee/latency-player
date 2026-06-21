@@ -73,7 +73,6 @@ export function HomeScreen({
 
   return (
     <div className="view">
-      <div className="aurora" />
       <header className="home-head">
         <div>
           <div className="eyebrow">{greet}</div>

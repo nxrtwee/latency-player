@@ -73,7 +73,6 @@ export function SettingsScreen({
 
   return (
     <div className="view">
-      <div className="aurora" />
       <h1 className="display sm">{t('settings')}</h1>
 
       <section className="set-block">
