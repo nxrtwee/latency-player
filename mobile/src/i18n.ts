@@ -71,6 +71,7 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   acc_green: { ru: 'Зелёный', en: 'Green' },
   acc_orange: { ru: 'Оранж', en: 'Orange' },
   appBg: { ru: 'Фон приложения', en: 'App background' },
+  presets: { ru: 'Готовые фоны', en: 'Presets' },
   choose: { ru: 'Выбрать изображение', en: 'Choose image' },
   replace: { ru: 'Заменить', en: 'Replace' },
   remove: { ru: 'Убрать', en: 'Remove' },

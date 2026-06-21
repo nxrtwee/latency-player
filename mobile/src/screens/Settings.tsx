@@ -7,6 +7,7 @@ import { ACCENTS, applyAccent, getSavedAccent, saveAccent } from '../theme'
 import { useT, type TKey } from '../i18n'
 import { ConnectSC } from '../components/ConnectSC'
 import { FramingModal, type Framing } from '../components/FramingModal'
+import { WALLPAPERS } from '../wallpapers'
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }): JSX.Element {
   return (
@@ -115,6 +116,17 @@ export function SettingsScreen({
           {customBg && (
             <div className="bg-preview" style={{ backgroundImage: `url(${customBg})` }} />
           )}
+          <div className="wp-grid">
+            {WALLPAPERS.map((url, i) => (
+              <button
+                key={i}
+                className={'wp-thumb' + (customBg === url ? ' on' : '')}
+                style={{ backgroundImage: `url(${url})` }}
+                aria-label={`${t('presets')} ${i + 1}`}
+                onClick={() => onChangeBg(url)}
+              />
+            ))}
+          </div>
           <div className="set-account">
             <button className="ghost-btn" onClick={() => bgInput.current?.click()}>
               {customBg ? t('replace') : t('choose')}

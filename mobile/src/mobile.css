@@ -1986,6 +1986,28 @@ h2 {
   background-position: center;
   border: 1px solid var(--border);
 }
+/* preset wallpaper picker */
+.wp-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.wp-thumb {
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--border);
+  transition: transform 0.12s;
+}
+.wp-thumb:active {
+  transform: scale(0.94);
+}
+.wp-thumb.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 6px 16px var(--accent-glow);
+}
 .ghost-btn {
   padding: 9px 16px;
   border-radius: 10px;
