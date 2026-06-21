@@ -112,14 +112,22 @@ button {
   top: 0;
   left: 0;
   right: 0;
-  height: calc(var(--safe-top) + 200px);
+  height: calc(var(--safe-top) + 210px);
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(
-    130% 100% at 50% 0%,
-    color-mix(in srgb, var(--accent) 22%, transparent) 0%,
-    transparent 60%
-  );
+  /* linear band gives uniform coverage across the full width (incl. the corners
+     behind the clock/battery), radial adds the aurora character on top */
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 20%, transparent) 0%,
+      transparent calc(var(--safe-top) + 130px)
+    ),
+    radial-gradient(
+      130% 92% at 50% 0%,
+      color-mix(in srgb, var(--accent) 26%, transparent) 0%,
+      transparent 62%
+    );
 }
 /* When a custom background image is set, the scrim owns the look — drop the glow. */
 .app.has-bg::before {
@@ -1655,10 +1663,13 @@ h2 {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
+  /* position:relative makes the lines' offsetTop relative to THIS box, which the
+     auto-scroll centring math depends on (without it offsetTop resolves against a
+     far positioned ancestor and the active line ends up stuck at the top). */
+  position: relative;
   /* Top/bottom padding so the first and last lines can scroll to the centre
-     instead of being stuck under the fade mask — without it the opening lines
-     sit in the faded top band and read as "cut off". */
-  padding: 170px 2px;
+     instead of being stuck under the fade mask. */
+  padding: 165px 2px;
   -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
   mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
 }

@@ -55,17 +55,10 @@ export function installMediaSession(): void {
       })
     }
     ms.playbackState = s.isPlaying ? 'playing' : 'paused'
-    // Keep the scrubber in sync (guard: invalid values throw).
-    if (s.durationSec > 0 && Number.isFinite(s.positionSec)) {
-      try {
-        ms.setPositionState({
-          duration: s.durationSec,
-          position: Math.min(Math.max(0, s.positionSec), s.durationSec),
-          playbackRate: 1
-        })
-      } catch {
-        /* some engines reject mid-transition updates — ignore */
-      }
-    }
+    // NB: we intentionally do NOT call setPositionState. On the iOS lock screen,
+    // providing a position state makes iOS render the ±10s skip buttons (long-form
+    // scrubbing) instead of the previous/next-track buttons. Dropping it gives the
+    // track-change buttons the user expects (at the cost of the lock-screen
+    // scrubber, which web audio can't pair with track buttons on iOS).
   })
 }
