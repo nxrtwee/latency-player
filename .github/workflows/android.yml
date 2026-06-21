@@ -27,12 +27,13 @@ jobs:
         with:
           node-version: '22'
 
-      # JDK 17 is what the Android Gradle Plugin used by Capacitor 8 requires.
+      # Capacitor 8's capacitor-android library compiles with source/target 21,
+      # so the JDK must be 21 (17 fails with "invalid source release: 21").
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
