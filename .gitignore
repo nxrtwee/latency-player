@@ -14,6 +14,8 @@ Latency-*-win/
 mobile/ios/
 mobile/android/
 mobile/dist/
+# generated in CI from assets/appicon-source.png for @capacitor/assets
+mobile/assets/icon.png
 Payload/
 *.ipa
 *.apk

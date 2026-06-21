@@ -59,7 +59,17 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Apply native patches (permissions + icon)
+      # Generate the launcher icons (legacy + adaptive) from our logo. Easy Mode
+      # wants the source at assets/icon.png; we keep the master as
+      # appicon-source.png (also used by the iOS patch), so copy it into place.
+      - name: Generate app icons
+        working-directory: mobile
+        run: |
+          cp assets/appicon-source.png assets/icon.png
+          npx @capacitor/assets generate --android \
+            --iconBackgroundColor '#07070c' --iconBackgroundColorDark '#07070c'
+
+      - name: Apply native patches (permissions)
         working-directory: mobile
         run: bash scripts/patch-android.sh
 

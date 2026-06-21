@@ -11,6 +11,14 @@ import type { Artist, Track } from '@shared/types'
 const API = 'https://api-v2.soundcloud.com'
 const CID_KEY = 'lp.m.sc.clientId'
 
+// SoundCloud serves a stripped-down page (without the script bundles that carry
+// the public client_id) to non-browser User-Agents. The desktop build
+// (main/soundcloud.ts) and the dev proxy (vite.config.ts) both present a desktop
+// browser UA on every request; the on-device path must do the same, otherwise
+// CapacitorHttp uses the platform HTTP client's default UA and client_id
+// discovery fails with "Could not discover a SoundCloud client_id".
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
 let clientId: string | null = (() => {
   try {
     return localStorage.getItem(CID_KEY)
@@ -28,6 +36,8 @@ let clientId: string | null = (() => {
  * @capacitor/core installed (the global is only present on device).
  */
 async function scFetch(url: string, headers?: Record<string, string>): Promise<Response> {
+  // Always present a desktop browser UA (caller headers win on conflict).
+  const merged: Record<string, string> = { 'User-Agent': UA, ...(headers || {}) }
   const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; Plugins?: Record<string, unknown> } })
     .Capacitor
   if (cap?.isNativePlatform?.() && cap.Plugins?.CapacitorHttp) {
@@ -37,15 +47,14 @@ async function scFetch(url: string, headers?: Record<string, string>): Promise<R
         status: number
       }>
     }
-    const res = await http.request({ url, method: 'GET', headers: headers || {} })
+    const res = await http.request({ url, method: 'GET', headers: merged })
     const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
     return new Response(body, { status: res.status })
   }
+  // Browser dev: the proxy fetches server-side and already defaults the UA, but
+  // forward the merged headers so any auth header (and the UA) are applied.
   const proxied = '/__scfetch?url=' + encodeURIComponent(url)
-  const init: RequestInit = {}
-  if (headers && Object.keys(headers).length) {
-    init.headers = { 'x-sc-headers': JSON.stringify(headers) }
-  }
+  const init: RequestInit = { headers: { 'x-sc-headers': JSON.stringify(merged) } }
   return fetch(proxied, init)
 }
 
