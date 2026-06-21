@@ -25,13 +25,22 @@ export interface OfflineEntry {
   size: number // bytes (0 if unknown / browser)
 }
 
+interface CapacitorHttpPlugin {
+  request: (o: {
+    url: string
+    method: string
+    responseType?: string
+    headers?: Record<string, string>
+  }) => Promise<{ data: unknown; status: number }>
+}
 interface CapGlobal {
   isNativePlatform?: () => boolean
   convertFileSrc?: (uri: string) => string
-  Plugins?: { Filesystem?: FilesystemPlugin }
+  Plugins?: { Filesystem?: FilesystemPlugin; CapacitorHttp?: CapacitorHttpPlugin }
 }
 interface FilesystemPlugin {
-  downloadFile: (o: { url: string; path: string; directory: string; recursive?: boolean }) => Promise<unknown>
+  // base64 `data` (no encoding) is written as binary; recursive creates folders
+  writeFile: (o: { path: string; directory: string; data: string; recursive?: boolean }) => Promise<unknown>
   deleteFile: (o: { path: string; directory: string }) => Promise<void>
   getUri: (o: { path: string; directory: string }) => Promise<{ uri: string }>
   stat: (o: { path: string; directory: string }) => Promise<{ size?: number }>
@@ -40,6 +49,19 @@ interface FilesystemPlugin {
 const cap = (): CapGlobal | undefined => (window as unknown as { Capacitor?: CapGlobal }).Capacitor
 const isNative = (): boolean => !!cap()?.isNativePlatform?.()
 const fs = (): FilesystemPlugin | undefined => cap()?.Plugins?.Filesystem
+
+// Download binary audio natively. CapacitorHttp follows the SoundCloud CDN
+// redirects and returns the body base64-encoded (responseType 'blob') on both
+// platforms — unlike the deprecated Filesystem.downloadFile, which didn't
+// reliably save the file on Android.
+async function fetchBinaryBase64(url: string): Promise<string> {
+  const http = cap()?.Plugins?.CapacitorHttp
+  if (!http) throw new Error('CapacitorHttp unavailable')
+  const res = await http.request({ url, method: 'GET', responseType: 'blob' })
+  if (res.status >= 400) throw new Error(`offline download failed (${res.status})`)
+  if (typeof res.data !== 'string' || !res.data) throw new Error('offline download: empty body')
+  return res.data
+}
 
 function load(): OfflineEntry[] {
   try {
@@ -81,13 +103,13 @@ export async function downloadTrack(track: Track): Promise<void> {
   const plugin = fs()
   if (isNative() && plugin) {
     const url = await resolveStream(track.uri) // resolve to a direct CDN mp3
-    await plugin.downloadFile({ url, path: entry.path, directory: DIR, recursive: true })
-    try {
-      const st = await plugin.stat({ path: entry.path, directory: DIR })
-      entry.size = st.size || 0
-    } catch {
-      /* stat optional */
-    }
+    const base64 = await fetchBinaryBase64(url)
+    await plugin.writeFile({ path: entry.path, directory: DIR, data: base64, recursive: true })
+    // Verify the write produced a real file so a failed download surfaces in the
+    // UI instead of being saved as a 0-byte "downloaded" track.
+    const st = await plugin.stat({ path: entry.path, directory: DIR })
+    entry.size = st.size || 0
+    if (!entry.size) throw new Error('offline download produced an empty file')
   }
   save([...load().filter((e) => e.track.id !== track.id), entry])
 }

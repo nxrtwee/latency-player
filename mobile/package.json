@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/status-bar": "^8.0.2"
+    "@capacitor/status-bar": "^8.0.2",
+    "@jofr/capacitor-media-session": "^4.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.1",

@@ -168,7 +168,7 @@ export function NowPlaying({
         durationSec={duration}
         onSeek={seek}
         bars={56}
-        reactivity={0.7}
+        reactivity={1.4}
       />
       <div className="np-times">
         <span>{fmt(position)}</span>
