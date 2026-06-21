@@ -1445,6 +1445,15 @@ h2 {
   font-size: 15px;
   color: var(--text-dim);
 }
+/* tappable artist name in the fullscreen player */
+.np-artist-link {
+  display: inline-block;
+  font-weight: 600;
+  color: var(--text);
+}
+.np-artist-link:active {
+  color: var(--accent);
+}
 
 /* live waveform (reused desktop component) */
 .wave {

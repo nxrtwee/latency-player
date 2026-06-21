@@ -199,7 +199,15 @@ export function MobileApp(): JSX.Element {
       </main>
       <MiniPlayer onExpand={() => setNpOpen(true)} />
       <TabBar active={tab} onChange={openTab} />
-      {npOpen && <NowPlaying onClose={() => setNpOpen(false)} />}
+      {npOpen && (
+        <NowPlaying
+          onClose={() => setNpOpen(false)}
+          onArtist={(track) => {
+            setNpOpen(false)
+            openArtist(track)
+          }}
+        />
+      )}
     </div>
   )
 }

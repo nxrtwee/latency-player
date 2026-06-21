@@ -2,6 +2,7 @@
 // and the queue. Wired to the shared player store; opens by tapping the
 // mini-player, closes with a slide-down animation.
 import { useState } from 'react'
+import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { Waveform } from '@renderer/components/Waveform'
 import { useT } from '../i18n'
@@ -15,7 +16,13 @@ function fmt(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export function NowPlaying({ onClose }: { onClose: () => void }): JSX.Element | null {
+export function NowPlaying({
+  onClose,
+  onArtist
+}: {
+  onClose: () => void
+  onArtist?: (track: Track) => void
+}): JSX.Element | null {
   const track = usePlayer((s) => s.queue[s.currentIndex])
   const queue = usePlayer((s) => s.queue)
   const currentIndex = usePlayer((s) => s.currentIndex)
@@ -105,7 +112,13 @@ export function NowPlaying({ onClose }: { onClose: () => void }): JSX.Element | 
 
       <div className="np-info">
         <h1 className="np-title">{track.title}</h1>
-        <div className="np-artist">{track.artist || 'SoundCloud'}</div>
+        {track.artist && onArtist ? (
+          <button className="np-artist np-artist-link" onClick={() => onArtist(track)}>
+            {track.artist}
+          </button>
+        ) : (
+          <div className="np-artist">{track.artist || 'SoundCloud'}</div>
+        )}
       </div>
 
       <Waveform
