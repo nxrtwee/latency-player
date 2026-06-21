@@ -1655,8 +1655,12 @@ h2 {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent);
-  mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent);
+  /* Top/bottom padding so the first and last lines can scroll to the centre
+     instead of being stuck under the fade mask — without it the opening lines
+     sit in the faded top band and read as "cut off". */
+  padding: 170px 2px;
+  -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
 }
 .lyr-view::-webkit-scrollbar {
   display: none;
@@ -1694,6 +1698,8 @@ h2 {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
+  /* plain text isn't auto-centred, so it only needs a little breathing room */
+  padding: 6px 2px 44px;
 }
 
 /* ---- manual sync editor (fullscreen overlay) --------------------------- */

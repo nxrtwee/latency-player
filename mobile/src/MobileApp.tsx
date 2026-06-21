@@ -14,6 +14,7 @@ import { SettingsScreen } from './screens/Settings'
 import { ArtistScreen } from './screens/Artist'
 import { useT } from './i18n'
 import { installMediaSession } from './api/mediaSession'
+import { installStatusBar } from './api/statusBar'
 import type { Artist, Track } from '@shared/types'
 
 /** A pushed detail view over the tab content. List kinds resolve to a ListView;
@@ -100,6 +101,7 @@ export function MobileApp(): JSX.Element {
     void loadScAuth() // restore a saved SoundCloud token → real mixes/likes
     void generateMixes()
     installMediaSession()
+    installStatusBar()
   }, [loadLikes, loadPlaylists, loadScAuth, generateMixes])
 
   const openTab = (id: TabId): void => {

@@ -105,6 +105,17 @@ else
   echo "WARNING: icon source or appiconset missing — keeping default Capacitor icon" >&2
 fi
 
+# ---------------------------------------------------------------------------
+# 4. Status bar — let the @capacitor/status-bar plugin control the style
+#    (required so setStyle/overlay take effect app-wide).
+# ---------------------------------------------------------------------------
+if "$PB" -c "Print :UIViewControllerBasedStatusBarAppearance" "$PLIST" >/dev/null 2>&1; then
+  "$PB" -c "Set :UIViewControllerBasedStatusBarAppearance false" "$PLIST"
+else
+  "$PB" -c "Add :UIViewControllerBasedStatusBarAppearance bool false" "$PLIST"
+fi
+echo "==> UIViewControllerBasedStatusBarAppearance = false"
+
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"
 cat "$APPDELEGATE"
