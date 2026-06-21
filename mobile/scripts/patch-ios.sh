@@ -42,54 +42,17 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. AppDelegate.swift  ->  AVAudioSession .playback
+# 2. AppDelegate.swift  ->  overwrite with our version (AVAudioSession +
+#    disable lock-screen ±10s skip commands). Copying a full file is more robust
+#    than sed-splicing; pinned to the Capacitor 8 template structure.
 # ---------------------------------------------------------------------------
-if grep -q "AVAudioSession" "$APPDELEGATE"; then
-  echo "==> AppDelegate already patched, skipping"
+APPDELEGATE_SRC="$MOBILE_DIR/native/AppDelegate.swift"
+if [ -f "$APPDELEGATE_SRC" ]; then
+  cp "$APPDELEGATE_SRC" "$APPDELEGATE"
+  echo "==> AppDelegate replaced from native/AppDelegate.swift"
 else
-  # 2a. add `import AVFoundation` right after `import Capacitor`
-  if grep -q "^import Capacitor" "$APPDELEGATE"; then
-    perl -0pi -e 's/^(import Capacitor\n)/$1import AVFoundation\n/m' "$APPDELEGATE"
-  else
-    echo "ERROR: anchor 'import Capacitor' not found in AppDelegate.swift" >&2
-    echo "----- AppDelegate.swift -----" >&2; cat "$APPDELEGATE" >&2
-    exit 1
-  fi
-
-  # 2b. insert the AVAudioSession block at the top of didFinishLaunchingWithOptions.
-  #     Anchor: the method signature line ending in `-> Bool {`.
-  read -r -d '' AUDIO_BLOCK <<'SWIFT' || true
-        // Latency: keep audio playing when locked/backgrounded; makes the
-        // Media Session lock-screen controls authoritative (see ios-notes.md).
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("AVAudioSession error: \(error)")
-        }
-SWIFT
-
-  if grep -q "didFinishLaunchingWithOptions" "$APPDELEGATE"; then
-    # Use perl: after the first line containing both didFinishLaunchingWithOptions
-    # and the opening brace, splice in the block.
-    export AUDIO_BLOCK
-    perl -0pi -e '
-      my $blk = $ENV{AUDIO_BLOCK};
-      s/(func application\([^\n]*didFinishLaunchingWithOptions[^\n]*\{\n)/$1$blk\n/s;
-    ' "$APPDELEGATE"
-  else
-    echo "ERROR: anchor 'didFinishLaunchingWithOptions' not found in AppDelegate.swift" >&2
-    echo "----- AppDelegate.swift -----" >&2; cat "$APPDELEGATE" >&2
-    exit 1
-  fi
-
-  # Verify the splice actually landed.
-  if ! grep -q "AVAudioSession.sharedInstance().setCategory" "$APPDELEGATE"; then
-    echo "ERROR: AVAudioSession block was not inserted (anchor matched but splice failed)" >&2
-    echo "----- AppDelegate.swift -----" >&2; cat "$APPDELEGATE" >&2
-    exit 1
-  fi
-  echo "==> AppDelegate patched with AVAudioSession .playback"
+  echo "ERROR: $APPDELEGATE_SRC not found" >&2
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
