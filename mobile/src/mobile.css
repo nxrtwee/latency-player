@@ -76,9 +76,10 @@ button {
   overflow: hidden;
 }
 
-/* Center on a phone-width column when previewed in a wide desktop browser. */
+/* Center on a phone-width column when previewed in a wide desktop browser.
+   Skipped in the native app (html.cap-native) so it fills the device screen. */
 @media (min-width: 520px) {
-  .app {
+  html:not(.cap-native) .app {
     max-width: 430px;
     margin: 0 auto;
     border-left: 1px solid var(--border);
@@ -1057,7 +1058,7 @@ h2 {
   animation: sheetUp 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 @media (min-width: 520px) {
-  .sheet {
+  html:not(.cap-native) .sheet {
     max-width: 430px;
     margin: 0 auto;
   }
@@ -1183,7 +1184,7 @@ h2 {
   overflow: hidden;
 }
 @media (min-width: 520px) {
-  .miniplayer {
+  html:not(.cap-native) .miniplayer {
     max-width: 414px;
     left: 50%;
     transform: translateX(-50%);
@@ -1386,7 +1387,7 @@ h2 {
   -webkit-overflow-scrolling: touch;
 }
 @media (min-width: 520px) {
-  .np {
+  html:not(.cap-native) .np {
     max-width: 430px;
     left: 50%;
     right: auto;
@@ -1407,21 +1408,29 @@ h2 {
   }
 }
 @media (min-width: 520px) {
-  @keyframes npUp {
+  /* Centred-column variants of the open/close slide — keep the -50% X offset
+     while translating Y. Scoped to dev/browser; the native app (cap-native)
+     keeps the base npUp/npDown (Y-only) and fills the screen, so it never gets a
+     spurious horizontal slide on large-dp displays. */
+  @keyframes npUpCentred {
     from {
       transform: translate(-50%, 100%);
     }
   }
-  .np {
-    transform: translateX(-50%);
-  }
-  @keyframes npDown {
+  @keyframes npDownCentred {
     from {
       transform: translate(-50%, 0);
     }
     to {
       transform: translate(-50%, 100%);
     }
+  }
+  html:not(.cap-native) .np {
+    transform: translateX(-50%);
+    animation-name: npUpCentred;
+  }
+  html:not(.cap-native) .np.closing {
+    animation-name: npDownCentred;
   }
 }
 .np-bg {
@@ -1799,11 +1808,12 @@ h2 {
   animation: npUp 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 @media (min-width: 520px) {
-  .se {
+  html:not(.cap-native) .se {
     max-width: 430px;
     left: 50%;
     right: auto;
     transform: translateX(-50%);
+    animation-name: npUpCentred;
   }
 }
 .se-top {
