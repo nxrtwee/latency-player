@@ -140,6 +140,18 @@ export function LibraryScreen({
               </div>
               <span className="pl-more">›</span>
             </li>
+            <li className="pl-item" onClick={() => onOpenDetail({ kind: 'downloads' })}>
+              <div className="pl-cover dl-cover">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
+                </svg>
+              </div>
+              <div className="pl-meta">
+                <div className="pl-name">{t('downloads')}</div>
+                <div className="pl-sub">{t('offlineSub')}</div>
+              </div>
+              <span className="pl-more">›</span>
+            </li>
             {playlists.map((p, i) => (
               <li key={p.id} className="pl-item" onClick={() => onOpenDetail({ kind: 'playlist', id: p.id })}>
                 <div

@@ -13,6 +13,7 @@
 import type { Artist, LibraryState, Playlist, Track } from '@shared/types'
 import * as sc from './soundcloud'
 import * as lyrics from './lyrics'
+import { offlineSrcForUri } from './offline'
 
 // The shared store derives initial volume from Number(localStorage['lp.volume']).
 // Since Number(null) === 0 passes its 0..1 range check, a fresh install would
@@ -89,7 +90,11 @@ const api = {
   scUser: (userId: string): Promise<Artist | null> => sc.getUser(userId),
   scUserTracks: (userId: string): Promise<Track[]> => sc.getUserTracks(userId),
   scRelated: (trackId: string): Promise<Track[]> => sc.relatedTracks(trackId),
-  scResolveStream: (transcodingUrl: string): Promise<string> => sc.resolveStream(transcodingUrl),
+  scResolveStream: async (transcodingUrl: string): Promise<string> => {
+    // Prefer a downloaded copy (offline) over the network stream.
+    const local = await offlineSrcForUri(transcodingUrl)
+    return local ?? sc.resolveStream(transcodingUrl)
+  },
   // Authenticated (OAuth web-session) features — driven by a user-pasted token
   // (auto-capture needs a native WKWebView; see ios-notes). Once the token is
   // set, the same store flows as desktop light up (real mixes, your likes).

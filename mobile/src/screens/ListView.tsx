@@ -1,9 +1,11 @@
 // Generic track-list detail view (Любимое, a playlist, Недавнее). Pushed over
 // the tab content; reads its tracks from the shared store and plays through it.
+import { useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
+import { downloadTrack, isDownloaded } from '../api/offline'
 
 export function ListView({
   title,
@@ -20,6 +22,22 @@ export function ListView({
 }): JSX.Element {
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
+  const [dlAll, setDlAll] = useState<'idle' | 'busy' | 'done'>('idle')
+
+  const downloadAll = async (): Promise<void> => {
+    if (dlAll === 'busy') return
+    setDlAll('busy')
+    for (const tr of tracks) {
+      if (!isDownloaded(tr.id)) {
+        try {
+          await downloadTrack(tr)
+        } catch {
+          /* skip failed track */
+        }
+      }
+    }
+    setDlAll('done')
+  }
 
   return (
     <div className="listview">
@@ -36,12 +54,17 @@ export function ListView({
       </header>
 
       {tracks.length > 0 ? (
-        <button className="lv-play" onClick={() => playQueue(tracks, 0)}>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-          {t('listen')}
-        </button>
+        <div className="lv-actions">
+          <button className="lv-play" onClick={() => playQueue(tracks, 0)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            {t('listen')}
+          </button>
+          <button className="ghost-btn" onClick={downloadAll} disabled={dlAll === 'busy'}>
+            {dlAll === 'busy' ? t('downloading') : dlAll === 'done' ? t('downloaded') : t('downloadAll')}
+          </button>
+        </div>
       ) : (
         <div className="empty">{t('empty')}</div>
       )}

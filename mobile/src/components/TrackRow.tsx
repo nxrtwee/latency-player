@@ -5,6 +5,7 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { Portal } from './Portal'
+import { downloadTrack, isDownloaded, removeDownload } from '../api/offline'
 
 function fmt(sec?: number): string {
   if (!sec || !Number.isFinite(sec)) return ''
@@ -17,17 +18,41 @@ export function TrackRow({
   track,
   onPlay,
   onArtist,
-  dim
+  dim,
+  onOfflineChange
 }: {
   track: Track
   onPlay: () => void
   onArtist?: (track: Track) => void
   dim?: boolean
+  onOfflineChange?: () => void
 }): JSX.Element {
   const currentId = usePlayer((s) => s.queue[s.currentIndex]?.id)
   const isPlaying = usePlayer((s) => s.isPlaying)
   const [sheet, setSheet] = useState(false)
+  const [dl, setDl] = useState<'idle' | 'busy' | 'done'>(() =>
+    isDownloaded(track.id) ? 'done' : 'idle'
+  )
   const current = track.id === currentId
+
+  const toggleDownload = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation()
+    if (dl === 'busy') return
+    if (dl === 'done') {
+      await removeDownload(track.id)
+      setDl('idle')
+      onOfflineChange?.()
+      return
+    }
+    setDl('busy')
+    try {
+      await downloadTrack(track)
+      setDl('done')
+    } catch {
+      setDl('idle')
+    }
+    onOfflineChange?.()
+  }
 
   return (
     <li className={'track-row' + (current ? ' playing' : '') + (dim ? ' dim' : '')} onClick={onPlay}>
@@ -55,6 +80,23 @@ export function TrackRow({
         </button>
       </div>
       <div className="track-dur">{fmt(track.durationSec)}</div>
+      <button
+        className={'row-dl' + (dl === 'done' ? ' done' : '')}
+        aria-label="Скачать"
+        onClick={toggleDownload}
+      >
+        {dl === 'busy' ? (
+          <span className="row-dl-spin" />
+        ) : dl === 'done' ? (
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12l5 5 9-11" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
+          </svg>
+        )}
+      </button>
       <button
         className="row-more"
         aria-label="…"

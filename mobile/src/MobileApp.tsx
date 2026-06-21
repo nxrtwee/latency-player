@@ -7,6 +7,7 @@ import { SearchScreen } from './screens/Search'
 import { LibraryScreen } from './screens/Library'
 import { ProfileScreen } from './screens/Profile'
 import { NowPlaying } from './screens/NowPlaying'
+import { DownloadsScreen } from './screens/Downloads'
 import { ListView } from './screens/ListView'
 import { ActivityScreen } from './screens/Activity'
 import { LocalScreen } from './screens/Local'
@@ -28,6 +29,7 @@ export type Detail =
   | { kind: 'local' }
   | { kind: 'artist'; track?: Track; artist?: Artist }
   | { kind: 'sclikes' }
+  | { kind: 'downloads' }
 
 /** Track-count label, language-aware (RU pluralization / EN tracks). */
 function tracksLabel(n: number, lang: string): string {
@@ -130,6 +132,8 @@ export function MobileApp(): JSX.Element {
       detailView = <ActivityScreen onClose={() => setDetail(null)} />
     } else if (detail.kind === 'local') {
       detailView = <LocalScreen onClose={() => setDetail(null)} />
+    } else if (detail.kind === 'downloads') {
+      detailView = <DownloadsScreen onClose={() => setDetail(null)} onArtist={openArtist} />
     } else if (detail.kind === 'sclikes') {
       detailView = (
         <ListView title={t('mySCLikes')} subtitle={label(scLikes.length)} tracks={scLikes} onClose={() => setDetail(null)} onArtist={openArtist} />

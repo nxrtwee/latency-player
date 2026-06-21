@@ -82,8 +82,16 @@ export function HomeScreen({
             <span className="accent">{t('whatListen2')}</span>
           </h1>
         </div>
-        <div className="home-logo" aria-label="Latency">
-          <Logo size={34} />
+        <div className="home-logo-col">
+          <div className="home-logo" aria-label="Latency">
+            <Logo size={34} />
+          </div>
+          <button className="home-dl-btn" onClick={() => onOpenDetail({ kind: 'downloads' })}>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
+            </svg>
+            {t('downloads')}
+          </button>
         </div>
       </header>
 
