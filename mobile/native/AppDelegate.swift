@@ -1,20 +1,26 @@
 // Full AppDelegate copied over the Capacitor-generated one during the iOS build
 // (see scripts/patch-ios.sh). Pinned to the Capacitor 8 template structure.
 //
-// Adds two native pieces the web layer can't do:
+// Native pieces the web layer can't do:
 //   1. AVAudioSession .playback  → audio keeps playing when locked/backgrounded.
-//   2. Disable the ±10s skip commands → the iOS lock screen falls back to the
-//      previous/next-track buttons that the web Media Session provides, instead
-//      of the skip-forward/backward buttons WKWebView shows by default.
+//   2. Lock-screen transport: WKWebView turns on the ±10s skip commands for media
+//      by default and re-asserts them whenever playback (re)starts, so the lock
+//      screen shows skip buttons instead of prev/next-track. We take the track
+//      buttons fully native: own targets for next/previous that drive the web
+//      player through a JS bridge, and a light repeating re-assert that keeps the
+//      skip commands disabled while the app is foregrounded (the state then
+//      persists once the screen is locked).
 import UIKit
 import Capacitor
 import AVFoundation
 import MediaPlayer
+import WebKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var commandTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
@@ -23,14 +29,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("AVAudioSession error: \(error)")
         }
-        disableSkipCommands()
+
+        // Targets added once (adding again would multiply the calls).
+        let cc = MPRemoteCommandCenter.shared()
+        cc.nextTrackCommand.addTarget { [weak self] _ in self?.bridgeJS("__lpNext"); return .success }
+        cc.previousTrackCommand.addTarget { [weak self] _ in self?.bridgeJS("__lpPrev"); return .success }
+
+        forceTrackButtons()
+        commandTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.forceTrackButtons()
+        }
         return true
     }
 
-    // WKWebView enables the ±10s skip commands for media by default, which makes
-    // the lock screen show skip buttons instead of prev/next-track. Disabling them
-    // lets iOS surface the track buttons driven by navigator.mediaSession.
-    private func disableSkipCommands() {
+    private func forceTrackButtons() {
         let cc = MPRemoteCommandCenter.shared()
         cc.skipForwardCommand.isEnabled = false
         cc.skipBackwardCommand.isEnabled = false
@@ -39,9 +51,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         cc.previousTrackCommand.isEnabled = true
     }
 
+    // Call a global JS function exposed by the web player (window.__lpNext / __lpPrev).
+    private func bridgeJS(_ fn: String) {
+        DispatchQueue.main.async {
+            let vc = self.window?.rootViewController as? CAPBridgeViewController
+            vc?.bridge?.webView?.evaluateJavaScript("window.\(fn) && window.\(fn)()", completionHandler: nil)
+        }
+    }
+
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Re-assert: WebKit may re-enable skip when playback (re)starts.
-        disableSkipCommands()
+        forceTrackButtons()
     }
 
     func applicationWillResignActive(_ application: UIApplication) {}

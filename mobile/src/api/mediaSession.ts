@@ -18,8 +18,18 @@ export function installMediaSession(): void {
   ms.setActionHandler('pause', () => {
     if (get().isPlaying) get().togglePlay()
   })
-  ms.setActionHandler('previoustrack', () => get().prev())
-  ms.setActionHandler('nexttrack', () => get().next())
+  // On iOS the lock-screen prev/next is owned natively (AppDelegate +
+  // MPRemoteCommandCenter) because WKWebView otherwise forces ±10s skip buttons;
+  // it calls these bridge globals. Registering the web handlers too would
+  // double-fire, so skip them on iOS. Other platforms use the web handlers.
+  const isIOS = (window as unknown as { Capacitor?: { getPlatform?: () => string } })
+    .Capacitor?.getPlatform?.() === 'ios'
+  if (!isIOS) {
+    ms.setActionHandler('previoustrack', () => get().prev())
+    ms.setActionHandler('nexttrack', () => get().next())
+  }
+  ;(window as unknown as { __lpNext?: () => void; __lpPrev?: () => void }).__lpNext = () => get().next()
+  ;(window as unknown as { __lpPrev?: () => void }).__lpPrev = () => get().prev()
   ms.setActionHandler('seekto', (d) => {
     if (typeof d.seekTime === 'number') get().seek(d.seekTime)
   })
