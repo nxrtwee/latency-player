@@ -27,6 +27,10 @@
   --mini-h: 60px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* The full iOS home-indicator inset makes the tab bar look very tall. Cap how
+     much of it the tab bar/mini-player absorb — enough to clear the indicator,
+     not the whole inset — so the bar stays close to its web height. */
+  --tab-safe: min(env(safe-area-inset-bottom, 0px), 14px);
 }
 
 * {
@@ -140,7 +144,7 @@ button {
   -webkit-overflow-scrolling: touch;
   padding: calc(var(--safe-top) + 14px) 18px 0;
   /* leave room for mini-player + tab bar */
-  padding-bottom: calc(var(--mini-h) + var(--tabbar-h) + var(--safe-bottom) + 18px);
+  padding-bottom: calc(var(--mini-h) + var(--tabbar-h) + var(--tab-safe) + 18px);
   /* own stacking context so the content's z-indexed children can't paint over
      the mini-player / tab bar that sit later in the DOM */
   position: relative;
@@ -297,14 +301,17 @@ h2 {
   gap: 12px;
   padding: 14px;
   border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  border: 1px solid var(--border-2);
+  /* frosted glass, like the mini-player */
+  background: rgba(28, 22, 40, 0.5);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
   transition: transform 0.14s, background 0.2s;
 }
 .quick-card:active {
   transform: scale(0.97);
-  background: var(--panel-hover);
+  background: rgba(40, 32, 56, 0.62);
 }
 
 .quick-icon {
@@ -1159,7 +1166,7 @@ h2 {
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  bottom: calc(var(--tabbar-h) + var(--tab-safe));
   z-index: 10;
   height: var(--mini-h);
   display: flex;
@@ -1918,13 +1925,15 @@ h2 {
   right: 0;
   bottom: 0;
   z-index: 11;
-  height: calc(var(--tabbar-h) + var(--safe-bottom));
-  padding-bottom: var(--safe-bottom);
+  height: calc(var(--tabbar-h) + var(--tab-safe));
+  padding-bottom: var(--tab-safe);
   display: flex;
-  background: rgba(10, 9, 16, 0.82);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border);
+  /* lighter, more translucent glass than the mini-player so the two layers read
+     as separate rather than one dark slab */
+  background: rgba(18, 16, 28, 0.55);
+  backdrop-filter: blur(26px) saturate(1.3);
+  -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 .tab {
   flex: 1;
@@ -2038,13 +2047,17 @@ h2 {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-dim);
-  background: var(--panel-2);
-  border: 1px solid var(--border-2);
+  /* frosted glass */
+  background: rgba(28, 22, 40, 0.5);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition: border-color 0.15s, color 0.15s;
 }
 .accent-chip.active {
   color: var(--text);
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 16px var(--accent-glow);
 }
 .accent-dot {
   width: 18px;
