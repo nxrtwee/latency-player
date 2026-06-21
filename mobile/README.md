@@ -1,8 +1,12 @@
-# Latency — mobile (iOS via Capacitor)
+# Latency — mobile (iOS + Android via Capacitor)
 
 Mobile target. Reuses the desktop renderer sources (`../src/renderer/src`,
 `../src/shared`) and reimplements the native `window.api` bridge for phones.
 The desktop Electron build is untouched.
+
+The same web bundle ships to both platforms; the only per-platform pieces are
+the scripted native patches (`scripts/patch-ios.sh`, `scripts/patch-android.sh`)
+and the CI workflows. See `ios-notes.md` and `android-notes.md`.
 
 ## Dev (Windows — no Mac needed)
 
@@ -28,6 +32,12 @@ On a wide desktop window the app is capped to a phone-width column and centered.
 - **Step 4:** native background audio + lock-screen controls.
 - **Step 5:** `.ipa` via GitHub Actions (cloud macOS) + sideload from Windows
   (AltStore / Sideloadly).
+- **Step 6 (Android):** same web bundle on Android via Capacitor — manifest
+  permissions + icon via `scripts/patch-android.sh`; debug `.apk` built on a
+  Linux GitHub Actions runner (`.github/workflows/android.yml`), installs
+  directly on any phone (no Mac, no signing secrets, no 7-day limit). The
+  WebView's native Media Session drives the notification, so Android needs less
+  native code than iOS — see `android-notes.md`.
 
 ## Layout
 

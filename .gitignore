@@ -9,14 +9,17 @@ release/
 Latency-*-win/
 *.tsbuildinfo
 
-# iOS / Capacitor build artifacts — the native project is regenerated in CI
-# (cap add ios) on every run, so it's never committed.
+# iOS / Android / Capacitor build artifacts — the native projects are
+# regenerated in CI (cap add ios|android) on every run, so they're never committed.
 mobile/ios/
+mobile/android/
 mobile/dist/
 Payload/
 *.ipa
+*.apk
 DerivedData/
 Pods/
+.gradle/
 
 # Local/runtime secrets — SoundCloud token lives in userData, never commit a copy
 soundcloud.json

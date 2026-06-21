@@ -20,6 +20,24 @@
 
 ---
 
+## [Unreleased]
+
+### 📱 Мобильный таргет (iOS + Android, Capacitor)
+
+- **Кроссплатформенный мобильный порт** на Capacitor: тот же web-бандл
+  (`npm run build:mobile`) ставится и на iOS, и на Android. Платформо-зависимый
+  слой (`mobile/src/api/*`) написан через `Capacitor.isNativePlatform()` +
+  `CapacitorHttp` / `Filesystem` / `StatusBar` — один код на обе платформы.
+- **Android**: `@capacitor/android`, секция `android` в `capacitor.config.ts`,
+  нативные правки скриптом `mobile/scripts/patch-android.sh` (права на фоновое
+  аудио и медиа-уведомление в манифесте + иконки из логотипа). Фоновое аудио и
+  уведомление с кнопками prev/next обеспечивает системный WebView через Media
+  Session API — без нативного кода транспорта (легче, чем iOS).
+- **Сборка Android**: debug-`.apk` на Linux-раннере GitHub Actions
+  (`.github/workflows/android.yml`) — без Mac, без секретов подписи, ставится
+  напрямую на телефон, без ограничения 7 дней (как у iOS-сайдлоада).
+- Документация: `mobile/android-notes.md`.
+
 ## [0.1.0] — 2026-06-20
 
 Первый публичный билд. Ниже — полный обзор возможностей.

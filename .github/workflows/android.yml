@@ -1,0 +1,81 @@
+name: Android build (debug APK)
+
+# Builds the Latency mobile target into a debug-signed .apk on a cloud Linux
+# runner (no Mac, no Android secrets needed). The debug keystore is auto-generated
+# by Gradle, so the artifact installs directly on any phone with "install from
+# unknown sources" enabled — no 7-day re-sign limit like the iOS sideload path.
+#
+# Trigger it manually from the Actions tab (Run workflow), or it runs on push to
+# main. Result: an artifact "Latency-android-apk" containing app-debug.apk.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # JDK 17 is what the Android Gradle Plugin used by Capacitor 8 requires.
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Root deps (Vite/React/zustand for the web build). Skip downloading the
+      # Electron binary — it's a desktop-only dep we never run here, and the
+      # download is slow. esbuild/other postinstall scripts still run.
+      - name: Install root deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci
+
+      - name: Build mobile web bundle
+        run: npm run build:mobile   # -> mobile/dist
+
+      - name: Install Capacitor (mobile/)
+        working-directory: mobile
+        run: npm ci
+
+      - name: Scaffold + sync Android project
+        working-directory: mobile
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Apply native patches (permissions + icon)
+        working-directory: mobile
+        run: bash scripts/patch-android.sh
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          [ -f "$APK" ] || { echo "ERROR: $APK not found"; find app/build/outputs -name '*.apk' || true; exit 1; }
+          echo "==> built $(du -h "$APK" | cut -f1) apk"
+
+      - name: Upload .apk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Latency-android-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error
