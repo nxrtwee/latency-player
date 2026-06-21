@@ -18,27 +18,13 @@ export function installMediaSession(): void {
   ms.setActionHandler('pause', () => {
     if (get().isPlaying) get().togglePlay()
   })
-  // On iOS the lock-screen prev/next is owned natively (AppDelegate +
-  // MPRemoteCommandCenter) because WKWebView otherwise forces ±10s skip buttons;
-  // it calls these bridge globals. Registering the web handlers too would
-  // double-fire, so skip them on iOS. Other platforms use the web handlers.
-  const isIOS = (window as unknown as { Capacitor?: { getPlatform?: () => string } })
-    .Capacitor?.getPlatform?.() === 'ios'
-  if (!isIOS) {
-    ms.setActionHandler('previoustrack', () => get().prev())
-    ms.setActionHandler('nexttrack', () => get().next())
-  }
-  ;(window as unknown as { __lpNext?: () => void; __lpPrev?: () => void }).__lpNext = () => get().next()
-  ;(window as unknown as { __lpPrev?: () => void }).__lpPrev = () => get().prev()
-  ms.setActionHandler('seekto', (d) => {
-    if (typeof d.seekTime === 'number') get().seek(d.seekTime)
-  })
-  // Deliberately DO NOT register seekbackward/seekforward. When those handlers
-  // exist, the iOS lock screen replaces the prev/next-track buttons with ±10s
-  // skip buttons — so on device the user got scrubbing instead of track changes.
-  // Clearing them forces iOS to surface the previoustrack/nexttrack buttons.
-  ms.setActionHandler('seekbackward', null)
-  ms.setActionHandler('seekforward', null)
+  ms.setActionHandler('previoustrack', () => get().prev())
+  ms.setActionHandler('nexttrack', () => get().next())
+  // Register NO seek handlers at all (no seekto / seekbackward / seekforward).
+  // On iOS, any seek handler makes WKWebView treat the media as scrubbable and
+  // surface the ±10s skip buttons on the lock screen instead of prev/next-track.
+  // With only play/pause/prev/next registered, iOS shows the track buttons.
+  // (The native AppDelegate additionally disables the skip commands as a backstop.)
 
   let lastTrackId = ''
   usePlayer.subscribe((s) => {
