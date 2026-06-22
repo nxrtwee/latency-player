@@ -31,7 +31,10 @@ jobs:
       - name: Build installer (unsigned)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run dist:win
+        # --publish never: a tag build otherwise makes electron-builder try to
+        # publish to GitHub itself (needs GH_TOKEN); the separate publish job does
+        # the release upload.
+        run: npm run dist:win -- --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-win
