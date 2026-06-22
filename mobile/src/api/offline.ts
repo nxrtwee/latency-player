@@ -23,6 +23,10 @@ export interface OfflineEntry {
   uriKey: string // track.uri without the query string (stable match key)
   path: string // path under Directory.Data
   size: number // bytes (0 if unknown / browser)
+  // Local (convertFileSrc) URL of the cached cover. Used for the media
+  // notification when offline — loading the remote artwork natively with no
+  // network crashes the app, so downloaded tracks point the OS at the local copy.
+  artLocal?: string
 }
 
 interface FileTransferPlugin {
@@ -108,6 +112,19 @@ export async function downloadTrack(track: Track): Promise<void> {
     const st = await plugin.stat({ path: entry.path, directory: DIR })
     entry.size = st.size || 0
     if (!entry.size) throw new Error('offline download produced an empty file')
+    // Best-effort: cache the cover locally too, so the media notification never
+    // has to fetch the remote artwork (which crashes natively when offline).
+    const conv = cap()?.convertFileSrc
+    if (track.artwork && conv) {
+      try {
+        const artPath = `${FOLDER}/${track.id}.jpg`
+        const { uri: artDest } = await plugin.getUri({ path: artPath, directory: DIR })
+        await transfer.downloadFile({ url: track.artwork, path: artDest })
+        entry.artLocal = conv(artDest)
+      } catch {
+        /* cover is optional */
+      }
+    }
   }
   save([...load().filter((e) => e.track.id !== track.id), entry])
 }
@@ -121,12 +138,25 @@ export async function removeDownload(id: string): Promise<void> {
     } catch {
       /* already gone — ignore */
     }
+    try {
+      await plugin.deleteFile({ path: `${FOLDER}/${id}.jpg`, directory: DIR })
+    } catch {
+      /* no cover — ignore */
+    }
   }
   save(load().filter((e) => e.track.id !== id))
 }
 
 export async function removeAll(): Promise<void> {
   for (const e of load()) await removeDownload(e.track.id)
+}
+
+// Local (convertFileSrc) cover URL for a downloaded track, or null. The media
+// notification uses this when available so the OS never fetches the remote
+// artwork (a native load with no network crashes the app).
+export function offlineArtForUri(uri: string): string | null {
+  const entry = load().find((e) => e.uriKey === uriKey(uri))
+  return entry?.artLocal || null
 }
 
 // base64 -> Blob (chunked to avoid building a huge argument list).
@@ -229,7 +259,17 @@ export async function offlineDiagnostics(): Promise<string> {
   const c = cap()
   const plugin = fs()
   const out: string[] = []
+  const lastErr = (() => {
+    try {
+      return localStorage.getItem('lp.m.lasterr')
+    } catch {
+      return null
+    }
+  })()
+  if (lastErr) out.push(`lastErr: ${lastErr.slice(0, 90)}`)
   out.push(`native=${isNative()} fs=${!!plugin} ft=${!!c?.Plugins?.FileTransfer} cfs=${!!c?.convertFileSrc}`)
+  const e0 = load()[0]
+  if (e0) out.push(`art=${e0.artLocal ? e0.artLocal.slice(0, 26) : 'none'}`)
   const entries = load()
   out.push(`entries=${entries.length}`)
   const e = entries[0]

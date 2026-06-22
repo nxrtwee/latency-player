@@ -20,6 +20,18 @@ import './mobile.css'
 const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
 if (cap?.isNativePlatform?.()) document.documentElement.classList.add('cap-native')
 
+// Record the last JS error so on-device crashes are visible in the Downloads
+// diagnostics panel (a native crash won't be caught here, but a JS one will).
+const logErr = (msg: string): void => {
+  try {
+    localStorage.setItem('lp.m.lasterr', msg.slice(0, 300))
+  } catch {
+    /* ignore */
+  }
+}
+window.addEventListener('error', (e) => logErr(`${e.message} @ ${e.filename}:${e.lineno}`))
+window.addEventListener('unhandledrejection', (e) => logErr(`unhandled: ${String(e.reason)}`))
+
 // Apply the saved accent before the first paint so there's no colour flash.
 initAccent()
 

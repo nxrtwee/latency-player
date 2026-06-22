@@ -15,6 +15,7 @@
 // the native AVAudioSession on iOS (AppDelegate) and the plugin's foreground
 // service on Android (manifest permissions added by scripts/patch-android.sh).
 import { usePlayer } from '@renderer/store'
+import { offlineArtForUri } from './offline'
 
 // ---- native Android plugin (@jofr/capacitor-media-session) bridge types -------
 interface MediaImage {
@@ -77,11 +78,14 @@ function installAndroid(ms: NativeMediaSession): void {
     }
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
+      // Prefer a locally-cached cover for downloaded tracks — the native media
+      // notification can't fetch the remote artwork offline (it crashes).
+      const art = offlineArtForUri(track.uri) || track.artwork
       void ms.setMetadata({
         title: track.title,
         artist: track.artist || 'SoundCloud',
         album: 'Latency',
-        artwork: track.artwork ? [{ src: track.artwork, sizes: '512x512', type: 'image/jpeg' }] : []
+        artwork: art ? [{ src: art, sizes: '512x512', type: 'image/jpeg' }] : []
       })
     }
     // Must be set to 'playing' for the notification to show.
