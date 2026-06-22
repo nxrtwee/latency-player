@@ -185,38 +185,81 @@ export async function offlineSrcForUri(uri: string): Promise<string | null> {
   }
 }
 
+// Try to actually load a URL in an <audio> element and report whether this
+// device's WebView can play it. Resolves to 'OK', 'err code=N', or 'timeout'.
+function probeUrl(url: string): Promise<string> {
+  return new Promise((resolve) => {
+    const a = new Audio()
+    let done = false
+    const finish = (s: string): void => {
+      if (done) return
+      done = true
+      try {
+        a.removeAttribute('src')
+        a.load()
+      } catch {
+        /* ignore */
+      }
+      resolve(s)
+    }
+    const to = setTimeout(() => finish('timeout'), 5000)
+    a.addEventListener('canplay', () => {
+      clearTimeout(to)
+      finish('OK')
+    })
+    a.addEventListener('error', () => {
+      clearTimeout(to)
+      finish(`err code=${a.error?.code ?? '?'}`)
+    })
+    try {
+      a.src = url
+      a.load()
+    } catch (e) {
+      clearTimeout(to)
+      finish(`throw ${String(e).slice(0, 30)}`)
+    }
+  })
+}
+
 // Human-readable status of the offline pipeline for the first downloaded track —
 // surfaced in the Downloads screen so on-device issues are diagnosable without a
-// debugger. Walks the same steps playback uses and reports each result.
+// debugger. Walks the same steps playback uses AND probes whether the WebView can
+// actually play each candidate URL form (blob vs convertFileSrc).
 export async function offlineDiagnostics(): Promise<string> {
   const c = cap()
   const plugin = fs()
   const out: string[] = []
-  out.push(`native=${isNative()} fs=${!!plugin} fileTransfer=${!!c?.Plugins?.FileTransfer}`)
-  out.push(`convertFileSrc=${!!c?.convertFileSrc}`)
+  out.push(`native=${isNative()} fs=${!!plugin} ft=${!!c?.Plugins?.FileTransfer} cfs=${!!c?.convertFileSrc}`)
   const entries = load()
   out.push(`entries=${entries.length}`)
   const e = entries[0]
-  if (!e) return out.join('\n')
+  if (!e || !plugin) return out.join('\n')
   out.push(`isHls=${isHlsUri(e.track.uri)} size=${e.size}`)
-  if (!plugin) return out.join('\n')
-  try {
-    const st = await plugin.stat({ path: e.path, directory: DIR })
-    out.push(`stat.size=${st.size ?? '?'}`)
-  } catch (err) {
-    out.push(`stat ERR: ${String(err).slice(0, 70)}`)
-  }
+
+  // blob path
   try {
     const { data } = await plugin.readFile({ path: e.path, directory: DIR })
     out.push(`readFile.len=${data ? data.length : 0}`)
+    if (data) {
+      const burl = URL.createObjectURL(base64ToBlob(data, 'audio/mpeg'))
+      out.push(`blob play: ${await probeUrl(burl)}`)
+      URL.revokeObjectURL(burl)
+    }
   } catch (err) {
-    out.push(`readFile ERR: ${String(err).slice(0, 70)}`)
+    out.push(`readFile ERR: ${String(err).slice(0, 60)}`)
   }
+
+  // convertFileSrc path
   try {
-    const res = await offlineSrcForUri(e.track.uri)
-    out.push(`resolved=${res ? res.slice(0, 28) : 'NULL (streams!)'}`)
+    const conv = c?.convertFileSrc
+    if (conv) {
+      const { uri } = await plugin.getUri({ path: e.path, directory: DIR })
+      const curl = conv(uri)
+      out.push(`cfs=${curl.slice(0, 30)}`)
+      out.push(`cfs play: ${await probeUrl(curl)}`)
+    }
   } catch (err) {
-    out.push(`resolve ERR: ${String(err).slice(0, 70)}`)
+    out.push(`cfs ERR: ${String(err).slice(0, 60)}`)
   }
   return out.join('\n')
 }
