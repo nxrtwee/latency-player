@@ -10,6 +10,7 @@
     "cap:sync:android": "cap sync android"
   },
   "dependencies": {
+    "@capacitor/file-transfer": "^2.0.4",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/status-bar": "^8.0.2",
     "@jofr/capacitor-media-session": "^4.0.0"

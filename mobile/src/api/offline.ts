@@ -25,22 +25,18 @@ export interface OfflineEntry {
   size: number // bytes (0 if unknown / browser)
 }
 
-interface CapacitorHttpPlugin {
-  request: (o: {
-    url: string
-    method: string
-    responseType?: string
-    headers?: Record<string, string>
-  }) => Promise<{ data: unknown; status: number }>
+interface FileTransferPlugin {
+  // Downloads url -> an absolute file path (file:// from Filesystem.getUri),
+  // streamed natively to disk, following redirects.
+  downloadFile: (o: { url: string; path: string }) => Promise<{ path?: string }>
 }
 interface CapGlobal {
   isNativePlatform?: () => boolean
   convertFileSrc?: (uri: string) => string
-  Plugins?: { Filesystem?: FilesystemPlugin; CapacitorHttp?: CapacitorHttpPlugin }
+  Plugins?: { Filesystem?: FilesystemPlugin; FileTransfer?: FileTransferPlugin }
 }
 interface FilesystemPlugin {
-  // base64 `data` (no encoding) is written as binary; recursive creates folders
-  writeFile: (o: { path: string; directory: string; data: string; recursive?: boolean }) => Promise<unknown>
+  mkdir: (o: { path: string; directory: string; recursive?: boolean }) => Promise<void>
   deleteFile: (o: { path: string; directory: string }) => Promise<void>
   getUri: (o: { path: string; directory: string }) => Promise<{ uri: string }>
   stat: (o: { path: string; directory: string }) => Promise<{ size?: number }>
@@ -50,18 +46,10 @@ const cap = (): CapGlobal | undefined => (window as unknown as { Capacitor?: Cap
 const isNative = (): boolean => !!cap()?.isNativePlatform?.()
 const fs = (): FilesystemPlugin | undefined => cap()?.Plugins?.Filesystem
 
-// Download binary audio natively. CapacitorHttp follows the SoundCloud CDN
-// redirects and returns the body base64-encoded (responseType 'blob') on both
-// platforms — unlike the deprecated Filesystem.downloadFile, which didn't
-// reliably save the file on Android.
-async function fetchBinaryBase64(url: string): Promise<string> {
-  const http = cap()?.Plugins?.CapacitorHttp
-  if (!http) throw new Error('CapacitorHttp unavailable')
-  const res = await http.request({ url, method: 'GET', responseType: 'blob' })
-  if (res.status >= 400) throw new Error(`offline download failed (${res.status})`)
-  if (typeof res.data !== 'string' || !res.data) throw new Error('offline download: empty body')
-  return res.data
-}
+// HLS tracks can't be saved for offline: resolveStream gives an .m3u8 playlist
+// (not a self-contained file), and playback would still fetch segments over the
+// network. Only progressive (mp3) transcodings are downloadable.
+const isHlsUri = (uri: string): boolean => (uri || '').includes('/stream/hls')
 
 function load(): OfflineEntry[] {
   try {
@@ -101,12 +89,20 @@ export async function downloadTrack(track: Track): Promise<void> {
     size: 0
   }
   const plugin = fs()
-  if (isNative() && plugin) {
+  const transfer = cap()?.Plugins?.FileTransfer
+  if (isNative() && plugin && transfer) {
+    if (isHlsUri(track.uri)) throw new Error('Offline is available for progressive tracks only')
     const url = await resolveStream(track.uri) // resolve to a direct CDN mp3
-    const base64 = await fetchBinaryBase64(url)
-    await plugin.writeFile({ path: entry.path, directory: DIR, data: base64, recursive: true })
-    // Verify the write produced a real file so a failed download surfaces in the
-    // UI instead of being saved as a 0-byte "downloaded" track.
+    // Ensure the offline/ folder exists, then stream the file straight to disk.
+    try {
+      await plugin.mkdir({ path: FOLDER, directory: DIR, recursive: true })
+    } catch {
+      /* already exists */
+    }
+    const { uri: dest } = await plugin.getUri({ path: entry.path, directory: DIR })
+    await transfer.downloadFile({ url, path: dest })
+    // Verify the download produced a real file so a failure surfaces in the UI
+    // instead of being saved as a 0-byte "downloaded" track.
     const st = await plugin.stat({ path: entry.path, directory: DIR })
     entry.size = st.size || 0
     if (!entry.size) throw new Error('offline download produced an empty file')
@@ -136,6 +132,9 @@ export async function offlineSrcForUri(uri: string): Promise<string | null> {
   const c = cap()
   const plugin = fs()
   if (!isNative() || !plugin || !c?.convertFileSrc) return null
+  // Never serve a local file for an HLS track — older builds may have saved a
+  // bare .m3u8 here; falling through to a network stream avoids a crash.
+  if (isHlsUri(uri)) return null
   const entry = load().find((e) => e.uriKey === uriKey(uri))
   if (!entry) return null
   try {

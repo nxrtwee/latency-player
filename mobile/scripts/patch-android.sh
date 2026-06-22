@@ -54,6 +54,18 @@ else
   echo "==> background-audio permissions added"
 fi
 
+# ---------------------------------------------------------------------------
+# Lock the app to portrait — rotation is unwanted here. Add screenOrientation to
+# the MainActivity. Idempotent (guarded on the attribute already being present).
+# ---------------------------------------------------------------------------
+if grep -q 'android:screenOrientation' "$MANIFEST"; then
+  echo "==> screenOrientation already set, skipping"
+else
+  grep -q 'android:name=".MainActivity"' "$MANIFEST" || { echo "ERROR: MainActivity anchor not found in $MANIFEST"; exit 1; }
+  sed -i 's#android:name=".MainActivity"#android:screenOrientation="portrait"\n            android:name=".MainActivity"#' "$MANIFEST"
+  echo "==> MainActivity locked to portrait"
+fi
+
 echo "==> patch-android: done"
 echo "----- granted permissions -----"
 grep "uses-permission" "$MANIFEST" || true

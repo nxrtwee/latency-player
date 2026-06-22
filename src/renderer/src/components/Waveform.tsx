@@ -58,12 +58,21 @@ export function Waveform({
     const levels = new Float32Array(bars)
     const display = new Float32Array(bars)
     let raf = 0
+    let deadFrames = 0
 
     const tick = (): void => {
       const spans = el.children as HTMLCollectionOf<HTMLElement>
       const n = spans.length
       const playing = usePlayer.getState().isPlaying
-      const live = playing && sampleLevels(levels)
+      const hasSignal = playing && sampleLevels(levels)
+      // Cross-origin media (SoundCloud's CDN) feeds the analyser silence, but on
+      // some platforms it reports a faint near-constant instead of a clean zero —
+      // which would leave the bars almost static. Sum the energy and treat a
+      // sustained low signal as "no signal", falling back to synthetic motion.
+      let energy = 0
+      if (hasSignal) for (let i = 0; i < levels.length; i++) energy += levels[i]
+      deadFrames = energy > 0.5 ? 0 : Math.min(deadFrames + 1, 999)
+      const live = hasSignal && deadFrames < 10
       const now = performance.now() / 1000
       for (let i = 0; i < n; i++) {
         let target: number

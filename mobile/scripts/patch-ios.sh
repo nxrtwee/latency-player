@@ -79,6 +79,18 @@ else
 fi
 echo "==> UIViewControllerBasedStatusBarAppearance = false"
 
+# ---------------------------------------------------------------------------
+# 5. Lock to portrait — rotation is unwanted (and looks broken on iPad).
+#    Overwrite the supported-orientation arrays (iPhone + iPad) with portrait
+#    only. Delete-then-add so re-runs are idempotent.
+# ---------------------------------------------------------------------------
+for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ipad"; do
+  "$PB" -c "Delete :$KEY" "$PLIST" >/dev/null 2>&1 || true
+  "$PB" -c "Add :$KEY array" "$PLIST"
+  "$PB" -c "Add :$KEY:0 string UIInterfaceOrientationPortrait" "$PLIST"
+done
+echo "==> locked to portrait (iPhone + iPad)"
+
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"
 cat "$APPDELEGATE"
