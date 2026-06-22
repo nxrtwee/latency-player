@@ -32,6 +32,7 @@ interface FileTransferPlugin {
 }
 interface CapGlobal {
   isNativePlatform?: () => boolean
+  convertFileSrc?: (uri: string) => string
   Plugins?: { Filesystem?: FilesystemPlugin; FileTransfer?: FileTransferPlugin }
 }
 interface FilesystemPlugin {
@@ -156,19 +157,66 @@ export async function offlineSrcForUri(uri: string): Promise<string | null> {
   if (isHlsUri(uri)) return null
   const entry = load().find((e) => e.uriKey === uriKey(uri))
   if (!entry) return null
+  // Primary: blob URL from the file bytes (server/scheme-independent).
   try {
     const { data } = await plugin.readFile({ path: entry.path, directory: DIR })
-    if (!data) return null
-    if (lastBlobUrl) {
-      try {
-        URL.revokeObjectURL(lastBlobUrl)
-      } catch {
-        /* ignore */
+    if (data) {
+      if (lastBlobUrl) {
+        try {
+          URL.revokeObjectURL(lastBlobUrl)
+        } catch {
+          /* ignore */
+        }
       }
+      lastBlobUrl = URL.createObjectURL(base64ToBlob(data, 'audio/mpeg'))
+      return lastBlobUrl
     }
-    lastBlobUrl = URL.createObjectURL(base64ToBlob(data, 'audio/mpeg'))
-    return lastBlobUrl
+  } catch {
+    /* fall through to convertFileSrc */
+  }
+  // Fallback: convertFileSrc via Capacitor's local web server.
+  try {
+    const conv = cap()?.convertFileSrc
+    if (!conv) return null
+    const { uri: fileUri } = await plugin.getUri({ path: entry.path, directory: DIR })
+    return conv(fileUri)
   } catch {
     return null
   }
+}
+
+// Human-readable status of the offline pipeline for the first downloaded track —
+// surfaced in the Downloads screen so on-device issues are diagnosable without a
+// debugger. Walks the same steps playback uses and reports each result.
+export async function offlineDiagnostics(): Promise<string> {
+  const c = cap()
+  const plugin = fs()
+  const out: string[] = []
+  out.push(`native=${isNative()} fs=${!!plugin} fileTransfer=${!!c?.Plugins?.FileTransfer}`)
+  out.push(`convertFileSrc=${!!c?.convertFileSrc}`)
+  const entries = load()
+  out.push(`entries=${entries.length}`)
+  const e = entries[0]
+  if (!e) return out.join('\n')
+  out.push(`isHls=${isHlsUri(e.track.uri)} size=${e.size}`)
+  if (!plugin) return out.join('\n')
+  try {
+    const st = await plugin.stat({ path: e.path, directory: DIR })
+    out.push(`stat.size=${st.size ?? '?'}`)
+  } catch (err) {
+    out.push(`stat ERR: ${String(err).slice(0, 70)}`)
+  }
+  try {
+    const { data } = await plugin.readFile({ path: e.path, directory: DIR })
+    out.push(`readFile.len=${data ? data.length : 0}`)
+  } catch (err) {
+    out.push(`readFile ERR: ${String(err).slice(0, 70)}`)
+  }
+  try {
+    const res = await offlineSrcForUri(e.track.uri)
+    out.push(`resolved=${res ? res.slice(0, 28) : 'NULL (streams!)'}`)
+  } catch (err) {
+    out.push(`resolve ERR: ${String(err).slice(0, 70)}`)
+  }
+  return out.join('\n')
 }
