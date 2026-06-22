@@ -193,7 +193,7 @@ export function SettingsScreen({
         <div className="set-label">{t('about')}</div>
         <p className="set-hint">{t('aboutText')}</p>
         <p className="set-devs">
-          {t('developers')}: <strong>icountedtheblink</strong> &amp; <strong>Claude</strong> )
+          {t('developers')}: <strong>icountedtheblink</strong> &amp; <strong>Claude</strong>
         </p>
       </section>
 
