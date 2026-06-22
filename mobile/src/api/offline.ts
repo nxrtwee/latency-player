@@ -32,7 +32,6 @@ interface FileTransferPlugin {
 }
 interface CapGlobal {
   isNativePlatform?: () => boolean
-  convertFileSrc?: (uri: string) => string
   Plugins?: { Filesystem?: FilesystemPlugin; FileTransfer?: FileTransferPlugin }
 }
 interface FilesystemPlugin {
@@ -40,6 +39,8 @@ interface FilesystemPlugin {
   deleteFile: (o: { path: string; directory: string }) => Promise<void>
   getUri: (o: { path: string; directory: string }) => Promise<{ uri: string }>
   stat: (o: { path: string; directory: string }) => Promise<{ size?: number }>
+  // no encoding => returns the file's bytes as a base64 string
+  readFile: (o: { path: string; directory: string }) => Promise<{ data: string }>
 }
 
 const cap = (): CapGlobal | undefined => (window as unknown as { Capacitor?: CapGlobal }).Capacitor
@@ -127,19 +128,46 @@ export async function removeAll(): Promise<void> {
   for (const e of load()) await removeDownload(e.track.id)
 }
 
+// base64 -> Blob (chunked to avoid building a huge argument list).
+function base64ToBlob(b64: string, type: string): Blob {
+  const bin = atob(b64)
+  const len = bin.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type })
+}
+
+// One live object URL at a time; revoke the previous when a new track resolves.
+let lastBlobUrl: string | null = null
+
 // Local playable URL for a track URI, or null to stream over the network.
+//
+// We read the file's bytes and hand back a `blob:` URL rather than a
+// convertFileSrc('http(s)://localhost/_capacitor_file_/…') URL. The latter
+// depends on Capacitor's local web server and the app's scheme; on Android it
+// silently failed to feed <audio> (so playback fell through to the network and
+// only worked online). A blob URL is same-origin, server-independent, plays
+// offline reliably — and lets the Web Audio analyser drive a real visualizer.
 export async function offlineSrcForUri(uri: string): Promise<string | null> {
-  const c = cap()
   const plugin = fs()
-  if (!isNative() || !plugin || !c?.convertFileSrc) return null
-  // Never serve a local file for an HLS track — older builds may have saved a
-  // bare .m3u8 here; falling through to a network stream avoids a crash.
+  if (!isNative() || !plugin) return null
+  // HLS uris never have a usable local file (older builds may have saved a bare
+  // .m3u8); fall through to a network stream.
   if (isHlsUri(uri)) return null
   const entry = load().find((e) => e.uriKey === uriKey(uri))
   if (!entry) return null
   try {
-    const { uri: fileUri } = await plugin.getUri({ path: entry.path, directory: DIR })
-    return c.convertFileSrc(fileUri)
+    const { data } = await plugin.readFile({ path: entry.path, directory: DIR })
+    if (!data) return null
+    if (lastBlobUrl) {
+      try {
+        URL.revokeObjectURL(lastBlobUrl)
+      } catch {
+        /* ignore */
+      }
+    }
+    lastBlobUrl = URL.createObjectURL(base64ToBlob(data, 'audio/mpeg'))
+    return lastBlobUrl
   } catch {
     return null
   }
