@@ -1,35 +1,53 @@
-# latency player
+# Latency
 
-Десктопный медиаплеер (Electron + Vite + React + TypeScript) с архитектурой
-подключаемых источников воспроизведения (`PlaybackProvider`).
+Десктопный медиаплеер уровня Spotify, написанный с нуля на **Electron + Vite +
+React + TypeScript**. В основе — архитектура подключаемых источников
+воспроизведения (`PlaybackProvider`): локальные файлы и SoundCloud работают через
+единое ядро, новый источник добавляется реализацией одного интерфейса.
+
+Собственный UI (тёмная тема, неоновый акцент, кастомная рамка окна), реактивный
+визуализатор, караоке-тексты (LRCLIB + Genius), персональные миксы и гибкое
+оформление. Кроссплатформенно: десктоп (Windows) + мобильные порты (iOS, Android)
+через Capacitor.
+
+## Загрузки
+
+Готовые сборки — на вкладке **[Releases](../../releases/latest)**:
+
+| Платформа | Файл | Установка |
+|-----------|------|-----------|
+| **Windows** | `Latency-<версия>-x64.exe` (установщик) или `-portable.exe` | запустить установщик |
+| **Android** | `Latency.apk` | включить «установка из неизвестных источников» → открыть APK |
+| **iOS** | `Latency-unsigned.ipa` | подписать своим Apple ID через [AltStore](https://altstore.io/) / [Sideloadly](https://sideloadly.io/) (бесплатный аккаунт — перевыпуск раз в 7 дней) |
+
+> ⚠️ **О мобильных версиях.** Плеер разрабатывался **исключительно для десктопа**.
+> Мобильные порты (а тем более Android) сделаны «для галочки» — чтобы проект был
+> кроссплатформенным. Они рабочие, но местами сырые: если встретите баги или
+> недочёты в iOS/Android-версиях, имейте это в виду. Эталонный опыт — на десктопе.
 
 ## Возможности
 
-- **Локальные файлы** — скан папок, теги и обложки (`music-metadata`).
-- **SoundCloud** — поиск и стрим через публичный API; progressive (MP3) и HLS
-  (через `hls.js`).
-- **Your Likes** — лайки для треков любого источника.
-- **Плейлисты** — создание/переименование/удаление, добавление треков из любого
-  источника (поповер «+»).
-- **Очередь** восстанавливается после перезапуска (на паузе).
-- Плеер-бар: play/pause, prev/next, перемотка, громкость, shuffle, repeat,
-  обложка и лайк текущего трека.
+- **Локальные файлы** — скан папок, чтение тегов и обложек (`music-metadata`),
+  отдача через собственный протокол `media://`.
+- **SoundCloud** — поиск треков и артистов, стрим через публичный API:
+  progressive (MP3) и **HLS** (через `hls.js`); `client_id` подбирается
+  автоматически; вход в аккаунт → персональные миксы и лайки.
+- **Единое ядро** — очередь, плеер-бар, лайки, плейлисты не зависят от источника.
+- **Библиотека** — Home, поиск, артисты, плейлисты, «Любимое», недавнее.
+- **Караоке-тексты** — LRCLIB (синхронные) + Genius (фолбэк), ручная синхронизация.
+- **Визуализатор**, кастомные обои/акценты, караоке в полноэкранном плеере.
+- **Очередь** персистится и восстанавливается после перезапуска.
 
-## Запуск
+## Разработка
 
 ```bash
 npm install
-npm run dev        # дев-режим с hot-reload
+npm run dev        # десктоп, дев-режим с hot-reload
+npm run dev:mobile # мобильный таргет в браузере (http://127.0.0.1:5273)
 ```
 
 > Если `npm run dev` падает с `Error: Electron uninstall` — бинарник Electron не
-> распаковался при установке. Лечится так:
-> ```bash
-> node node_modules/electron/install.js
-> # если dist всё ещё неполный — распаковать кэшированный zip вручную:
-> #   unzip "$LOCALAPPDATA/electron/Cache/<hash>/electron-*.zip" -d node_modules/electron/dist
-> #   printf 'electron.exe' > node_modules/electron/path.txt
-> ```
+> распаковался при установке: `node node_modules/electron/install.js`.
 
 ## Сборка
 
@@ -39,11 +57,23 @@ npm run typecheck  # проверка типов (node + web)
 npm run dist:win   # установщик (NSIS) + портативный exe в release/
 ```
 
-> Для `dist:win` нужен включённый **Developer Mode** Windows (Параметры → Для
-> разработчиков), иначе electron-builder падает при распаковке winCodeSign с
-> `Cannot create symbolic link`. Сборка идёт с `CSC_IDENTITY_AUTO_DISCOVERY=false`
-> (без подписи). Результат — в `release/`: `*-x64.exe` (установщик),
-> `*-portable.exe`, `win-unpacked/`.
+> Для `dist:win` локально на Windows нужен включённый **Developer Mode** (иначе
+> electron-builder падает на распаковке winCodeSign с `Cannot create symbolic
+> link`). В CI собирается автоматически — см. ниже.
+
+### Релизы (CI)
+
+Все три артефакта собираются в облаке GitHub Actions и публикуются в Release при
+пуше тега `v*`:
+
+- **Windows** — `windows-latest`, electron-builder (NSIS + portable);
+- **Android** — `ubuntu-latest`, Capacitor + Gradle (debug-APK, ставится сразу);
+- **iOS** — `macos`, Capacitor + xcodebuild (неподписанный `.ipa`, подпись при
+  сайдлоаде).
+
+Мобильная обвязка (нативные правки, фоновое аудио, иконки) описана в
+[`mobile/README.md`](mobile/README.md), [`mobile/android-notes.md`](mobile/android-notes.md)
+и [`mobile/ios-notes.md`](mobile/ios-notes.md).
 
 ## Архитектура
 
@@ -54,31 +84,31 @@ src/
     index.ts               — окно, IPC, протокол media:// для локальных файлов
     library.ts             — скан папок, теги и кэш обложек (music-metadata)
     soundcloud.ts          — client_id, поиск, резолв стрима (progressive/HLS)
-    likes.ts               — персист лайков (userData/likes.json)
-    playlists.ts           — персист плейлистов (userData/playlists.json)
+    lyrics.ts              — тексты (LRCLIB + Genius)
+    likes.ts / playlists.ts — персист в userData
   preload/index.ts         — безопасный мост window.api (contextBridge)
   renderer/src/
-    providers/
-      types.ts             — интерфейс PlaybackProvider / PlaybackHandle
-      local.ts             — локальные файлы (HTMLAudioElement)
-      soundcloud.ts        — SoundCloud (progressive + HLS через hls.js)
-      registry.ts          — реестр провайдеров (единая точка расширения)
-    store.ts               — zustand-стор: источники, лайки, плейлисты, плеер,
-                             персист очереди
-    components/             — Sidebar, TrackList, PlayerBar, PlaylistMenu, Icons
+    providers/             — PlaybackProvider: local, soundcloud, registry
+    store.ts               — zustand-стор: источники, лайки, плейлисты, плеер
+    components/             — Sidebar, TrackList, PlayerBar, Waveform, …
+mobile/                     — Capacitor-таргет (iOS + Android), реюз renderer
 ```
 
-### Как добавить новый источник (например SoundCloud)
+### Как добавить новый источник
 
-1. Реализовать `PlaybackProvider` в `src/renderer/src/providers/soundcloud.ts`.
+1. Реализовать `PlaybackProvider` в `src/renderer/src/providers/<источник>.ts`.
 2. Зарегистрировать его в `registry.ts`.
-3. Отдавать треки с `providerId: 'soundcloud'` и нужным `uri`.
+3. Отдавать треки с нужным `providerId` и `uri`.
 
 Ядро (стор, UI, очередь) не меняется — оно работает с любым провайдером.
 
 ## Границы по легальности
 
 - **Локальные файлы** — без ограничений.
-- **SoundCloud** — через публичный API/стрим-URL.
-- **Spotify / YouTube** — только официальные SDK/embed (без риппинга потока).
+- **SoundCloud** — через публичный API/стрим-URL и личный OAuth-токен самого
+  пользователя (хранится только локально, в репозиторий не попадает).
 - Обход DRM и риппинг защищённого аудио (Spotify/Яндекс) в проекте не делается.
+
+## Лицензия
+
+MIT

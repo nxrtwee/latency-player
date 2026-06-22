@@ -5,7 +5,7 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
-import { downloadedTracks, offlineDiagnostics, removeAll, totalBytes } from '../api/offline'
+import { downloadedTracks, removeAll, totalBytes } from '../api/offline'
 
 function fmtSize(bytes: number): string {
   if (!bytes) return ''
@@ -25,7 +25,6 @@ export function DownloadsScreen({
   const t = useT()
   const [tick, setTick] = useState(0)
   const bump = (): void => setTick((n) => n + 1)
-  const [diag, setDiag] = useState('')
 
   // re-read fresh each render (tick forces it after add/remove)
   void tick
@@ -65,31 +64,9 @@ export function DownloadsScreen({
           >
             {t('clearAll')}
           </button>
-          <button className="ghost-btn" onClick={async () => setDiag(await offlineDiagnostics())}>
-            Диагностика
-          </button>
         </div>
       ) : (
         <div className="empty">{t('noDownloads')}</div>
-      )}
-
-      {diag && (
-        <pre
-          style={{
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            fontSize: 11,
-            lineHeight: 1.5,
-            margin: '0 16px 10px',
-            padding: 10,
-            borderRadius: 10,
-            background: 'rgba(255,255,255,0.06)',
-            color: 'var(--text-dim)'
-          }}
-          onClick={() => setDiag('')}
-        >
-          {diag}
-        </pre>
       )}
 
       <ul className="track-list">
