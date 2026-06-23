@@ -13,6 +13,10 @@ const api = {
   scUser: (userId: string): Promise<Artist | null> => ipcRenderer.invoke('sc:user', userId),
   scUserTracks: (userId: string): Promise<Track[]> => ipcRenderer.invoke('sc:userTracks', userId),
   scRelated: (trackId: string): Promise<Track[]> => ipcRenderer.invoke('sc:related', trackId),
+  scComments: (
+    trackId: string
+  ): Promise<{ timeSec: number; body: string; user: string; avatar?: string }[]> =>
+    ipcRenderer.invoke('sc:comments', trackId),
   scLogin: (): Promise<Artist | null> => ipcRenderer.invoke('sc:login'),
   scLogout: (): Promise<void> => ipcRenderer.invoke('sc:logout'),
   scMe: (): Promise<Artist | null> => ipcRenderer.invoke('sc:me'),
@@ -51,6 +55,11 @@ const api = {
     plain: string | null
   } | null> => ipcRenderer.invoke('lyrics:get', title, artist, durationSec, useGenius),
   clearLyricsCache: (): Promise<void> => ipcRenderer.invoke('lyrics:clearCache'),
+  searchByLyrics: (
+    query: string
+  ): Promise<
+    { title: string; artist: string; thumbnail?: string; snippet?: string; url: string }[]
+  > => ipcRenderer.invoke('lyrics:search', query),
   getLaunchAtStartup: (): Promise<boolean> => ipcRenderer.invoke('settings:getLaunchAtStartup'),
   setLaunchAtStartup: (enable: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setLaunchAtStartup', enable),
@@ -64,6 +73,31 @@ const api = {
   ): Promise<void> => ipcRenderer.invoke('lyrics:saveManual', title, artist, durationSec, lines),
   deleteManualSync: (title: string, artist: string, durationSec?: number): Promise<void> =>
     ipcRenderer.invoke('lyrics:deleteManual', title, artist, durationSec),
+
+  offlineList: (): Promise<string[]> => ipcRenderer.invoke('offline:list'),
+  offlineTracks: (): Promise<Track[]> => ipcRenderer.invoke('offline:tracks'),
+  offlineDownload: (track: Track): Promise<boolean> =>
+    ipcRenderer.invoke('offline:download', track),
+  offlineRemove: (trackId: string): Promise<void> => ipcRenderer.invoke('offline:remove', trackId),
+  offlineClear: (): Promise<void> => ipcRenderer.invoke('offline:clear'),
+  offlineSize: (): Promise<number> => ipcRenderer.invoke('offline:size'),
+  offlineLocalUrl: (trackId: string): Promise<string | null> =>
+    ipcRenderer.invoke('offline:localUrl', trackId),
+
+  discordGetConfig: (): Promise<{ enabled: boolean; clientId: string }> =>
+    ipcRenderer.invoke('discord:getConfig'),
+  discordSetConfig: (enabled: boolean, clientId: string): Promise<void> =>
+    ipcRenderer.invoke('discord:setConfig', enabled, clientId),
+  discordUpdate: (
+    activity: {
+      title: string
+      artist?: string
+      album?: string
+      artwork?: string
+      startedAt?: number
+      playing: boolean
+    } | null
+  ): void => ipcRenderer.send('discord:update', activity),
 
   getPlaylists: (): Promise<Playlist[]> => ipcRenderer.invoke('playlists:get'),
   createPlaylist: (name: string): Promise<Playlist[]> => ipcRenderer.invoke('playlists:create', name),

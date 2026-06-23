@@ -17,6 +17,8 @@ import { Settings } from './components/Settings'
 import { CustomScroll } from './components/CustomScroll'
 import { BgFraming } from './components/BgFraming'
 import { ProfilePage } from './components/ProfilePage'
+import { Equalizer } from './components/Equalizer'
+import { CommentsPage } from './components/CommentsPage'
 
 function usePersistentWidth(
   key: string,
@@ -34,6 +36,7 @@ function usePersistentWidth(
 export function App(): JSX.Element {
   const loadLibrary = usePlayer((s) => s.loadLibrary)
   const loadLikes = usePlayer((s) => s.loadLikes)
+  const loadOffline = usePlayer((s) => s.loadOffline)
   const loadPlaylists = usePlayer((s) => s.loadPlaylists)
   const restoreQueue = usePlayer((s) => s.restoreQueue)
   const generateMixes = usePlayer((s) => s.generateMixes)
@@ -47,6 +50,7 @@ export function App(): JSX.Element {
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const rightOpen = usePlayer((s) => s.rightOpen)
   const settingsOpen = usePlayer((s) => s.settingsOpen)
+  const eqOpen = usePlayer((s) => s.eqOpen)
   const theme = usePlayer((s) => s.theme)
   const customAccent = usePlayer((s) => s.customAccent)
   const customBg = usePlayer((s) => s.customBg)
@@ -83,7 +87,9 @@ export function App(): JSX.Element {
           ? `mix-${selectedMixId}`
           : source === 'info'
             ? `in-${infoService}`
-            : source
+            : source === 'comments'
+              ? 'comments'
+              : source
 
   const [sidebarW, setSidebarW] = usePersistentWidth('lp.sidebarW', 236, 200, 360)
   const [rightW, setRightW] = usePersistentWidth('lp.rightW', 332, 280, 540)
@@ -92,7 +98,9 @@ export function App(): JSX.Element {
     loadLibrary()
     loadPlaylists()
     loadPrefs()
-    if (resumeSession) restoreQueue()
+    loadOffline().then(() => {
+      if (resumeSession) restoreQueue()
+    })
     Promise.all([loadLikes(), loadScAuth()]).then(() => generateMixes())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -146,6 +154,8 @@ export function App(): JSX.Element {
               <InfoPage />
             ) : source === 'profile' ? (
               <ProfilePage />
+            ) : source === 'comments' ? (
+              <CommentsPage />
             ) : (
               <TrackList />
             )}
@@ -169,6 +179,7 @@ export function App(): JSX.Element {
       {lyricsOpen && <LyricsView />}
       {settingsOpen && <Settings />}
       {framingOpen && <BgFraming />}
+      {eqOpen && <Equalizer />}
     </div>
   )
 }

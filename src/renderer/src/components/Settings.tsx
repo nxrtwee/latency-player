@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Toggle } from './Toggle'
@@ -55,6 +55,45 @@ export function Settings(): JSX.Element {
   const [lyricsCleared, setLyricsCleared] = useState(false)
   const [mixesCleared, setMixesCleared] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Discord Rich Presence config lives in the main process (a small JSON file).
+  const [discordEnabled, setDiscordEnabled] = useState(false)
+  const [discordAppId, setDiscordAppId] = useState('')
+  useEffect(() => {
+    window.api
+      .discordGetConfig()
+      .then((c) => {
+        setDiscordEnabled(c.enabled)
+        setDiscordAppId(c.clientId)
+      })
+      .catch(() => {})
+  }, [])
+
+  function applyDiscord(enabled: boolean, appId: string): void {
+    setDiscordEnabled(enabled)
+    setDiscordAppId(appId)
+    void window.api.discordSetConfig(enabled, appId)
+  }
+
+  // Offline cache size/count (refreshed on open).
+  const offlineCount = usePlayer((s) => s.offlineIds.length)
+  const loadOffline = usePlayer((s) => s.loadOffline)
+  const [offlineSize, setOfflineSize] = useState(0)
+  useEffect(() => {
+    window.api.offlineSize().then(setOfflineSize).catch(() => {})
+  }, [offlineCount])
+
+  async function clearOffline(): Promise<void> {
+    await window.api.offlineClear()
+    await loadOffline()
+    setOfflineSize(0)
+  }
+
+  function fmtSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  }
 
   return (
     <div className={`modal-backdrop ${closing ? 'closing' : ''}`} onMouseDown={close}>
@@ -268,6 +307,19 @@ export function Settings(): JSX.Element {
                 {mixesCleared ? t('rebuilt') : t('rebuild')}
               </button>
             </div>
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('offlineCache')}</span>
+                <span className="set-row-sub">
+                  {offlineCount > 0
+                    ? `${offlineCount} · ${fmtSize(offlineSize)}`
+                    : t('offlineCacheSub')}
+                </span>
+              </div>
+              <button className="sync-btn ghost" disabled={offlineCount === 0} onClick={clearOffline}>
+                {t('clearBtn')}
+              </button>
+            </div>
           </section>
 
           {/* System */}
@@ -280,6 +332,36 @@ export function Settings(): JSX.Element {
               </div>
               <Toggle checked={launchAtStartup} onChange={setLaunchAtStartup} />
             </div>
+          </section>
+
+          <section className="set-block">
+            <div className="set-label">{t('discord')}</div>
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('discordRpc')}</span>
+                <span className="set-row-sub">{t('discordSub')}</span>
+              </div>
+              <Toggle
+                checked={discordEnabled}
+                onChange={(v) => applyDiscord(v, discordAppId)}
+              />
+            </div>
+            {discordEnabled && (
+              <div className="set-row col">
+                <span className="set-row-title">{t('discordAppId')}</span>
+                <input
+                  className="set-input"
+                  placeholder="000000000000000000"
+                  value={discordAppId}
+                  onChange={(e) => setDiscordAppId(e.target.value.replace(/[^0-9]/g, ''))}
+                  onBlur={() => applyDiscord(discordEnabled, discordAppId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyDiscord(discordEnabled, discordAppId)
+                  }}
+                />
+                <span className="set-row-sub">{t('discordAppIdHint')}</span>
+              </div>
+            )}
           </section>
 
           <section className="set-block">

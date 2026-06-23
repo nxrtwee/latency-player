@@ -1,6 +1,6 @@
 import { usePlayer } from '../store'
 import { formatTime } from '../util'
-import { PlayIcon, HeartIcon, HeartFilledIcon } from './Icons'
+import { PlayIcon, HeartIcon, HeartFilledIcon, DownloadIcon, CheckIcon } from './Icons'
 import { PlaylistMenu } from './PlaylistMenu'
 import type { Track } from '@shared/types'
 
@@ -28,8 +28,13 @@ export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
   )
   const toggleLike = usePlayer((s) => s.toggleLike)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const cached = usePlayer((s) => s.offlineIds.includes(track.id))
+  const downloading = usePlayer((s) => s.downloading.includes(track.id))
+  const downloadTrack = usePlayer((s) => s.downloadTrack)
+  const removeOffline = usePlayer((s) => s.removeOffline)
   const playing = track.id === currentTrackId
   const canOpenArtist = track.artistId || track.artist
+  const isSc = track.providerId === 'soundcloud'
 
   return (
     <div className={`trow ${playing ? 'active' : ''}`} onDoubleClick={() => onPlay(index)}>
@@ -77,6 +82,20 @@ export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
       </button>
       <span className="c-time">{formatTime(track.durationSec ?? 0)}</span>
       <div className="c-more">
+        {isSc && (
+          <button
+            className={`row-dl ${cached ? 'cached' : ''} ${downloading ? 'spin' : ''}`}
+            title={cached ? 'Downloaded — click to remove' : downloading ? 'Downloading…' : 'Download for offline'}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (downloading) return
+              if (cached) removeOffline(track.id)
+              else downloadTrack(track)
+            }}
+          >
+            {cached ? <CheckIcon size={15} /> : <DownloadIcon size={15} />}
+          </button>
+        )}
         <PlaylistMenu track={track} />
       </div>
     </div>

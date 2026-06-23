@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
@@ -15,7 +16,10 @@ import {
   HeartIcon,
   HeartFilledIcon,
   ChevronDownIcon,
-  LyricsIcon
+  LyricsIcon,
+  SearchIcon,
+  CloseIcon,
+  EqualizerIcon
 } from './Icons'
 
 export function RightPanel({ width }: { width?: number }): JSX.Element {
@@ -38,14 +42,43 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
   const toggleLike = usePlayer((s) => s.toggleLike)
   const jumpTo = usePlayer((s) => s.jumpTo)
   const clearUpcoming = usePlayer((s) => s.clearUpcoming)
+  const reorderQueue = usePlayer((s) => s.reorderQueue)
+  const removeFromQueue = usePlayer((s) => s.removeFromQueue)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
+  const eqOpen = usePlayer((s) => s.eqOpen)
+  const setEqOpen = usePlayer((s) => s.setEqOpen)
+  const setSource = usePlayer((s) => s.setSource)
 
   const t = useT()
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
   const liked = track ? likes.some((t) => t.id === track.id) : false
-  const upcoming = currentIndex >= 0 ? queue.slice(currentIndex + 1) : []
+
+  const [queueFilter, setQueueFilter] = useState('')
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+
+  // Upcoming tracks carry their absolute queue index so reorder/remove stay correct.
+  const upcoming = (currentIndex >= 0 ? queue.slice(currentIndex + 1) : []).map((tr, i) => ({
+    track: tr,
+    absIndex: currentIndex + 1 + i
+  }))
+  const fq = queueFilter.trim().toLowerCase()
+  const filteredUpcoming = fq
+    ? upcoming.filter(
+        ({ track: tr }) =>
+          tr.title.toLowerCase().includes(fq) || (tr.artist || '').toLowerCase().includes(fq)
+      )
+    : upcoming
+  // Drag-reorder is only meaningful on the unfiltered list.
+  const dragEnabled = !fq
+
+  function handleDrop(targetAbs: number): void {
+    if (dragIndex !== null && dragIndex !== targetAbs) reorderQueue(dragIndex, targetAbs)
+    setDragIndex(null)
+    setOverIndex(null)
+  }
 
   return (
     <aside className="rightpanel" style={width ? { width, flex: '0 0 auto' } : undefined}>
@@ -69,7 +102,13 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               </button>
             </div>
 
-            <div className="np-title">{track.title}</div>
+            <div
+              className="np-title clickable"
+              onClick={() => setSource('comments')}
+              title={t('comments')}
+            >
+              {track.title}
+            </div>
             <button className="np-artist artist-link" onClick={() => openArtistFromTrack(track)}>
               {track.artist || 'Unknown artist'}
             </button>
@@ -118,6 +157,13 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               <VolumeIcon size={18} />
               <Slider value={volume} max={1} step={0.01} onChange={setVolume} ariaLabel="Volume" />
               <button
+                className={`icon-btn ${eqOpen ? 'on' : ''}`}
+                title={t('equalizer')}
+                onClick={() => setEqOpen(true)}
+              >
+                <EqualizerIcon size={18} />
+              </button>
+              <button
                 className={`icon-btn ${lyricsOpen ? 'on' : ''}`}
                 title="Lyrics"
                 onClick={toggleLyrics}
@@ -140,24 +186,71 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
             </button>
           )}
         </div>
+
+        {upcoming.length > 0 && (
+          <div className="q-filter">
+            <SearchIcon size={14} />
+            <input
+              value={queueFilter}
+              placeholder={t('filterQueue')}
+              onChange={(e) => setQueueFilter(e.target.value)}
+            />
+            {queueFilter && (
+              <button className="q-filter-clear" onClick={() => setQueueFilter('')} title={t('clear')}>
+                <CloseIcon size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="q-list">
           {upcoming.length === 0 && <div className="q-empty">{t('queueEmpty')}</div>}
-          {upcoming.map((t, i) => (
-            <button
-              key={`${t.id}-${i}`}
-              className="q-item"
-              onClick={() => jumpTo(currentIndex + 1 + i)}
-              title={`Play ${t.title}`}
+          {upcoming.length > 0 && filteredUpcoming.length === 0 && (
+            <div className="q-empty">{t('noQueueMatch')}</div>
+          )}
+          {filteredUpcoming.map(({ track: tr, absIndex }) => (
+            <div
+              key={`${tr.id}-${absIndex}`}
+              className={`q-item ${dragEnabled ? 'draggable' : ''} ${
+                overIndex === absIndex ? 'drag-over' : ''
+              } ${dragIndex === absIndex ? 'dragging' : ''}`}
+              draggable={dragEnabled}
+              onDragStart={() => dragEnabled && setDragIndex(absIndex)}
+              onDragOver={(e) => {
+                if (!dragEnabled) return
+                e.preventDefault()
+                setOverIndex(absIndex)
+              }}
+              onDragEnd={() => {
+                setDragIndex(null)
+                setOverIndex(null)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                handleDrop(absIndex)
+              }}
+              onClick={() => jumpTo(absIndex)}
+              title={`Play ${tr.title}`}
             >
               <div className="q-thumb">
-                {t.artwork ? <img src={t.artwork} alt="" /> : <span>♫</span>}
+                {tr.artwork ? <img src={tr.artwork} alt="" /> : <span>♫</span>}
               </div>
               <div className="q-meta">
-                <span className="q-title">{t.title}</span>
-                <span className="q-artist">{t.artist || 'Unknown artist'}</span>
+                <span className="q-title">{tr.title}</span>
+                <span className="q-artist">{tr.artist || 'Unknown artist'}</span>
               </div>
-              <span className="q-time">{formatTime(t.durationSec ?? 0)}</span>
-            </button>
+              <span className="q-time">{formatTime(tr.durationSec ?? 0)}</span>
+              <button
+                className="q-remove"
+                title={t('removeFromQueue')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  removeFromQueue(absIndex)
+                }}
+              >
+                <CloseIcon size={13} />
+              </button>
+            </div>
           ))}
         </div>
       </div>

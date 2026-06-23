@@ -202,6 +202,90 @@ async function geniusLyrics(title: string, artist: string): Promise<string | nul
   }
 }
 
+export interface LyricSearchHit {
+  title: string
+  artist: string
+  thumbnail?: string
+  /** the matched lyric line (when Genius matched on lyrics rather than title) */
+  snippet?: string
+  url: string
+}
+
+interface GeniusHit {
+  type?: string
+  result?: {
+    title?: string
+    full_title?: string
+    url?: string
+    song_art_image_thumbnail_url?: string
+    header_image_thumbnail_url?: string
+    primary_artist?: { name?: string }
+  }
+  highlights?: Array<{ property?: string; value?: string }>
+}
+
+/**
+ * Pull the matched lyric line out of a Genius hit's highlights. The raw value is
+ * a multi-line snippet around the match; we collapse it and keep it short.
+ */
+function extractHighlight(h: GeniusHit): string | undefined {
+  const hl = h.highlights?.find((x) => x.value && x.value.trim().length > 0)
+  if (!hl?.value) return undefined
+  const clean = decodeEntities(hl.value).replace(/\s*\n\s*/g, ' / ').replace(/\s+/g, ' ').trim()
+  return clean.length > 140 ? `${clean.slice(0, 138)}…` : clean
+}
+
+/**
+ * Find songs by a remembered lyric line. Uses Genius's multi-search, which
+ * matches against lyrics and returns the matching snippet in `highlights`.
+ * Returns title/artist/cover plus the matched line so the user can confirm.
+ *
+ * NB: the multi endpoint rejects per_page > 5, so we don't set it — Genius
+ * returns its own fixed set of hits per section.
+ */
+export async function searchByLyrics(query: string, limit = 14): Promise<LyricSearchHit[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+  try {
+    const res = await fetchT(
+      `https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`,
+      7000,
+      { 'User-Agent': BROWSER_UA }
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as {
+      response?: { sections?: Array<{ type?: string; hits?: GeniusHit[] }> }
+    }
+    const out: LyricSearchHit[] = []
+    const seen = new Set<string>()
+    // The 'lyric' section is the lyric-match section; 'top_hit' and 'song' also
+    // carry song hits. Prefer lyric/top_hit first so snippet-bearing hits win.
+    const sections = data.response?.sections || []
+    const order = (s: { type?: string }): number =>
+      s.type === 'lyric' ? 0 : s.type === 'top_hit' ? 1 : s.type === 'song' ? 2 : 9
+    for (const sec of [...sections].sort((a, b) => order(a) - order(b))) {
+      if (sec.type !== 'lyric' && sec.type !== 'top_hit' && sec.type !== 'song') continue
+      for (const h of sec.hits || []) {
+        if (h.type !== 'song') continue // skip artist/album hits in top_hit
+        const r = h.result
+        if (!r?.url || seen.has(r.url)) continue
+        if (!r.title && !r.full_title) continue
+        seen.add(r.url)
+        out.push({
+          title: r.title || r.full_title || 'Unknown',
+          artist: r.primary_artist?.name || '',
+          thumbnail: r.song_art_image_thumbnail_url || r.header_image_thumbnail_url,
+          snippet: extractHighlight(h),
+          url: r.url
+        })
+      }
+    }
+    return out.slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
 /** Delete all cached lyrics (manual syncs are kept — they use a .manual suffix). */
 export async function clearCache(): Promise<void> {
   try {

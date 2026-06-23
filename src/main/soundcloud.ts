@@ -181,6 +181,38 @@ export async function relatedTracks(trackId: string, limit = 25): Promise<Track[
   return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
 }
 
+export interface ScComment {
+  timeSec: number
+  body: string
+  user: string
+  avatar?: string
+}
+
+interface ScRawComment {
+  timestamp?: number | null // ms into the track (null = general comment)
+  body?: string
+  user?: { username?: string; avatar_url?: string | null }
+}
+
+/** Timed comments on a track (for the floating-comments overlay). */
+export async function getComments(trackId: string, limit = 100): Promise<ScComment[]> {
+  const res = await authedFetch(
+    (id) =>
+      `${API}/tracks/${encodeURIComponent(trackId)}/comments?threaded=0&filter_replies=1&limit=${limit}&client_id=${id}`
+  )
+  if (!res.ok) return []
+  const data = (await res.json()) as { collection?: ScRawComment[] }
+  return (data.collection || [])
+    .filter((c) => typeof c.timestamp === 'number' && c.timestamp! >= 0 && c.body)
+    .map((c) => ({
+      timeSec: (c.timestamp as number) / 1000,
+      body: (c.body as string).trim(),
+      user: c.user?.username || 'someone',
+      avatar: c.user?.avatar_url ? c.user.avatar_url.replace('-large', '-t50x50') : undefined
+    }))
+    .sort((a, b) => a.timeSec - b.timeSec)
+}
+
 export async function getUserTracks(userId: string, limit = 60): Promise<Track[]> {
   const res = await authedFetch(
     (id) => `${API}/users/${encodeURIComponent(userId)}/tracks?limit=${limit}&client_id=${id}`

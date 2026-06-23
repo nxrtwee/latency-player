@@ -6,6 +6,8 @@ import * as soundcloud from './soundcloud'
 import * as likes from './likes'
 import * as playlists from './playlists'
 import * as lyrics from './lyrics'
+import * as discord from './discord'
+import * as offline from './offline'
 import type { Track } from '../shared/types'
 
 // Branding: display name is "Latency", but pin userData to a stable path so the
@@ -55,16 +57,23 @@ function createWindow(): void {
 }
 
 function registerMediaProtocol(): void {
-  // media://local/C:/path/to/song.mp3  ->  file:///C:/path/to/song.mp3
+  // Two forms, distinguished by host:
+  //   media://local/C:/path/to/song.mp3        -> file:///C:/path/to/song.mp3
+  //   media://remote/<encodeURIComponent(url)>  -> proxied https stream (SoundCloud CDN)
+  // Both are CORS-cleaned so the renderer can route playback through a Web Audio
+  // MediaElementSource (EQ + visualizer) without the browser silencing the output
+  // as cross-origin. Bodies stream through as-is, so Range requests / seeking work.
   protocol.handle('media', async (request) => {
     const url = new URL(request.url)
-    const rawPath = decodeURIComponent(url.pathname).replace(/^\//, '')
-    const fileUrl = pathToFileURL(rawPath).toString()
-    const res = await net.fetch(fileUrl, { headers: request.headers })
-    // CORS-clean the response so the renderer can route playback through a
-    // Web Audio MediaElementSource (for the visualizer) without the browser
-    // silencing the output as cross-origin. Body is streamed through as-is, so
-    // Range requests / seeking keep working.
+    let target: string
+    if (url.host === 'remote') {
+      // The full https URL is percent-encoded into the path.
+      target = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    } else {
+      const rawPath = decodeURIComponent(url.pathname).replace(/^\//, '')
+      target = pathToFileURL(rawPath).toString()
+    }
+    const res = await net.fetch(target, { headers: request.headers })
     const headers = new Headers(res.headers)
     headers.set('Access-Control-Allow-Origin', '*')
     headers.set('Access-Control-Expose-Headers', '*')
@@ -99,6 +108,7 @@ function registerIpc(): void {
   ipcMain.handle('sc:user', (_e, userId: string) => soundcloud.getUser(userId))
   ipcMain.handle('sc:userTracks', (_e, userId: string) => soundcloud.getUserTracks(userId))
   ipcMain.handle('sc:related', (_e, trackId: string) => soundcloud.relatedTracks(trackId))
+  ipcMain.handle('sc:comments', (_e, trackId: string) => soundcloud.getComments(trackId))
   ipcMain.handle('sc:login', () => soundcloud.login())
   ipcMain.handle('sc:logout', () => soundcloud.logout())
   ipcMain.handle('sc:me', () => soundcloud.getMe())
@@ -129,6 +139,7 @@ function registerIpc(): void {
     app.setLoginItemSettings({ openAtLogin: enable })
   })
   ipcMain.handle('lyrics:clearCache', () => lyrics.clearCache())
+  ipcMain.handle('lyrics:search', (_e, query: string) => lyrics.searchByLyrics(query))
 
   ipcMain.handle('dialog:pickImage', async () => {
     const r = await dialog.showOpenDialog({
@@ -162,6 +173,22 @@ function registerIpc(): void {
       lyrics.deleteManualSync(title, artist, durationSec)
   )
 
+  ipcMain.handle('offline:list', () => offline.listIds())
+  ipcMain.handle('offline:tracks', () => offline.listTracks())
+  ipcMain.handle('offline:download', (_e, track: Track) => offline.download(track))
+  ipcMain.handle('offline:remove', (_e, trackId: string) => offline.remove(trackId))
+  ipcMain.handle('offline:clear', () => offline.clear())
+  ipcMain.handle('offline:size', () => offline.totalSize())
+  ipcMain.handle('offline:localUrl', (_e, trackId: string) => offline.localUrl(trackId))
+
+  ipcMain.handle('discord:getConfig', () => discord.getConfig())
+  ipcMain.handle('discord:setConfig', (_e, enabled: boolean, clientId: string) =>
+    discord.setConfig(enabled, clientId)
+  )
+  ipcMain.on('discord:update', (_e, activity: discord.DiscordActivity | null) =>
+    discord.update(activity)
+  )
+
   ipcMain.handle('playlists:get', () => playlists.getAll())
   ipcMain.handle('playlists:create', (_e, name: string) => playlists.create(name))
   ipcMain.handle('playlists:rename', (_e, id: string, name: string) => playlists.rename(id, name))
@@ -181,6 +208,8 @@ app.whenReady().then(async () => {
   await soundcloud.init()
   await likes.init()
   await playlists.init()
+  await discord.init()
+  await offline.init()
   createWindow()
 
   app.on('activate', () => {

@@ -14,6 +14,8 @@ export type Source =
   | 'likes'
   | 'playlist'
   | 'recent'
+  | 'offline'
+  | 'comments'
   | 'info'
   | 'artist'
   | 'mix'
@@ -43,6 +45,11 @@ interface PlayerState {
   // likes
   likes: Track[]
 
+  // offline cache (set of track ids available offline) + in-flight downloads
+  offlineIds: string[]
+  offlineTracks: Track[]
+  downloading: string[]
+
   // recently played (most-recent first), with play timestamps
   recentlyPlayed: PlayedTrack[]
 
@@ -54,6 +61,9 @@ interface PlayerState {
   scResults: Track[]
   scUsers: Artist[]
   scLoading: boolean
+
+  // global search history (most-recent first)
+  searchHistory: string[]
 
   // artist page
   selectedArtist: Artist | null
@@ -89,6 +99,9 @@ interface PlayerState {
   // settings modal
   settingsOpen: boolean
 
+  // equalizer panel
+  eqOpen: boolean
+
   // appearance
   theme: string
   customAccent: string
@@ -123,6 +136,9 @@ interface PlayerState {
   volume: number
   repeat: RepeatMode
   shuffle: boolean
+  // when the queue runs out, keep playing by appending related tracks
+  autopilot: boolean
+  autopilotLoading: boolean
 
   // navigation actions
   setSource: (source: Source) => void
@@ -148,6 +164,10 @@ interface PlayerState {
 
   // soundcloud actions
   searchSoundCloud: (query: string) => Promise<void>
+
+  // search history
+  pushSearchHistory: (query: string) => void
+  clearSearchHistory: () => void
 
   // artist navigation
   openArtist: (artist: Artist) => Promise<void>
@@ -175,6 +195,7 @@ interface PlayerState {
   // panels
   toggleRightPanel: () => void
   setSettingsOpen: (open: boolean) => void
+  setEqOpen: (open: boolean) => void
 
   // appearance
   setTheme: (theme: string) => void
@@ -203,6 +224,11 @@ interface PlayerState {
   loadLikes: () => Promise<void>
   toggleLike: (track: Track) => Promise<void>
 
+  // offline actions
+  loadOffline: () => Promise<void>
+  downloadTrack: (track: Track) => Promise<void>
+  removeOffline: (trackId: string) => Promise<void>
+
   // playback actions
   playQueue: (tracks: Track[], startIndex: number) => void
   togglePlay: () => void
@@ -210,15 +236,23 @@ interface PlayerState {
   prev: () => void
   jumpTo: (index: number) => void
   clearUpcoming: () => void
+  reorderQueue: (from: number, to: number) => void
+  removeFromQueue: (index: number) => void
   seek: (sec: number) => void
   setVolume: (v: number) => void
   cycleRepeat: () => void
   toggleShuffle: () => void
+  toggleAutopilot: () => void
 }
 
 // The live playback handle lives outside React state — it's an imperative
 // resource, not render data.
 let handle: PlaybackHandle | null = null
+
+// Synchronous map of trackId -> local media:// URL for offline-cached tracks, so
+// loadIndex can swap a streamed SoundCloud track for its downloaded file without
+// an async hop mid-playback. Populated by loadOffline().
+const offlineUrls = new Map<string, string>()
 
 const VOLUME_KEY = 'lp.volume'
 const initialVolume = (() => {
@@ -241,6 +275,18 @@ const initialRecent: PlayedTrack[] = (() => {
 
 const QUEUE_KEY = 'lp.queue'
 
+const SEARCH_HISTORY_KEY = 'lp.searchHistory'
+const SEARCH_HISTORY_MAX = 8
+const initialSearchHistory: string[] = (() => {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
+    const parsed = raw ? (JSON.parse(raw) as string[]) : []
+    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : []
+  } catch {
+    return []
+  }
+})()
+
 /** Read a numeric localStorage value, falling back when absent/NaN (0 stays valid). */
 const readNum = (key: string, def: number): number => {
   const raw = localStorage.getItem(key)
@@ -259,6 +305,30 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  /** Push the current track + play state to Discord (no-op when RPC is off). */
+  function updatePresence(): void {
+    try {
+      const { queue, currentIndex, isPlaying, positionSec } = get()
+      const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+      if (!track) {
+        window.api.discordUpdate(null)
+        return
+      }
+      window.api.discordUpdate({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        // Only http(s) covers work as a Discord image (SoundCloud artwork);
+        // local files have data: URLs which Discord can't load.
+        artwork: track.artwork && /^https?:\/\//.test(track.artwork) ? track.artwork : undefined,
+        startedAt: Date.now() - Math.round(positionSec * 1000),
+        playing: isPlaying
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
   function recordRecent(track: Track): void {
     const existing = get().recentlyPlayed.filter((t) => t.id !== track.id)
     const recentlyPlayed = [{ ...track, playedAt: Date.now() }, ...existing].slice(0, RECENT_MAX)
@@ -270,16 +340,58 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  /**
+   * Autopilot: when the queue is exhausted, find tracks related to a recent
+   * SoundCloud track, append the fresh ones, and start playing the first of them.
+   * No-op (returns false) when there's no SoundCloud seed or nothing new comes back.
+   */
+  async function extendQueueWithRelated(): Promise<boolean> {
+    const { queue } = get()
+    if (queue.length === 0) return false
+    // Seed from the most recent SoundCloud track in the queue (newest first).
+    const seed = [...queue].reverse().find((t) => t.providerId === 'soundcloud' && t.id.startsWith('sc:'))
+    if (!seed) return false
+
+    set({ autopilotLoading: true })
+    try {
+      const related = await window.api.scRelated(seed.id.slice(3))
+      const have = new Set(get().queue.map((t) => t.id))
+      const fresh = related.filter((t) => !have.has(t.id))
+      if (fresh.length === 0) {
+        set({ autopilotLoading: false })
+        return false
+      }
+      const startIndex = get().queue.length
+      set({ queue: [...get().queue, ...fresh], autopilotLoading: false })
+      loadIndex(startIndex, true)
+      persistQueue()
+      return true
+    } catch {
+      set({ autopilotLoading: false })
+      return false
+    }
+  }
+
   function loadIndex(index: number, autoplay: boolean): void {
     const { queue, volume } = get()
     if (index < 0 || index >= queue.length) {
       handle?.destroy()
       handle = null
       set({ currentIndex: -1, isPlaying: false, positionSec: 0, durationSec: 0 })
+      updatePresence()
       return
     }
     const track = queue[index]
-    const provider = getProvider(track.providerId)
+    // If this SoundCloud track is cached offline, play the local file instead —
+    // swap to the local provider + media:// uri so no network is touched. We keep
+    // `track` as the original (for history/presence) and use `playTrack` only for
+    // the actual playback handle.
+    const cachedUrl = offlineUrls.get(track.id)
+    const playTrack: Track =
+      cachedUrl && track.providerId === 'soundcloud'
+        ? { ...track, providerId: 'local', uri: cachedUrl }
+        : track
+    const provider = getProvider(playTrack.providerId)
     if (!provider) {
       set({ error: `No provider registered for "${track.providerId}"` })
       return
@@ -288,10 +400,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
     handle?.destroy()
     set({ currentIndex: index, positionSec: 0, durationSec: track.durationSec ?? 0, error: null })
 
-    handle = provider.createPlayback(track, {
+    handle = provider.createPlayback(playTrack, {
       onTime: (sec) => set({ positionSec: sec }),
       onDuration: (sec) => set({ durationSec: sec }),
-      onPlayingChange: (playing) => set({ isPlaying: playing }),
+      onPlayingChange: (playing) => {
+        set({ isPlaying: playing })
+        updatePresence()
+      },
       onError: (message) => set({ error: message }),
       onEnded: () => {
         const { repeat } = get()
@@ -323,6 +438,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     likes: [],
 
+    offlineIds: [],
+    offlineTracks: [],
+    downloading: [],
+
     recentlyPlayed: initialRecent,
 
     playlists: [],
@@ -331,6 +450,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
     scResults: [],
     scUsers: [],
     scLoading: false,
+
+    searchHistory: initialSearchHistory,
 
     selectedArtist: null,
     artistTracks: [],
@@ -355,6 +476,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     lyricsOpen: false,
     rightOpen: true,
     settingsOpen: false,
+    eqOpen: false,
     // 'light' was removed — migrate any saved value back to the default.
     theme: ((): string => {
       const t = localStorage.getItem('lp.theme') || 'green'
@@ -386,6 +508,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
     volume: initialVolume,
     repeat: 'off',
     shuffle: false,
+    autopilot: localStorage.getItem('lp.autopilot') === '1',
+    autopilotLoading: false,
 
     setSource(source) {
       set({ source })
@@ -446,6 +570,59 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ likes })
     },
 
+    async loadOffline() {
+      try {
+        const [offlineIds, offlineTracks] = await Promise.all([
+          window.api.offlineList(),
+          window.api.offlineTracks()
+        ])
+        // Resolve each id's local URL once, into the synchronous swap map.
+        offlineUrls.clear()
+        await Promise.all(
+          offlineIds.map(async (id) => {
+            const url = await window.api.offlineLocalUrl(id)
+            if (url) offlineUrls.set(id, url)
+          })
+        )
+        set({ offlineIds, offlineTracks })
+      } catch {
+        /* ignore */
+      }
+    },
+
+    async downloadTrack(track) {
+      if (get().offlineIds.includes(track.id) || get().downloading.includes(track.id)) return
+      set({ downloading: [...get().downloading, track.id] })
+      try {
+        const ok = await window.api.offlineDownload(track)
+        if (ok) {
+          const url = await window.api.offlineLocalUrl(track.id)
+          if (url) offlineUrls.set(track.id, url)
+        }
+        set((s) => ({
+          downloading: s.downloading.filter((id) => id !== track.id),
+          offlineIds: ok ? [...s.offlineIds, track.id] : s.offlineIds,
+          offlineTracks: ok ? [track, ...s.offlineTracks] : s.offlineTracks,
+          error: ok ? s.error : 'Download failed (HLS-only or network error)'
+        }))
+      } catch {
+        set((s) => ({ downloading: s.downloading.filter((id) => id !== track.id) }))
+      }
+    },
+
+    async removeOffline(trackId) {
+      try {
+        await window.api.offlineRemove(trackId)
+        offlineUrls.delete(trackId)
+        set((s) => ({
+          offlineIds: s.offlineIds.filter((id) => id !== trackId),
+          offlineTracks: s.offlineTracks.filter((t) => t.id !== trackId)
+        }))
+      } catch {
+        /* ignore */
+      }
+    },
+
     async searchSoundCloud(query) {
       set({ scQuery: query })
       const q = query.trim()
@@ -465,6 +642,30 @@ export const usePlayer = create<PlayerState>((set, get) => {
           scLoading: false,
           error: `SoundCloud: ${e instanceof Error ? e.message : String(e)}`
         })
+      }
+    },
+
+    pushSearchHistory(query) {
+      const q = query.trim()
+      if (!q) return
+      const next = [q, ...get().searchHistory.filter((s) => s.toLowerCase() !== q.toLowerCase())].slice(
+        0,
+        SEARCH_HISTORY_MAX
+      )
+      set({ searchHistory: next })
+      try {
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next))
+      } catch {
+        /* non-fatal */
+      }
+    },
+
+    clearSearchHistory() {
+      set({ searchHistory: [] })
+      try {
+        localStorage.removeItem(SEARCH_HISTORY_KEY)
+      } catch {
+        /* ignore */
       }
     },
 
@@ -697,6 +898,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     setSettingsOpen(open) {
       set({ settingsOpen: open })
+    },
+
+    setEqOpen(open) {
+      set({ eqOpen: open })
     },
 
     setTheme(theme) {
@@ -1042,7 +1247,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     next() {
-      const { currentIndex, queue, repeat, shuffle } = get()
+      const { currentIndex, queue, repeat, shuffle, autopilot } = get()
       if (queue.length === 0) return
       if (shuffle) {
         loadIndex(Math.floor(Math.random() * queue.length), true)
@@ -1050,8 +1255,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
       const nextIndex = currentIndex + 1
       if (nextIndex >= queue.length) {
-        if (repeat === 'all') loadIndex(0, true)
-        else set({ isPlaying: false })
+        if (repeat === 'all') {
+          loadIndex(0, true)
+        } else if (autopilot) {
+          // Keep the music going: append related tracks and play on. If nothing
+          // comes back, fall back to stopping.
+          set({ isPlaying: false })
+          void extendQueueWithRelated().then((extended) => {
+            if (!extended) set({ isPlaying: false })
+          })
+        } else {
+          set({ isPlaying: false })
+        }
         return
       }
       loadIndex(nextIndex, true)
@@ -1079,9 +1294,52 @@ export const usePlayer = create<PlayerState>((set, get) => {
       persistQueue()
     },
 
+    reorderQueue(from, to) {
+      const { queue, currentIndex } = get()
+      if (from === to || from < 0 || to < 0 || from >= queue.length || to >= queue.length) return
+      const next = queue.slice()
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      // Track where the playing item lands so we never reload it. Pure index math
+      // (robust to duplicate track ids in the queue).
+      let newIndex = currentIndex
+      if (from === currentIndex) {
+        newIndex = to
+      } else {
+        if (from < currentIndex) newIndex--
+        if (to <= newIndex) newIndex++
+      }
+      set({ queue: next, currentIndex: newIndex })
+      persistQueue()
+    },
+
+    removeFromQueue(index) {
+      const { queue, currentIndex } = get()
+      if (index < 0 || index >= queue.length) return
+      // Removing the currently playing track is handled by skipping to the next one.
+      if (index === currentIndex) {
+        get().next()
+        // After advancing, drop the old track from the queue and fix the index.
+        const after = get()
+        const q = after.queue.slice()
+        q.splice(index, 1)
+        set({
+          queue: q,
+          currentIndex: after.currentIndex > index ? after.currentIndex - 1 : after.currentIndex
+        })
+        persistQueue()
+        return
+      }
+      const next = queue.slice()
+      next.splice(index, 1)
+      set({ queue: next, currentIndex: index < currentIndex ? currentIndex - 1 : currentIndex })
+      persistQueue()
+    },
+
     seek(sec) {
       handle?.seek(sec)
       set({ positionSec: sec })
+      updatePresence()
     },
 
     setVolume(v) {
@@ -1099,6 +1357,23 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     toggleShuffle() {
       set({ shuffle: !get().shuffle })
+    },
+
+    toggleAutopilot() {
+      const autopilot = !get().autopilot
+      set({ autopilot })
+      try {
+        localStorage.setItem('lp.autopilot', autopilot ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      // If turning it on while sitting at the end of an exhausted queue, kick in now.
+      if (autopilot) {
+        const { currentIndex, queue, isPlaying } = get()
+        if (queue.length > 0 && currentIndex === queue.length - 1 && !isPlaying) {
+          void extendQueueWithRelated()
+        }
+      }
     }
   }
 })

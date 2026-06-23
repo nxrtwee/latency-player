@@ -16,7 +16,9 @@ import {
   SoundCloudIcon,
   SpotifyIcon,
   YouTubeIcon,
-  SettingsIcon
+  SettingsIcon,
+  DownloadIcon,
+  CommentIcon
 } from './Icons'
 
 export function Sidebar({ width }: { width?: number }): JSX.Element {
@@ -33,6 +35,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
   const likesCount = usePlayer(
     (s) => new Set([...s.likes, ...s.scLikes].map((t) => t.id)).size
   )
+  const offlineCount = usePlayer((s) => s.offlineIds.length)
 
   const playlists = usePlayer((s) => s.playlists)
   const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
@@ -167,6 +170,21 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         >
           <FolderIcon size={18} />
           <span>{t('localFiles')}</span>
+        </button>
+        <button
+          className={`nav-item ${source === 'offline' ? 'active' : ''}`}
+          onClick={() => setSource('offline')}
+        >
+          <DownloadIcon size={18} />
+          <span>{t('downloaded')}</span>
+          {offlineCount > 0 && <span className="nav-badge">{offlineCount}</span>}
+        </button>
+        <button
+          className={`nav-item ${source === 'comments' ? 'active' : ''}`}
+          onClick={() => setSource('comments')}
+        >
+          <CommentIcon size={18} />
+          <span>{t('commentsSidebar')}</span>
         </button>
       </div>
 

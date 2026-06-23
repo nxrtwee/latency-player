@@ -39,6 +39,12 @@ const dict: Record<string, { en: string; ru: string }> = {
   yourLikes: { en: 'Your Likes', ru: 'Любимое' },
   recentlyPlayed: { en: 'Recently Played', ru: 'Недавнее' },
   localFiles: { en: 'Local Files', ru: 'Локальные файлы' },
+  downloaded: { en: 'Downloaded', ru: 'Скачанное' },
+  downloadedDesc: { en: 'Tracks saved for offline playback.', ru: 'Треки, сохранённые для офлайна.' },
+  emptyOffline: {
+    en: 'No downloads yet. Tap the ↓ on any SoundCloud track.',
+    ru: 'Пока ничего не скачано. Нажмите ↓ на треке SoundCloud.'
+  },
   settings: { en: 'Settings', ru: 'Настройки' },
   newPlaylist: { en: 'New playlist', ru: 'Новый плейлист' },
   noPlaylists: { en: 'No playlists yet', ru: 'Пока нет плейлистов' },
@@ -73,11 +79,54 @@ const dict: Record<string, { en: string; ru: string }> = {
   search: { en: 'Search', ru: 'Искать' },
   profiles: { en: 'Profiles', ru: 'Профили' },
   searching: { en: 'Searching SoundCloud…', ru: 'Поиск в SoundCloud…' },
+  // search modes (Explore tab)
+  searchModeTracks: { en: 'Tracks', ru: 'Треки' },
+  searchModeLyrics: { en: 'By lyrics', ru: 'По строчке' },
+  lyricsPlaceholder: { en: 'Type a line from the song…', ru: 'Введите строчку из песни…' },
+  lyricSearchHint: {
+    en: 'Remember a line? Type it and we’ll find the track.',
+    ru: 'Помните строчку? Введите её — и мы найдём трек.'
+  },
+  nothingFound: { en: 'Nothing found', ru: 'Ничего не найдено' },
+  openingTrack: { en: 'Finding on SoundCloud…', ru: 'Ищем на SoundCloud…' },
+  // autopilot
+  autopilot: { en: 'Autopilot', ru: 'Автоплей' },
+  autopilotOn: { en: 'Autopilot: on — related tracks keep playing', ru: 'Автоплей включён — похожие треки продолжат играть' },
+  autopilotOff: { en: 'Autopilot: off', ru: 'Автоплей выключен' },
+  autopilotFinding: { en: 'Autopilot: finding similar tracks…', ru: 'Автоплей: ищем похожие треки…' },
+  // comments
+  comments: { en: 'Comments', ru: 'Комментарии' },
+  commentsSidebar: { en: 'Comments', ru: 'Комментарии' },
+  commentsLoading: { en: 'Loading comments…', ru: 'Загрузка комментариев…' },
+  noComments: { en: 'No comments on this track.', ru: 'У этого трека нет комментариев.' },
+  commentsScOnly: {
+    en: 'Comments are available for SoundCloud tracks.',
+    ru: 'Комментарии доступны для треков SoundCloud.'
+  },
+  // equalizer
+  equalizer: { en: 'Equalizer', ru: 'Эквалайзер' },
+  eqEnabled: { en: 'Enabled', ru: 'Включён' },
+  eqPreset: { en: 'Preset', ru: 'Пресет' },
+  eqReset: { en: 'Reset', ru: 'Сброс' },
+  eqLocalOnly: {
+    en: 'Works for both local files and SoundCloud streams.',
+    ru: 'Работает и для локальных файлов, и для потоков SoundCloud.'
+  },
+  eqFlat: { en: 'Flat', ru: 'Ровный' },
+  eqBassBoost: { en: 'Bass Boost', ru: 'Усиление баса' },
+  eqTrebleBoost: { en: 'Treble Boost', ru: 'Усиление верхов' },
+  eqVocal: { en: 'Vocal', ru: 'Вокал' },
+  eqElectronic: { en: 'Electronic', ru: 'Электроника' },
+  eqRock: { en: 'Rock', ru: 'Рок' },
+  eqLoudness: { en: 'Loudness', ru: 'Громкость' },
   // right panel
   nowPlaying: { en: 'Now Playing', ru: 'Сейчас играет' },
   nextInQueue: { en: 'Next in Queue', ru: 'Очередь' },
   clear: { en: 'Clear', ru: 'Очистить' },
   queueEmpty: { en: 'Queue is empty', ru: 'Очередь пуста' },
+  filterQueue: { en: 'Filter queue…', ru: 'Фильтр очереди…' },
+  removeFromQueue: { en: 'Remove from queue', ru: 'Убрать из очереди' },
+  noQueueMatch: { en: 'No matching tracks', ru: 'Ничего не найдено' },
   nothingPlaying: { en: 'Nothing playing', ru: 'Ничего не играет' },
   // home
   welcome: { en: 'Welcome', ru: 'Добро пожаловать' },
@@ -135,11 +184,27 @@ const dict: Record<string, { en: string; ru: string }> = {
   storage: { en: 'Storage', ru: 'Хранилище' },
   lyricsCache: { en: 'Lyrics cache', ru: 'Кэш текстов' },
   mixesCache: { en: 'Mixes cache', ru: 'Кэш миксов' },
+  offlineCache: { en: 'Offline tracks', ru: 'Офлайн-треки' },
+  offlineCacheSub: {
+    en: 'Downloaded SoundCloud tracks play without internet.',
+    ru: 'Скачанные треки SoundCloud играют без интернета.'
+  },
   clearBtn: { en: 'Clear', ru: 'Очистить' },
   cleared: { en: 'Cleared', ru: 'Очищено' },
   rebuild: { en: 'Rebuild', ru: 'Пересобрать' },
   rebuilt: { en: 'Rebuilt', ru: 'Готово' },
   system: { en: 'System', ru: 'Система' },
+  discord: { en: 'Discord', ru: 'Discord' },
+  discordRpc: { en: 'Rich Presence', ru: 'Rich Presence' },
+  discordSub: {
+    en: 'Show what you’re listening to on your Discord profile.',
+    ru: 'Показывать, что вы слушаете, в профиле Discord.'
+  },
+  discordAppId: { en: 'Application ID', ru: 'Application ID' },
+  discordAppIdHint: {
+    en: 'Create an app at discord.com/developers, then paste its Application ID here.',
+    ru: 'Создайте приложение на discord.com/developers и вставьте его Application ID сюда.'
+  },
   launchStartup: { en: 'Launch at startup', ru: 'Запуск при старте системы' },
   launchSub: { en: 'Open Latency when you sign in to Windows', ru: 'Открывать Latency при входе в Windows' },
   about: { en: 'About', ru: 'О приложении' },

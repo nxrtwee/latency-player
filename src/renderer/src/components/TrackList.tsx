@@ -13,6 +13,7 @@ export function TrackList(): JSX.Element {
   const loading = usePlayer((s) => s.loading)
   const likes = usePlayer((s) => s.likes)
   const scLikes = usePlayer((s) => s.scLikes)
+  const offlineTracks = usePlayer((s) => s.offlineTracks)
   const recentlyPlayed = usePlayer((s) => s.recentlyPlayed)
   const playlists = usePlayer((s) => s.playlists)
   const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
@@ -38,14 +39,16 @@ export function TrackList(): JSX.Element {
       return merged
     }
     if (source === 'recent') return recentlyPlayed
+    if (source === 'offline') return offlineTracks
     if (source === 'playlist') return selectedPlaylist?.tracks ?? []
     return tracks
-  }, [source, likes, scLikes, recentlyPlayed, selectedPlaylist, tracks])
+  }, [source, likes, scLikes, offlineTracks, recentlyPlayed, selectedPlaylist, tracks])
 
   const metaMap: Partial<Record<string, { label: string; title: string; desc: string }>> = {
     likes: { label: t('playlist'), title: t('yourLikes'), desc: t('likesDesc') },
     recent: { label: t('history'), title: t('recentlyPlayed'), desc: t('recentDesc') },
     local: { label: t('library'), title: t('localFiles'), desc: t('localDesc') },
+    offline: { label: t('library'), title: t('downloaded'), desc: t('downloadedDesc') },
     playlist: { label: t('playlist'), title: selectedPlaylist?.name ?? t('playlist'), desc: '' }
   }
   const meta = metaMap[source] ?? { label: '', title: '', desc: '' }
@@ -77,6 +80,7 @@ export function TrackList(): JSX.Element {
   function emptyText(): string {
     if (source === 'likes') return t('emptyLikes')
     if (source === 'recent') return t('emptyRecent')
+    if (source === 'offline') return t('emptyOffline')
     if (source === 'playlist') return t('emptyPlaylist')
     return loading ? t('scanning') : t('emptyLocal')
   }

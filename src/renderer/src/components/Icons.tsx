@@ -197,6 +197,12 @@ export const DownloadIcon = (p: IconProps): JSX.Element => (
   </Svg>
 )
 
+export const CheckIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path d="m20 6-11 11-5-5" />
+  </Svg>
+)
+
 export const MoreIcon = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
@@ -251,6 +257,32 @@ export const LyricsIcon = (p: IconProps): JSX.Element => (
     <path d="M4 15h7" />
     <path d="M17 14a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z" />
     <path d="M19.5 16V8l2.5 1.2" />
+  </Svg>
+)
+
+export const EqualizerIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path d="M6 4v16" />
+    <path d="M12 4v16" />
+    <path d="M18 4v16" />
+    <circle cx="6" cy="9" r="2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="15" r="2" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="8" r="2" fill="currentColor" stroke="none" />
+  </Svg>
+)
+
+export const AutopilotIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 3a9 9 0 0 1 0 18" />
+    <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+  </Svg>
+)
+
+export const CommentIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.8-5.9A8.5 8.5 0 0 1 12.5 3a8.38 8.38 0 0 1 8.5 8.5Z" />
   </Svg>
 )
 

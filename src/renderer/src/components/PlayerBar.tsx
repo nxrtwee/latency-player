@@ -16,7 +16,9 @@ import {
   HeartFilledIcon,
   QueueIcon,
   ExpandIcon,
-  LyricsIcon
+  LyricsIcon,
+  AutopilotIcon,
+  CommentIcon
 } from './Icons'
 
 export function PlayerBar(): JSX.Element {
@@ -42,6 +44,10 @@ export function PlayerBar(): JSX.Element {
   const rightOpen = usePlayer((s) => s.rightOpen)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
+  const autopilot = usePlayer((s) => s.autopilot)
+  const autopilotLoading = usePlayer((s) => s.autopilotLoading)
+  const toggleAutopilot = usePlayer((s) => s.toggleAutopilot)
+  const setSource = usePlayer((s) => s.setSource)
 
   const t = useT()
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
@@ -58,7 +64,13 @@ export function PlayerBar(): JSX.Element {
               {track.artwork ? <img src={track.artwork} alt="" /> : <span>♫</span>}
             </div>
             <div className="pb-meta">
-              <span className="pb-title">{track.title}</span>
+              <span
+                className="pb-title clickable"
+                onClick={() => setSource('comments')}
+                title={t('comments')}
+              >
+                {track.title}
+              </span>
               <span className="pb-artist">{track.artist || 'Unknown artist'}</span>
             </div>
             <button
@@ -112,6 +124,27 @@ export function PlayerBar(): JSX.Element {
       </div>
 
       <div className="pb-right">
+        <button
+          className={`icon-btn ${autopilot ? 'on' : ''} ${autopilotLoading ? 'spin' : ''}`}
+          title={
+            autopilotLoading
+              ? t('autopilotFinding')
+              : autopilot
+                ? t('autopilotOn')
+                : t('autopilotOff')
+          }
+          onClick={toggleAutopilot}
+        >
+          <AutopilotIcon size={18} />
+        </button>
+        <button
+          className="icon-btn"
+          title={t('comments')}
+          onClick={() => setSource('comments')}
+          disabled={!track}
+        >
+          <CommentIcon size={18} />
+        </button>
         <button
           className={`icon-btn ${lyricsOpen ? 'on' : ''}`}
           title="Lyrics"

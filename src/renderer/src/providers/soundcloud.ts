@@ -1,11 +1,21 @@
 import Hls from 'hls.js'
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from './types'
+import { connectElement, resumeAudio } from '../audio/analyser'
+
+/** Wrap a remote URL in our CORS-clean media:// proxy so Web Audio can tap it. */
+function proxied(url: string): string {
+  return `media://remote/${encodeURIComponent(url)}`
+}
 
 /**
  * Plays SoundCloud tracks. The main process resolves track.uri (a transcoding
  * URL) into a real, short-lived CDN URL. Progressive transcodings are plain MP3
  * the <audio> streams directly; HLS transcodings are played via hls.js + MSE.
+ *
+ * To make the equalizer and the real visualizer work, we route the audio through
+ * Web Audio: progressive streams go via the media:// proxy (CORS-clean), and HLS
+ * is fed through MSE (same-origin blob), so neither taints the analyser.
  */
 export const soundcloudProvider: PlaybackProvider = {
   id: 'soundcloud',
@@ -14,10 +24,9 @@ export const soundcloudProvider: PlaybackProvider = {
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     const audio = new Audio()
     audio.preload = 'auto'
-    // NB: SoundCloud streams from a cross-origin CDN with unreliable CORS, so we
-    // deliberately do NOT route it through Web Audio (that would silence it).
-    // The visualizer falls back to synthetic motion for SoundCloud tracks.
+    audio.crossOrigin = 'anonymous'
     const isHls = track.uri.includes('/stream/hls')
+    let disconnect: (() => void) | null = null
 
     audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
     audio.addEventListener('durationchange', () => {
@@ -51,8 +60,13 @@ export const soundcloudProvider: PlaybackProvider = {
           hls.loadSource(url)
           hls.attachMedia(audio)
         } else {
-          audio.src = url
+          // Route progressive MP3 through our CORS-clean proxy so the EQ/analyser
+          // can tap the element without the browser silencing cross-origin audio.
+          audio.src = proxied(url)
         }
+        // Tap into the shared Web Audio graph (EQ + visualizer). HLS feeds via MSE
+        // (same-origin blob) and progressive via the proxy — neither taints it.
+        disconnect = connectElement(audio)
         ready = true
         tryPlay()
       })
@@ -61,6 +75,7 @@ export const soundcloudProvider: PlaybackProvider = {
     return {
       play: () => {
         wantPlay = true
+        resumeAudio()
         tryPlay()
       },
       pause: () => {
@@ -75,6 +90,7 @@ export const soundcloudProvider: PlaybackProvider = {
       },
       destroy: () => {
         destroyed = true
+        disconnect?.()
         audio.pause()
         if (hls) {
           hls.destroy()
