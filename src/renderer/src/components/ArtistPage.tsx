@@ -42,10 +42,12 @@ export function ArtistPage(): JSX.Element {
       <header className="ph artist-head">
         <div className="artist-avatar">
           {artist.avatar ? <img src={artist.avatar} alt="" /> : <span>{artist.name[0] ?? '?'}</span>}
-          <ProviderBadge provider={artist.provider} size={15} className="on-avatar" />
         </div>
         <div className="ph-info">
-          <span className="ph-label">{t('artist')}</span>
+          <span className="ph-label">
+            <ProviderBadge provider={artist.provider} size={15} />
+            <span>{t('artist')}</span>
+          </span>
           <h1 className="ph-title">{artist.name}</h1>
           <div className="ph-meta">
             {followers && (

@@ -3,7 +3,6 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Logo } from './Logo'
-import { ProviderBadge } from './ProviderBadge'
 import {
   PlusIcon,
   RefreshIcon,
@@ -232,7 +231,6 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
             >
               <span className="artist-mini-av">
                 {a.artwork ? <img src={a.artwork} alt="" /> : <span>{a.name[0]}</span>}
-                <ProviderBadge provider={a.track.providerId} size={9} className="on-avatar" />
               </span>
               <span className="artist-mini-name">{a.name}</span>
             </button>

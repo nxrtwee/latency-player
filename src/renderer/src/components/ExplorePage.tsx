@@ -4,7 +4,6 @@ import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { SearchIcon, SoundCloudIcon, YandexIcon, ClockIcon, PlayIcon } from './Icons'
 import { TrackRow } from './TrackRow'
-import { ProviderBadge } from './ProviderBadge'
 
 const GENRES = [
   'lofi',
@@ -268,7 +267,6 @@ export function ExplorePage(): JSX.Element {
                   >
                     <div className="profile-avatar">
                       {u.avatar ? <img src={u.avatar} alt="" /> : <span>{u.name[0] ?? '?'}</span>}
-                      <ProviderBadge provider={u.provider} size={12} className="on-avatar" />
                     </div>
                     <span className="profile-name">{u.name}</span>
                     <span className="profile-sub">

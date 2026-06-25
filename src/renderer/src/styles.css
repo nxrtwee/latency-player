@@ -1141,21 +1141,17 @@ body.resizing * {
   display: inline-flex;
 }
 
-/* Source badge: the real brand logo, lifted off the cover with a soft shadow
-   (drop-shadow follows the logo's alpha, so there's no dark square frame). */
+/* Source badge: the real brand logo. Base is a clean inline mark (used in labels);
+   the on-thumb variant tucks a small one into a track cover's corner. */
 .prov-badge {
-  display: block;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  display: inline-block;
+  vertical-align: middle;
 }
 .prov-badge.on-thumb {
   position: absolute;
-  bottom: -3px;
-  right: -3px;
-}
-.prov-badge.on-avatar {
-  position: absolute;
-  bottom: 0;
-  right: 0;
+  bottom: -2px;
+  right: -2px;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.4));
 }
 .artist-avatar,
 .profile-avatar,
