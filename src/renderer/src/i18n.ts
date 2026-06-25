@@ -145,7 +145,37 @@ const dict: Record<string, { en: string; ru: string }> = {
   fromScLikes: { en: 'from your SoundCloud likes', ru: 'по вашим лайкам SoundCloud' },
   signOut: { en: 'Sign out', ru: 'Выйти' },
   signInSc: { en: 'Sign in with SoundCloud', ru: 'Войти через SoundCloud' },
+  signInYm: { en: 'Sign in with Yandex', ru: 'Войти через Яндекс' },
+  yandexMusic: { en: 'Yandex Music', ru: 'Яндекс Музыка' },
+  myWave: { en: 'My Wave', ru: 'Моя волна' },
+  myWaveSub: { en: 'Personal radio · Yandex Music', ru: 'Персональная волна · Яндекс Музыка' },
+  myWaveHeadline: {
+    en: 'An endless wave, tuned to you',
+    ru: 'Бесконечная волна под ваш вкус'
+  },
+  myWaveBlurb: {
+    en: 'My Wave is a personal stream from Yandex Music that never stops — it learns from what you play and keeps the music flowing on its own, picking the next track for you. Press play and just listen; the wave refills itself as it goes.',
+    ru: 'Моя волна — персональный поток из Яндекс Музыки, который не заканчивается: он подстраивается под то, что вы слушаете, и сам продолжает играть, подбирая следующий трек. Нажмите «Слушать» и просто слушайте — волна пополняется на ходу.'
+  },
+  playWave: { en: 'Listen', ru: 'Слушать' },
+  waveTagMood: { en: 'By mood', ru: 'По настроению' },
+  waveTagCharacter: { en: 'By character', ru: 'По характеру' },
+  waveTagLanguage: { en: 'By language', ru: 'По языку' },
+  waveNowPlaying: { en: 'In the wave now', ru: 'Сейчас в волне' },
+  ymAccount: { en: 'Yandex Music account', ru: 'Аккаунт Яндекс Музыки' },
+  ymPlusHint: {
+    en: 'Works without a VPN in Russia. Without signing in, tracks play 30-second previews; after you sign in with your Yandex account they play in full (subject to your Yandex Plus).',
+    ru: 'Работает без VPN в России. Без входа треки играют 30-секундные превью; после входа своим аккаунтом Яндекс — целиком (в рамках вашей подписки Яндекс Плюс).'
+  },
   connecting: { en: 'Connecting…', ru: 'Подключение…' },
+  importLikes: { en: 'Import likes', ru: 'Импортировать лайки' },
+  importing: { en: 'Importing…', ru: 'Импорт…' },
+  imported: { en: 'Imported', ru: 'Импортировано' },
+  importedNone: { en: 'Nothing new to import', ru: 'Нет новых для импорта' },
+  removeImported: { en: 'Remove imported', ru: 'Убрать импортированные' },
+  removing: { en: 'Removing…', ru: 'Удаление…' },
+  removed: { en: 'Removed', ru: 'Удалено' },
+  removedNone: { en: 'Nothing to remove', ru: 'Нечего убирать' },
   wantRealMixes: { en: 'Want real, accurate mixes?', ru: 'Хотите настоящие точные миксы?' },
   promoSub: {
     en: 'These mixes are auto-generated and can be a bit off. Sign in with SoundCloud to get your real personalized mixes.',
@@ -209,8 +239,8 @@ const dict: Record<string, { en: string; ru: string }> = {
   launchSub: { en: 'Open Latency when you sign in to Windows', ru: 'Открывать Latency при входе в Windows' },
   about: { en: 'About', ru: 'О приложении' },
   aboutText: {
-    en: 'Latency is an advanced media player with visuals on par with the popular ones — written in pure vibecoding in 7 hours, so keep that in mind if you hit bugs or rough edges.',
-    ru: 'Latency — это продвинутый медиаплеер с визуалом не уступающим популярным плеерам, написанный чистым вайбкодингом за 7 часов, так что если будут баги и недочёты — имейте это в виду.'
+    en: 'Latency is an advanced media player with visuals on par with the popular ones — written in pure vibecoding, so keep that in mind if you hit bugs or rough edges.',
+    ru: 'Latency — это продвинутый медиаплеер с визуалом не уступающим популярным плеерам, написанный чистым вайбкодингом, так что если будут баги и недочёты — имейте это в виду.'
   },
   developers: { en: 'Developers', ru: 'Разработчики' },
   // activity
@@ -236,7 +266,11 @@ const dict: Record<string, { en: string; ru: string }> = {
   syncManually: { en: 'Sync manually', ru: 'Синхронизировать' },
   editSync: { en: 'Edit sync', ru: 'Изменить синхро' },
   manualSynced: { en: 'Manually synced', ru: 'Ручная синхронизация' },
-  approxSync: { en: 'approximate sync', ru: 'примерная синхро' }
+  approxSync: { en: 'approximate sync', ru: 'примерная синхро' },
+  plainLyricsNote: {
+    en: 'Unsynced lyrics — tap “Sync manually” to time them',
+    ru: 'Текст без синхронизации — нажмите «Синхронизировать», чтобы расставить тайминги'
+  }
 }
 
 export function t(key: string, lang: Lang): string {

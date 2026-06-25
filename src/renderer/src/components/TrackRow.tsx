@@ -2,14 +2,20 @@ import { usePlayer } from '../store'
 import { formatTime } from '../util'
 import { PlayIcon, HeartIcon, HeartFilledIcon, DownloadIcon, CheckIcon } from './Icons'
 import { PlaylistMenu } from './PlaylistMenu'
+import { ProviderBadge } from './ProviderBadge'
 import type { Track } from '@shared/types'
 
 function Thumb({ track }: { track: Track }): JSX.Element {
-  if (track.artwork) {
-    return <img className="thumb" src={track.artwork} alt="" loading="lazy" />
-  }
+  const glyph = track.providerId === 'soundcloud' ? '☁' : track.providerId === 'yandex' ? 'Я' : '♫'
   return (
-    <div className="thumb placeholder">{track.providerId === 'soundcloud' ? '☁' : '♫'}</div>
+    <div className="thumb-wrap">
+      {track.artwork ? (
+        <img className="thumb" src={track.artwork} alt="" loading="lazy" />
+      ) : (
+        <div className="thumb placeholder">{glyph}</div>
+      )}
+      <ProviderBadge provider={track.providerId} size={10} className="on-thumb" />
+    </div>
   )
 }
 
@@ -23,11 +29,10 @@ export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
   const currentTrackId = usePlayer((s) =>
     s.currentIndex >= 0 ? s.queue[s.currentIndex]?.id : undefined
   )
-  const liked = usePlayer(
-    (s) => s.likes.some((t) => t.id === track.id) || s.scLikes.some((t) => t.id === track.id)
-  )
+  const liked = usePlayer((s) => s.likedIds.has(track.id))
   const toggleLike = usePlayer((s) => s.toggleLike)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const openArtist = usePlayer((s) => s.openArtist)
   const cached = usePlayer((s) => s.offlineIds.includes(track.id))
   const downloading = usePlayer((s) => s.downloading.includes(track.id))
   const downloadTrack = usePlayer((s) => s.downloadTrack)
@@ -59,7 +64,24 @@ export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
         <span className="t-title">{track.title}</span>
       </div>
       <span className="c-artist">
-        {canOpenArtist ? (
+        {track.artists && track.artists.length > 0 ? (
+          // Multiple credited artists — each name opens its own page.
+          track.artists.map((a, idx) => (
+            <span key={`${a.id ?? a.name}-${idx}`}>
+              {idx > 0 && <span className="artist-sep">, </span>}
+              <button
+                className="artist-link"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (a.id) openArtist({ id: a.id, name: a.name, provider: track.providerId })
+                  else openArtistFromTrack(track)
+                }}
+              >
+                {a.name}
+              </button>
+            </span>
+          ))
+        ) : canOpenArtist ? (
           <button
             className="artist-link"
             onClick={(e) => {

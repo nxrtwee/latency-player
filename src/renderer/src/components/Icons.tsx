@@ -1,6 +1,7 @@
 // Minimal inline SVG icon set (lucide-style). All use currentColor so existing
 // color CSS keeps working. Filled glyphs for transport controls, stroked for the rest.
 import type { SVGProps, ReactNode } from 'react'
+import scLogo from '../assets/soundcloud.png'
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number }
 
@@ -171,6 +172,57 @@ export const SoundCloudIcon = (p: IconProps): JSX.Element => (
     <path d="M13 16V7" />
     <path d="M13 9.5a4 4 0 0 1 7 2.5 3 3 0 0 1-1 4h-6" />
   </Svg>
+)
+
+export const YandexIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M14.5 7v10" />
+    <path d="M14.5 7h-2a2.5 2.5 0 0 0 0 5h2" />
+    <path d="M14 12 9.5 17" />
+  </Svg>
+)
+
+export const YandexMusicIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <polygon points="10 8.5 16 12 10 15.5" fill="currentColor" stroke="none" />
+  </Svg>
+)
+
+// Real brand logos (full-color, self-contained) for track/profile/settings badges.
+// Real SoundCloud logo (transparent PNG app icon) — drawn as an image so it's
+// pixel-faithful and free of the duplicate-gradient-id issues an inline SVG had.
+export const RealSoundCloudIcon = ({
+  size = 18,
+  className
+}: {
+  size?: number
+  className?: string
+}): JSX.Element => (
+  <img
+    src={scLogo}
+    width={size}
+    height={size}
+    alt=""
+    aria-hidden="true"
+    className={className}
+    style={{ display: 'block', objectFit: 'contain' }}
+  />
+)
+
+export const RealYandexMusicIcon = ({
+  size = 18,
+  bg = true,
+  ...rest
+}: IconProps & { bg?: boolean }): JSX.Element => (
+  <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" {...rest}>
+    {bg && <rect width="48" height="48" rx="10" fill="#000000" />}
+    <polygon
+      fill="#ffd000"
+      points="24,4 25.7,17.7 34,6.7 28.6,19.4 41.3,14 30.3,22.3 44,24 30.3,25.7 41.3,34 28.6,28.6 34,41.3 25.7,30.3 24,44 22.3,30.3 14,41.3 19.4,28.6 6.7,34 17.7,25.7 4,24 17.7,22.3 6.7,14 19.4,19.4 14,6.7 22.3,17.7"
+    />
+  </svg>
 )
 
 export const SpotifyIcon = (p: IconProps): JSX.Element => (

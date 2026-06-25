@@ -1135,6 +1135,167 @@ body.resizing * {
   color: var(--muted);
   font-size: 16px;
 }
+.thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+/* Source badge: the real brand logo, lifted off the cover with a soft shadow
+   (drop-shadow follows the logo's alpha, so there's no dark square frame). */
+.prov-badge {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+.prov-badge.on-thumb {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+}
+.prov-badge.on-avatar {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
+.artist-avatar,
+.profile-avatar,
+.artist-mini-av {
+  position: relative;
+}
+
+/* ---------- My Wave: branded hero (no tracklist) ---------- */
+.wave-aurora {
+  background: radial-gradient(70% 60% at 50% -10%, rgba(255, 204, 0, 0.22), transparent 60%);
+}
+.wave-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 24px 48px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.wave-disc {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 26px;
+}
+.wave-disc-core {
+  position: relative;
+  z-index: 2;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a1a1a;
+  background: linear-gradient(150deg, #ffe45e, #ffcc00 65%, #ff9f1c);
+  box-shadow: 0 14px 44px rgba(255, 184, 0, 0.4);
+}
+.wave-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(255, 204, 0, 0.35);
+  animation: wave-pulse 3.2s ease-out infinite;
+}
+.wave-ring.r1 {
+  width: 180px;
+  height: 180px;
+}
+.wave-ring.r2 {
+  width: 220px;
+  height: 220px;
+  animation-delay: 1s;
+}
+.wave-ring.r3 {
+  width: 240px;
+  height: 240px;
+  animation-delay: 2s;
+}
+@keyframes wave-pulse {
+  0% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+.wave-label {
+  margin-bottom: 4px;
+}
+.wave-title {
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin: 0 0 10px;
+}
+.wave-headline {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.wave-blurb {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 0 22px;
+}
+.wave-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 26px;
+}
+.wave-chip {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 6px 14px;
+}
+.wave-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+.wave-play {
+  padding: 12px 30px;
+  font-size: 15px;
+}
+.wave-upnext {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  color: var(--muted-2);
+  font-size: 13px;
+}
+.wave-upnext-label {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
 .t-title {
   font-weight: 600;
   overflow: hidden;
@@ -1528,6 +1689,7 @@ body.resizing * {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .set-hint {
   margin: 0;
@@ -2589,6 +2751,24 @@ button:disabled {
   border-radius: 50%;
   object-fit: cover;
 }
+.ym-chip-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffdb4d;
+  color: #1a1a1a;
+}
+.ym-chip-name {
+  line-height: 1;
+}
+.set-btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .sc-signout {
   background: transparent;
   border: none;
@@ -3176,6 +3356,27 @@ button:disabled {
   color: var(--muted-2);
   text-transform: lowercase;
   letter-spacing: 0.3px;
+}
+
+/* Static (unsynced) lyrics: plain scrollable text, no karaoke highlight. */
+.kary-viewport.static {
+  overflow-y: auto;
+}
+.kary-static {
+  padding: 8px 10px 36px;
+}
+.kary-line.static {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: 0.86;
+  cursor: default;
+  transition: none;
+}
+.kary-line.static:hover {
+  opacity: 1;
 }
 
 .sync-badge {
@@ -4022,6 +4223,39 @@ button:disabled {
   animation: gs-spin 0.7s linear infinite;
   flex-shrink: 0;
   margin-right: 6px;
+}
+.ex-source {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: fit-content;
+}
+.ex-source-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 0.13s ease,
+    background 0.13s ease;
+}
+.ex-source-btn:hover {
+  color: var(--text);
+}
+.ex-source-btn.active {
+  color: var(--bg);
+  background: var(--accent);
 }
 @keyframes gs-spin {
   to {

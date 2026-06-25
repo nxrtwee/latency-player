@@ -3,6 +3,7 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Logo } from './Logo'
+import { ProviderBadge } from './ProviderBadge'
 import {
   PlusIcon,
   RefreshIcon,
@@ -14,8 +15,8 @@ import {
   ClockIcon,
   FolderIcon,
   SoundCloudIcon,
-  SpotifyIcon,
-  YouTubeIcon,
+  YandexIcon,
+  YandexMusicIcon,
   SettingsIcon,
   DownloadIcon,
   CommentIcon
@@ -45,6 +46,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
   const deletePlaylist = usePlayer((s) => s.deletePlaylist)
 
   const scAuth = usePlayer((s) => s.scAuth)
+  const ymAuth = usePlayer((s) => s.ymAuth)
   const profileName = usePlayer((s) => s.profileName)
   const profileAvatar = usePlayer((s) => s.profileAvatar)
   const avPosX = usePlayer((s) => s.avPosX)
@@ -145,6 +147,13 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
           <ActivityIcon size={18} />
           <span>{t('activity')}</span>
         </button>
+        <button
+          className={`nav-item ${source === 'comments' ? 'active' : ''}`}
+          onClick={() => setSource('comments')}
+        >
+          <CommentIcon size={18} />
+          <span>{t('commentsSidebar')}</span>
+        </button>
       </div>
 
       <div className="nav-group">
@@ -179,13 +188,15 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
           <span>{t('downloaded')}</span>
           {offlineCount > 0 && <span className="nav-badge">{offlineCount}</span>}
         </button>
-        <button
-          className={`nav-item ${source === 'comments' ? 'active' : ''}`}
-          onClick={() => setSource('comments')}
-        >
-          <CommentIcon size={18} />
-          <span>{t('commentsSidebar')}</span>
-        </button>
+        {ymAuth && (
+          <button
+            className={`nav-item ${source === 'wave' ? 'active' : ''}`}
+            onClick={() => setSource('wave')}
+          >
+            <YandexMusicIcon size={18} />
+            <span>{t('myWave')}</span>
+          </button>
+        )}
       </div>
 
       {mixes.length > 0 && (
@@ -221,6 +232,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
             >
               <span className="artist-mini-av">
                 {a.artwork ? <img src={a.artwork} alt="" /> : <span>{a.name[0]}</span>}
+                <ProviderBadge provider={a.track.providerId} size={9} className="on-avatar" />
               </span>
               <span className="artist-mini-name">{a.name}</span>
             </button>
@@ -238,18 +250,11 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
           <span>SoundCloud</span>
         </button>
         <button
-          className={`nav-item ${source === 'info' && infoService === 'spotify' ? 'active' : ''}`}
-          onClick={() => openInfo('spotify')}
+          className={`nav-item ${source === 'info' && infoService === 'yandex' ? 'active' : ''}`}
+          onClick={() => openInfo('yandex')}
         >
-          <SpotifyIcon size={18} />
-          <span>Spotify</span>
-        </button>
-        <button
-          className={`nav-item ${source === 'info' && infoService === 'youtube' ? 'active' : ''}`}
-          onClick={() => openInfo('youtube')}
-        >
-          <YouTubeIcon size={18} />
-          <span>YouTube Music</span>
+          <YandexIcon size={18} />
+          <span>{t('yandexMusic')}</span>
         </button>
       </div>
 

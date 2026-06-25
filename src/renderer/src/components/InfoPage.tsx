@@ -1,5 +1,5 @@
 import { usePlayer } from '../store'
-import { SoundCloudIcon, SpotifyIcon, YouTubeIcon } from './Icons'
+import { SoundCloudIcon, YandexIcon } from './Icons'
 import type { InfoService } from '../store'
 
 const INFO: Record<
@@ -19,39 +19,32 @@ const INFO: Record<
     color: '#ff5500',
     Icon: SoundCloudIcon
   },
-  spotify: {
-    name: 'Spotify',
-    tagline: 'Music for everyone.',
+  yandex: {
+    name: 'Yandex Music',
+    tagline: 'Музыка без VPN в России.',
     blurb:
-      'Connect your Spotify account to bring your playlists and Premium playback into latency. Official Web Playback integration is on the roadmap.',
+      'Поиск и воспроизведение работают без VPN. Без входа треки играют 30-секундные превью; после входа своим аккаунтом Яндекс — целиком, в рамках вашей подписки Яндекс Плюс. Откройте «Поиск», чтобы начать.',
     bullets: [
-      'Your playlists and saved songs in one place',
-      'Premium-quality streaming via official SDK',
-      'Seamless hand-off across your devices'
+      'Доступ без VPN на территории России',
+      'Без входа — превью 30 сек, после входа — полные треки',
+      'Эквалайзер и живой визуализатор'
     ],
-    color: '#1ed760',
-    Icon: SpotifyIcon
-  },
-  youtube: {
-    name: 'YouTube Music',
-    tagline: 'The world is listening.',
-    blurb:
-      'Tap into the largest catalog of official tracks, live versions and rare uploads. Embedded playback support is planned for a future release.',
-    bullets: [
-      'Official releases, live sets and covers',
-      'Music videos alongside audio',
-      'Massive long-tail catalog'
-    ],
-    color: '#ff0033',
-    Icon: YouTubeIcon
+    color: '#ffcc00',
+    Icon: YandexIcon
   }
 }
 
 export function InfoPage(): JSX.Element {
   const service = usePlayer((s) => s.infoService)
   const setSource = usePlayer((s) => s.setSource)
+  const setSearchSource = usePlayer((s) => s.setSearchSource)
   const info = INFO[service]
   const { Icon } = info
+
+  function openExplore(): void {
+    setSearchSource(service === 'yandex' ? 'yandex' : 'soundcloud')
+    setSource('explore')
+  }
 
   return (
     <section className="tracklist info-page">
@@ -77,15 +70,9 @@ export function InfoPage(): JSX.Element {
         </ul>
 
         <div className="info-actions">
-          {service === 'soundcloud' ? (
-            <button className="btn-play" onClick={() => setSource('explore')}>
-              Open Explore
-            </button>
-          ) : (
-            <button className="btn-play soon" disabled>
-              Connect — coming soon
-            </button>
-          )}
+          <button className="btn-play" onClick={openExplore}>
+            Open Explore
+          </button>
         </div>
       </div>
     </section>

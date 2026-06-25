@@ -19,8 +19,9 @@ export type Source =
   | 'info'
   | 'artist'
   | 'mix'
+  | 'wave'
   | 'profile'
-export type InfoService = 'soundcloud' | 'spotify' | 'youtube'
+export type InfoService = 'soundcloud' | 'yandex'
 export type PlayedTrack = Track & { playedAt: number }
 export interface Mix {
   id: string
@@ -56,11 +57,12 @@ interface PlayerState {
   // playlists
   playlists: Playlist[]
 
-  // soundcloud search
-  scQuery: string
-  scResults: Track[]
-  scUsers: Artist[]
-  scLoading: boolean
+  // track search (provider chosen via searchSource)
+  searchSource: 'soundcloud' | 'yandex'
+  searchQuery: string
+  searchResults: Track[]
+  searchArtists: Artist[]
+  searchLoading: boolean
 
   // global search history (most-recent first)
   searchHistory: string[]
@@ -76,11 +78,21 @@ interface PlayerState {
   mixesReal: boolean
   mixSource: 'sc' | 'generated'
   selectedMix: Mix | null
+  myWave: Mix | null
+  /** true while the queue is the endless My Wave radio (keeps fetching more). */
+  waveActive: boolean
 
   // soundcloud account
   scAuth: Artist | null
   scConnecting: boolean
   scLikes: Track[]
+
+  // O(1) membership for "is this track liked" (app likes ∪ SoundCloud likes)
+  likedIds: Set<string>
+
+  // yandex music account
+  ymAuth: Artist | null
+  ymConnecting: boolean
 
   // local profile (overrides SoundCloud identity when set)
   profileName: string
@@ -162,8 +174,9 @@ interface PlayerState {
   removeFolder: (folder: string) => Promise<void>
   rescan: () => Promise<void>
 
-  // soundcloud actions
-  searchSoundCloud: (query: string) => Promise<void>
+  // track search actions
+  runSearch: (query: string) => Promise<void>
+  setSearchSource: (source: 'soundcloud' | 'yandex') => void
 
   // search history
   pushSearchHistory: (query: string) => void
@@ -182,6 +195,21 @@ interface PlayerState {
   loadScAuth: () => Promise<void>
   connectSoundCloud: () => Promise<void>
   disconnectSoundCloud: () => Promise<void>
+
+  // yandex music account
+  loadYmAuth: () => Promise<void>
+  connectYandex: () => Promise<void>
+  disconnectYandex: () => Promise<void>
+
+  // import liked tracks from a service into the local likes; returns count added
+  importYandexLikes: () => Promise<number>
+  importSoundcloudLikes: () => Promise<number>
+  // remove previously-imported likes of a provider from the global likes; returns count removed
+  removeImportedLikes: (provider: 'soundcloud' | 'yandex') => Promise<number>
+
+  // yandex personal radio ("My Wave")
+  loadMyWave: () => Promise<void>
+  playMyWave: (startIndex?: number) => void
 
   // profile
   setProfileName: (name: string) => void
@@ -372,6 +400,26 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  /**
+   * My Wave is endless: when the queue runs out while the wave is active, fetch a
+   * fresh batch from Yandex's radio, append the new tracks, and keep playing.
+   */
+  async function extendQueueWithWave(): Promise<boolean> {
+    try {
+      const wave = await window.api.ymMyWave()
+      const have = new Set(get().queue.map((t) => t.id))
+      const fresh = wave.tracks.filter((t) => !have.has(t.id))
+      if (fresh.length === 0) return false
+      const startIndex = get().queue.length
+      set({ queue: [...get().queue, ...fresh] })
+      loadIndex(startIndex, true)
+      persistQueue()
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function loadIndex(index: number, autoplay: boolean): void {
     const { queue, volume } = get()
     if (index < 0 || index >= queue.length) {
@@ -426,6 +474,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
     persistQueue()
   }
 
+  // O(1) liked lookup for track rows: rebuilt whenever likes/scLikes change so
+  // a 300+ liked list doesn't make every row scan the array on each state tick.
+  const syncLikedIds = (): void =>
+    set({ likedIds: new Set([...get().likes, ...get().scLikes].map((t) => t.id)) })
+
   return {
     source: 'home',
     selectedPlaylistId: null,
@@ -446,10 +499,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     playlists: [],
 
-    scQuery: '',
-    scResults: [],
-    scUsers: [],
-    scLoading: false,
+    searchSource: localStorage.getItem('lp.searchSource') === 'yandex' ? 'yandex' : 'soundcloud',
+    searchQuery: '',
+    searchResults: [],
+    searchArtists: [],
+    searchLoading: false,
 
     searchHistory: initialSearchHistory,
 
@@ -462,10 +516,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
     mixesReal: false,
     mixSource: localStorage.getItem('lp.mixSource') === 'generated' ? 'generated' : 'sc',
     selectedMix: null,
+    myWave: null,
+    waveActive: false,
 
     scAuth: null,
     scConnecting: false,
     scLikes: [],
+    likedIds: new Set<string>(),
+
+    ymAuth: null,
+    ymConnecting: false,
 
     profileName: localStorage.getItem('lp.profileName') || '',
     profileAvatar: localStorage.getItem('lp.profileAvatar'),
@@ -563,11 +623,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
     async loadLikes() {
       const likes = await window.api.getLikes()
       set({ likes })
+      syncLikedIds()
     },
 
     async toggleLike(track) {
       const likes = await window.api.toggleLike(track)
       set({ likes })
+      syncLikedIds()
     },
 
     async loadOffline() {
@@ -623,24 +685,41 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
-    async searchSoundCloud(query) {
-      set({ scQuery: query })
+    setSearchSource(source) {
+      set({ searchSource: source })
+      try {
+        localStorage.setItem('lp.searchSource', source)
+      } catch {
+        /* ignore */
+      }
+    },
+
+    async runSearch(query) {
+      set({ searchQuery: query })
       const q = query.trim()
       if (!q) {
-        set({ scResults: [], scUsers: [], scLoading: false })
+        set({ searchResults: [], searchArtists: [], searchLoading: false })
         return
       }
-      set({ scLoading: true, error: null })
+      const source = get().searchSource
+      set({ searchLoading: true, error: null })
       try {
-        const [results, users] = await Promise.all([
-          window.api.scSearch(q),
-          window.api.scSearchUsers(q).catch(() => [])
-        ])
-        set({ scResults: results, scUsers: users, scLoading: false })
+        const [results, artists] =
+          source === 'yandex'
+            ? await Promise.all([
+                window.api.ymSearch(q),
+                window.api.ymSearchArtists(q).catch(() => [])
+              ])
+            : await Promise.all([
+                window.api.scSearch(q),
+                window.api.scSearchUsers(q).catch(() => [])
+              ])
+        set({ searchResults: results, searchArtists: artists, searchLoading: false })
       } catch (e) {
+        const label = source === 'yandex' ? 'Yandex' : 'SoundCloud'
         set({
-          scLoading: false,
-          error: `SoundCloud: ${e instanceof Error ? e.message : String(e)}`
+          searchLoading: false,
+          error: `${label}: ${e instanceof Error ? e.message : String(e)}`
         })
       }
     },
@@ -693,6 +772,27 @@ export const usePlayer = create<PlayerState>((set, get) => {
         }
         return
       }
+      if (artist.provider === 'yandex') {
+        set({ artistLoading: true })
+        try {
+          const needProfile = !artist.avatar
+          const [tracks, profile] = await Promise.all([
+            window.api.ymArtistTracks(artist.id),
+            needProfile ? window.api.ymArtist(artist.id).catch(() => null) : Promise.resolve(null)
+          ])
+          set((s) => ({
+            artistTracks: tracks,
+            artistLoading: false,
+            selectedArtist: profile && s.selectedArtist?.id === artist.id ? profile : s.selectedArtist
+          }))
+        } catch (e) {
+          set({
+            artistLoading: false,
+            error: `Yandex: ${e instanceof Error ? e.message : String(e)}`
+          })
+        }
+        return
+      }
       // local: gather matching tracks across library, likes and playlists
       const { tracks, likes, playlists } = get()
       const pool = new Map<string, Track>()
@@ -703,6 +803,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     async openArtistFromTrack(track) {
+      if (track.providerId === 'yandex') {
+        if (track.artistId) {
+          await get().openArtist({
+            id: track.artistId,
+            name: track.artist || 'Artist',
+            provider: 'yandex'
+          })
+          return
+        }
+      }
       if (track.providerId === 'soundcloud') {
         if (track.artistId) {
           await get().openArtist({
@@ -1085,7 +1195,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
           set({ scAuth: me })
           window.api
             .scMyLikes()
-            .then((scLikes) => set({ scLikes }))
+            .then((scLikes) => {
+              set({ scLikes })
+              syncLikedIds()
+            })
             .catch(() => {})
         }
       } catch {
@@ -1101,7 +1214,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
         if (user) {
           window.api
             .scMyLikes()
-            .then((scLikes) => set({ scLikes }))
+            .then((scLikes) => {
+              set({ scLikes })
+              syncLikedIds()
+            })
             .catch(() => {})
           // clear today's cache so we rebuild from the real account
           try {
@@ -1123,12 +1239,113 @@ export const usePlayer = create<PlayerState>((set, get) => {
         /* ignore */
       }
       set({ scAuth: null, scLikes: [] })
+      syncLikedIds()
       try {
         localStorage.removeItem('lp.mixes.v2')
       } catch {
         /* ignore */
       }
       await get().generateMixes(true)
+    },
+
+    async loadYmAuth() {
+      try {
+        if (await window.api.ymIsAuthed()) {
+          const me = await window.api.ymMe()
+          set({ ymAuth: me })
+        }
+      } catch {
+        /* not signed in */
+      }
+    },
+
+    async connectYandex() {
+      set({ ymConnecting: true })
+      try {
+        const user = await window.api.ymLogin()
+        set({ ymAuth: user, ymConnecting: false })
+        if (user) get().loadMyWave()
+      } catch {
+        set({ ymConnecting: false })
+      }
+    },
+
+    async disconnectYandex() {
+      try {
+        await window.api.ymLogout()
+      } catch {
+        /* ignore */
+      }
+      set({ ymAuth: null, myWave: null })
+    },
+
+    async importYandexLikes() {
+      if (!get().ymAuth) return 0
+      const before = get().likes.length
+      try {
+        const tracks = await window.api.ymMyLikes()
+        if (!tracks.length) return 0
+        const likes = await window.api.addManyLikes(tracks)
+        set({ likes })
+        syncLikedIds()
+        return likes.length - before
+      } catch (e) {
+        set({ error: `Yandex: ${e instanceof Error ? e.message : String(e)}` })
+        return 0
+      }
+    },
+
+    async importSoundcloudLikes() {
+      if (!get().scAuth) return 0
+      const before = get().likes.length
+      try {
+        const tracks = await window.api.scMyLikes()
+        if (!tracks.length) return 0
+        const likes = await window.api.addManyLikes(tracks)
+        set({ likes })
+        syncLikedIds()
+        return likes.length - before
+      } catch (e) {
+        set({ error: `SoundCloud: ${e instanceof Error ? e.message : String(e)}` })
+        return 0
+      }
+    },
+
+    async removeImportedLikes(provider) {
+      const before = get().likes.length
+      try {
+        const likes = await window.api.removeProviderLikes(provider)
+        set({ likes })
+        syncLikedIds()
+        return before - likes.length
+      } catch {
+        return 0
+      }
+    },
+
+    async loadMyWave() {
+      if (!get().ymAuth) {
+        set({ myWave: null })
+        return
+      }
+      try {
+        const wave = await window.api.ymMyWave()
+        if (wave.tracks.length >= 4) {
+          set({
+            myWave: {
+              id: 'ym-wave',
+              title: get().lang === 'ru' ? 'Моя волна' : 'My Wave',
+              subtitle: get().lang === 'ru' ? 'Персональная волна Яндекса' : 'Yandex personal radio',
+              cover: wave.cover,
+              tracks: wave.tracks
+            }
+          })
+        } else {
+          set({ myWave: null })
+        }
+      } catch {
+        set({ myWave: null })
+      }
     },
 
     setProfileName(name) {
@@ -1215,7 +1432,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     playQueue(tracks, startIndex) {
       if (tracks.length === 0) return
-      set({ queue: tracks })
+      set({ queue: tracks, waveActive: false })
+      loadIndex(startIndex, true)
+      persistQueue()
+    },
+
+    playMyWave(startIndex = 0) {
+      const wave = get().myWave
+      if (!wave || wave.tracks.length === 0) return
+      set({ queue: wave.tracks, waveActive: true })
       loadIndex(startIndex, true)
       persistQueue()
     },
@@ -1247,7 +1472,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     next() {
-      const { currentIndex, queue, repeat, shuffle, autopilot } = get()
+      const { currentIndex, queue, repeat, shuffle, autopilot, waveActive } = get()
       if (queue.length === 0) return
       if (shuffle) {
         loadIndex(Math.floor(Math.random() * queue.length), true)
@@ -1257,6 +1482,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (nextIndex >= queue.length) {
         if (repeat === 'all') {
           loadIndex(0, true)
+        } else if (waveActive) {
+          // Endless My Wave: pull more radio tracks and continue.
+          set({ isPlaying: false })
+          void extendQueueWithWave().then((extended) => {
+            if (!extended) set({ isPlaying: false })
+          })
         } else if (autopilot) {
           // Keep the music going: append related tracks and play on. If nothing
           // comes back, fall back to stopping.

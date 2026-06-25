@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
-import { Waveform } from './Waveform'
-import { SoundCloudIcon, PlayIcon, PauseIcon, PrevIcon, NextIcon } from './Icons'
+import { RealSoundCloudIcon } from './Icons'
 
 interface ScComment {
   timeSec: number
@@ -26,13 +25,8 @@ export function CommentsPage(): JSX.Element {
   const queue = usePlayer((s) => s.queue)
   const currentIndex = usePlayer((s) => s.currentIndex)
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
-  const isPlaying = usePlayer((s) => s.isPlaying)
   const positionSec = usePlayer((s) => s.positionSec)
-  const durationSec = usePlayer((s) => s.durationSec)
   const seek = usePlayer((s) => s.seek)
-  const togglePlay = usePlayer((s) => s.togglePlay)
-  const next = usePlayer((s) => s.next)
-  const prev = usePlayer((s) => s.prev)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
 
   const isSc = track?.providerId === 'soundcloud' && !!track?.id.startsWith('sc:')
@@ -103,7 +97,7 @@ export function CommentsPage(): JSX.Element {
         </div>
         <div className="ph-info">
           <span className="ph-label">
-            <SoundCloudIcon size={14} />
+            <RealSoundCloudIcon size={14} />
             <span>SoundCloud</span>
           </span>
           <h1 className="ph-title comments-title">{track.title}</h1>
@@ -140,26 +134,6 @@ export function CommentsPage(): JSX.Element {
           )}
         </div>
 
-        <div className="cm-wave-wrap">
-          <Waveform
-            seed={track.id}
-            positionSec={positionSec}
-            durationSec={durationSec}
-            onSeek={seek}
-            bars={120}
-            reactivity={0.7}
-          />
-        </div>
-
-        <div className="cm-transport">
-          <span className="pb-time">{formatTime(positionSec)}</span>
-          <button className="icon-btn" title="Previous" onClick={prev}><PrevIcon size={18} /></button>
-          <button className="play-btn" title="Play/Pause" onClick={togglePlay}>
-            {isPlaying ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
-          </button>
-          <button className="icon-btn" title="Next" onClick={next}><NextIcon size={18} /></button>
-          <span className="pb-time">{formatTime(durationSec)}</span>
-        </div>
       </div>
 
       {/* Comment list */}

@@ -15,38 +15,16 @@ interface Lyrics {
   plain: string | null
 }
 
-/**
- * Genius (and LRCLIB plain) have no timestamps. Estimate them by spreading lines
- * across the track duration, weighting each line by its length so long lines get
- * more time. Rough, but lets plain lyrics scroll karaoke-style.
- */
-function estimateSync(
-  plain: string,
-  durationSec: number
-): { timeSec: number; text: string }[] {
+/** Tidy plain (Genius / LRCLIB-plain) lyrics: trim and collapse blank runs. */
+function cleanPlain(plain: string): string[] {
   const lines = plain.split('\n').map((l) => l.trim())
-  // collapse 3+ blank lines, keep single blanks as spacers
   const cleaned: string[] = []
   for (const l of lines) {
     if (l === '' && cleaned[cleaned.length - 1] === '') continue
     cleaned.push(l)
   }
   while (cleaned.length && cleaned[cleaned.length - 1] === '') cleaned.pop()
-  if (cleaned.length === 0) return []
-
-  const dur = durationSec && durationSec > 5 ? durationSec : cleaned.length * 3
-  const intro = Math.min(dur * 0.06, 6) // small lead-in before first line
-  const span = Math.max(dur - intro - dur * 0.04, cleaned.length)
-  const weights = cleaned.map((l) => (l === '' ? 0.4 : Math.max(1, l.length / 16)))
-  const total = weights.reduce((a, b) => a + b, 0)
-
-  const out: { timeSec: number; text: string }[] = []
-  let acc = 0
-  for (let i = 0; i < cleaned.length; i++) {
-    out.push({ timeSec: intro + (acc / total) * span, text: cleaned[i] })
-    acc += weights[i]
-  }
-  return out
+  return cleaned
 }
 
 export function LyricsView(): JSX.Element {
@@ -61,6 +39,7 @@ export function LyricsView(): JSX.Element {
   const seek = usePlayer((s) => s.seek)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const openArtist = usePlayer((s) => s.openArtist)
   const customBg = usePlayer((s) => s.customBg)
   const bgPosX = usePlayer((s) => s.bgPosX)
   const bgPosY = usePlayer((s) => s.bgPosY)
@@ -150,15 +129,18 @@ export function LyricsView(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackKey, reloadKey])
 
-  // unified karaoke lines: real synced, or estimated from plain text
+  // Karaoke only for REAL synced lyrics (LRCLIB-synced or a manual sync). Genius
+  // and other plain lyrics have no timestamps, so we no longer fake the timing —
+  // they're shown as static text (the user can sync them by hand if they want).
   const karyLines = useMemo(() => {
     if (!lyrics) return []
     if (lyrics.synced && lyrics.lines.length) return lyrics.lines
-    if (lyrics.plain) return estimateSync(lyrics.plain, durationSec)
     return []
-    // re-estimate when duration becomes known
-  }, [lyrics, durationSec])
-  const approximate = !!lyrics && !lyrics.synced && karyLines.length > 0
+  }, [lyrics])
+  const plainLines = useMemo(() => {
+    if (!lyrics || lyrics.synced) return []
+    return lyrics.plain ? cleanPlain(lyrics.plain) : []
+  }, [lyrics])
 
   const activeIndex = useMemo(() => {
     const lines = karyLines
@@ -244,9 +226,29 @@ export function LyricsView(): JSX.Element {
           </div>
           <div className="fsplayer-title">{track?.title ?? tr('nothingPlaying')}</div>
           {track && (
-            <button className="fsplayer-artist artist-link" onClick={() => openArtistFromTrack(track)}>
-              {track.artist || 'Unknown artist'}
-            </button>
+            <div className="fsplayer-artist">
+              {track.artists && track.artists.length > 0 ? (
+                track.artists.map((a, idx) => (
+                  <span key={`${a.id ?? a.name}-${idx}`}>
+                    {idx > 0 && <span className="artist-sep">, </span>}
+                    <button
+                      className="artist-link"
+                      onClick={() =>
+                        a.id
+                          ? openArtist({ id: a.id, name: a.name, provider: track.providerId })
+                          : openArtistFromTrack(track)
+                      }
+                    >
+                      {a.name}
+                    </button>
+                  </span>
+                ))
+              ) : (
+                <button className="artist-link" onClick={() => openArtistFromTrack(track)}>
+                  {track.artist || 'Unknown artist'}
+                </button>
+              )}
+            </div>
           )}
           {isManual && <span className="sync-badge side">{tr('manualSynced')}</span>}
         </div>
@@ -276,11 +278,20 @@ export function LyricsView(): JSX.Element {
                   </p>
                 ))}
               </div>
-              {approximate && (
-                <div className="kary-note" title="Estimated timing — no synced lyrics available">
-                  ~ {tr('approxSync')} · {lyrics?.source}
-                </div>
-              )}
+            </div>
+          )}
+          {status === 'ok' && karyLines.length === 0 && plainLines.length > 0 && (
+            <div className="kary-viewport static">
+              <div className="kary-static">
+                {plainLines.map((line, i) => (
+                  <p key={i} className="kary-line static">
+                    {line || ' '}
+                  </p>
+                ))}
+              </div>
+              <div className="kary-note" title={tr('plainLyricsNote')}>
+                {tr('plainLyricsNote')} · {lyrics?.source}
+              </div>
             </div>
           )}
         </div>

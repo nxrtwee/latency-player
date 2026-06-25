@@ -3,6 +3,7 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import * as library from './library'
 import * as soundcloud from './soundcloud'
+import * as yandex from './yandex'
 import * as likes from './likes'
 import * as playlists from './playlists'
 import * as lyrics from './lyrics'
@@ -119,8 +120,24 @@ function registerIpc(): void {
     soundcloud.resolveStream(transcodingUrl)
   )
 
+  ipcMain.handle('ym:search', (_e, query: string) => yandex.search(query))
+  ipcMain.handle('ym:searchArtists', (_e, query: string) => yandex.searchArtists(query))
+  ipcMain.handle('ym:artist', (_e, artistId: string) => yandex.getArtist(artistId))
+  ipcMain.handle('ym:artistTracks', (_e, artistId: string) => yandex.getArtistTracks(artistId))
+  ipcMain.handle('ym:login', () => yandex.login())
+  ipcMain.handle('ym:logout', () => yandex.logout())
+  ipcMain.handle('ym:me', () => yandex.getMe())
+  ipcMain.handle('ym:isAuthed', () => yandex.isAuthed())
+  ipcMain.handle('ym:resolveStream', (_e, trackId: string) => yandex.resolveStream(trackId))
+  ipcMain.handle('ym:myLikes', () => yandex.getMyLikes())
+  ipcMain.handle('ym:myWave', () => yandex.getMyWave())
+
   ipcMain.handle('likes:get', () => likes.getLikes())
   ipcMain.handle('likes:toggle', (_e, track: Track) => likes.toggle(track))
+  ipcMain.handle('likes:addMany', (_e, tracks: Track[]) => likes.addMany(tracks))
+  ipcMain.handle('likes:removeProvider', (_e, providerId: Track['providerId']) =>
+    likes.removeByProvider(providerId)
+  )
 
   ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
   ipcMain.on('window:toggleMaximize', (e) => {
@@ -206,6 +223,7 @@ app.whenReady().then(async () => {
   registerIpc()
   await library.loadState()
   await soundcloud.init()
+  await yandex.init()
   await likes.init()
   await playlists.init()
   await discord.init()

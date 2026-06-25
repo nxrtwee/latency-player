@@ -3,7 +3,7 @@ import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Toggle } from './Toggle'
 import { ColorPicker } from './ColorPicker'
-import { CloseIcon, SoundCloudIcon } from './Icons'
+import { CloseIcon, RealSoundCloudIcon, RealYandexMusicIcon } from './Icons'
 
 const THEMES = [
   { id: 'green', label: 'Green', color: '#1ed760' },
@@ -23,8 +23,44 @@ export function Settings(): JSX.Element {
   const scConnecting = usePlayer((s) => s.scConnecting)
   const connectSoundCloud = usePlayer((s) => s.connectSoundCloud)
   const disconnectSoundCloud = usePlayer((s) => s.disconnectSoundCloud)
+  const ymAuth = usePlayer((s) => s.ymAuth)
+  const ymConnecting = usePlayer((s) => s.ymConnecting)
+  const connectYandex = usePlayer((s) => s.connectYandex)
+  const disconnectYandex = usePlayer((s) => s.disconnectYandex)
+  const importYandexLikes = usePlayer((s) => s.importYandexLikes)
+  const importSoundcloudLikes = usePlayer((s) => s.importSoundcloudLikes)
+  const removeImportedLikes = usePlayer((s) => s.removeImportedLikes)
   const mixSource = usePlayer((s) => s.mixSource)
   const setMixSource = usePlayer((s) => s.setMixSource)
+
+  // Import / remove-imported button state: 'idle' | 'busy' | a result message.
+  const [scImport, setScImport] = useState<'idle' | 'busy' | string>('idle')
+  const [ymImport, setYmImport] = useState<'idle' | 'busy' | string>('idle')
+  const [scRemove, setScRemove] = useState<'idle' | 'busy' | string>('idle')
+  const [ymRemove, setYmRemove] = useState<'idle' | 'busy' | string>('idle')
+  const t2 = useT()
+  async function runImport(
+    fn: () => Promise<number>,
+    setState: (v: 'idle' | 'busy' | string) => void
+  ): Promise<void> {
+    setState('busy')
+    const n = await fn()
+    setState(n > 0 ? `${t2('imported')} ${n}` : t2('importedNone'))
+    setTimeout(() => setState('idle'), 4000)
+  }
+  async function runRemove(
+    provider: 'soundcloud' | 'yandex',
+    setState: (v: 'idle' | 'busy' | string) => void
+  ): Promise<void> {
+    setState('busy')
+    const n = await removeImportedLikes(provider)
+    setState(n > 0 ? `${t2('removed')} ${n}` : t2('removedNone'))
+    setTimeout(() => setState('idle'), 4000)
+  }
+  const importLabel = (s: 'idle' | 'busy' | string): string =>
+    s === 'busy' ? t2('importing') : s === 'idle' ? t2('importLikes') : s
+  const removeLabel = (s: 'idle' | 'busy' | string): string =>
+    s === 'busy' ? t2('removing') : s === 'idle' ? t2('removeImported') : s
 
   const theme = usePlayer((s) => s.theme)
   const setTheme = usePlayer((s) => s.setTheme)
@@ -265,6 +301,22 @@ export function Settings(): JSX.Element {
                     Generated
                   </button>
                 </div>
+                <div className="set-btn-row" style={{ marginTop: 8 }}>
+                  <button
+                    className="sync-btn ghost"
+                    disabled={scImport === 'busy'}
+                    onClick={() => runImport(importSoundcloudLikes, setScImport)}
+                  >
+                    {importLabel(scImport)}
+                  </button>
+                  <button
+                    className="sync-btn ghost"
+                    disabled={scRemove === 'busy'}
+                    onClick={() => runRemove('soundcloud', setScRemove)}
+                  >
+                    {removeLabel(scRemove)}
+                  </button>
+                </div>
               </>
             ) : (
               <button
@@ -272,10 +324,54 @@ export function Settings(): JSX.Element {
                 disabled={scConnecting}
                 onClick={() => connectSoundCloud()}
               >
-                <SoundCloudIcon size={18} />
+                <RealSoundCloudIcon size={18} />
                 <span>{scConnecting ? t('connecting') : t('signInSc')}</span>
               </button>
             )}
+          </section>
+
+          {/* Yandex Music */}
+          <section className="set-block">
+            <div className="set-label">{t('ymAccount')}</div>
+            {ymAuth ? (
+              <div className="set-account">
+                <span className="sc-chip ym-chip">
+                  {ymAuth.avatar ? (
+                    <img src={ymAuth.avatar} alt="" />
+                  ) : (
+                    <RealYandexMusicIcon size={20} className="chip-logo" />
+                  )}
+                  <span className="ym-chip-name">{ymAuth.name}</span>
+                </span>
+                <button className="sync-btn ghost" onClick={() => disconnectYandex()}>
+                  {t('signOut')}
+                </button>
+                <button
+                  className="sync-btn ghost"
+                  disabled={ymImport === 'busy'}
+                  onClick={() => runImport(importYandexLikes, setYmImport)}
+                >
+                  {importLabel(ymImport)}
+                </button>
+                <button
+                  className="sync-btn ghost"
+                  disabled={ymRemove === 'busy'}
+                  onClick={() => runRemove('yandex', setYmRemove)}
+                >
+                  {removeLabel(ymRemove)}
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn-play sc-signin"
+                disabled={ymConnecting}
+                onClick={() => connectYandex()}
+              >
+                <RealYandexMusicIcon size={18} />
+                <span>{ymConnecting ? t('connecting') : t('signInYm')}</span>
+              </button>
+            )}
+            <div className="set-hint">{t('ymPlusHint')}</div>
           </section>
 
           {/* Storage */}

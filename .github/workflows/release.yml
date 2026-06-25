@@ -86,11 +86,11 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
           mkdir -p ../../out-apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../../out-apk/Latency.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../../out-apk/Latency-0.1.0.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: out-apk/Latency.apk
+          path: out-apk/Latency-0.1.0.apk
           if-no-files-found: error
 
   # -------------------------------------------------------------------- iOS ---
@@ -141,14 +141,14 @@ jobs:
             clean build
           APP="build/Build/Products/Release-iphoneos/App.app"
           [ -d "$APP" ] || { echo "ERROR: $APP not found"; exit 1; }
-          rm -rf Payload Latency-unsigned.ipa
+          rm -rf Payload Latency-0.1.0-unsigned.ipa
           mkdir Payload
           cp -R "$APP" Payload/
-          zip -qry Latency-unsigned.ipa Payload
+          zip -qry Latency-0.1.0-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: mobile/ios/App/Latency-unsigned.ipa
+          path: mobile/ios/App/Latency-0.1.0-unsigned.ipa
           if-no-files-found: error
 
   # ---------------------------------------------------------------- Publish ---
@@ -165,15 +165,20 @@ jobs:
         with:
           files: |
             dist/desktop-win/*.exe
-            dist/android-apk/Latency.apk
-            dist/ios-ipa/Latency-unsigned.ipa
+            dist/android-apk/Latency-0.1.0.apk
+            dist/ios-ipa/Latency-0.1.0-unsigned.ipa
           body: |
-            ## Latency — кроссплатформенный медиаплеер
+            ## Latency — медиаплеер
+
+            ### ⚠️ Это обновление только для ПК (Windows) — v0.3.0
+            Десктоп получает интеграцию **Яндекс Музыки** (доступ без VPN в России),
+            **«Мою волну»**, импорт/удаление лайков, настоящие логотипы источников и
+            другое. **Мобильные версии (Android/iOS) остаются на 0.1.0 без изменений.**
 
             **Скачать:**
-            - **Windows** — `Latency-*-x64.exe` (установщик) или `*-portable.exe`
-            - **Android** — `Latency.apk` (включите «установка из неизвестных источников»)
-            - **iOS** — `Latency-unsigned.ipa` (подпишите своим Apple ID через AltStore/Sideloadly)
+            - **Windows (v0.3.0)** — `Latency-0.3.0-x64.exe` (установщик) или `Latency-0.3.0-portable.exe`
+            - **Android (v0.1.0)** — `Latency-0.1.0.apk` (включите «установка из неизвестных источников»)
+            - **iOS (v0.1.0)** — `Latency-0.1.0-unsigned.ipa` (подпишите своим Apple ID через AltStore/Sideloadly)
 
             > ⚠️ Плеер разрабатывался исключительно для десктопа. Мобильные порты
             > (особенно Android) сделаны «для галочки» — они рабочие, но местами

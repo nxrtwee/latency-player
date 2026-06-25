@@ -12,6 +12,7 @@ import { ExplorePage } from './components/ExplorePage'
 import { ActivityPage } from './components/ActivityPage'
 import { ArtistPage } from './components/ArtistPage'
 import { MixPage } from './components/MixPage'
+import { WavePage } from './components/WavePage'
 import { LyricsView } from './components/LyricsView'
 import { Settings } from './components/Settings'
 import { CustomScroll } from './components/CustomScroll'
@@ -41,6 +42,8 @@ export function App(): JSX.Element {
   const restoreQueue = usePlayer((s) => s.restoreQueue)
   const generateMixes = usePlayer((s) => s.generateMixes)
   const loadScAuth = usePlayer((s) => s.loadScAuth)
+  const loadYmAuth = usePlayer((s) => s.loadYmAuth)
+  const loadMyWave = usePlayer((s) => s.loadMyWave)
   const error = usePlayer((s) => s.error)
   const source = usePlayer((s) => s.source)
   const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
@@ -101,6 +104,7 @@ export function App(): JSX.Element {
     loadOffline().then(() => {
       if (resumeSession) restoreQueue()
     })
+    loadYmAuth().then(() => loadMyWave())
     Promise.all([loadLikes(), loadScAuth()]).then(() => generateMixes())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -150,6 +154,8 @@ export function App(): JSX.Element {
               <ArtistPage />
             ) : source === 'mix' ? (
               <MixPage />
+            ) : source === 'wave' ? (
+              <WavePage />
             ) : source === 'info' ? (
               <InfoPage />
             ) : source === 'profile' ? (

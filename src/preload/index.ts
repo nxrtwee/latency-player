@@ -27,8 +27,28 @@ const api = {
   scResolveStream: (transcodingUrl: string): Promise<string> =>
     ipcRenderer.invoke('sc:resolveStream', transcodingUrl),
 
+  ymSearch: (query: string): Promise<Track[]> => ipcRenderer.invoke('ym:search', query),
+  ymSearchArtists: (query: string): Promise<Artist[]> =>
+    ipcRenderer.invoke('ym:searchArtists', query),
+  ymArtist: (artistId: string): Promise<Artist | null> =>
+    ipcRenderer.invoke('ym:artist', artistId),
+  ymArtistTracks: (artistId: string): Promise<Track[]> =>
+    ipcRenderer.invoke('ym:artistTracks', artistId),
+  ymLogin: (): Promise<Artist | null> => ipcRenderer.invoke('ym:login'),
+  ymLogout: (): Promise<void> => ipcRenderer.invoke('ym:logout'),
+  ymMe: (): Promise<Artist | null> => ipcRenderer.invoke('ym:me'),
+  ymIsAuthed: (): Promise<boolean> => ipcRenderer.invoke('ym:isAuthed'),
+  ymResolveStream: (trackId: string): Promise<string> =>
+    ipcRenderer.invoke('ym:resolveStream', trackId),
+  ymMyLikes: (): Promise<Track[]> => ipcRenderer.invoke('ym:myLikes'),
+  ymMyWave: (): Promise<{ cover?: string; tracks: Track[] }> => ipcRenderer.invoke('ym:myWave'),
+
   getLikes: (): Promise<Track[]> => ipcRenderer.invoke('likes:get'),
   toggleLike: (track: Track): Promise<Track[]> => ipcRenderer.invoke('likes:toggle', track),
+  addManyLikes: (tracks: Track[]): Promise<Track[]> =>
+    ipcRenderer.invoke('likes:addMany', tracks),
+  removeProviderLikes: (providerId: Track['providerId']): Promise<Track[]> =>
+    ipcRenderer.invoke('likes:removeProvider', providerId),
 
   // window controls (frameless)
   windowMinimize: (): void => ipcRenderer.send('window:minimize'),

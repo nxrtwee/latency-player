@@ -45,6 +45,7 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
   const reorderQueue = usePlayer((s) => s.reorderQueue)
   const removeFromQueue = usePlayer((s) => s.removeFromQueue)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const openArtist = usePlayer((s) => s.openArtist)
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
   const eqOpen = usePlayer((s) => s.eqOpen)
@@ -109,9 +110,29 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
             >
               {track.title}
             </div>
-            <button className="np-artist artist-link" onClick={() => openArtistFromTrack(track)}>
-              {track.artist || 'Unknown artist'}
-            </button>
+            <div className="np-artist">
+              {track.artists && track.artists.length > 0 ? (
+                track.artists.map((a, idx) => (
+                  <span key={`${a.id ?? a.name}-${idx}`}>
+                    {idx > 0 && <span className="artist-sep">, </span>}
+                    <button
+                      className="artist-link"
+                      onClick={() =>
+                        a.id
+                          ? openArtist({ id: a.id, name: a.name, provider: track.providerId })
+                          : openArtistFromTrack(track)
+                      }
+                    >
+                      {a.name}
+                    </button>
+                  </span>
+                ))
+              ) : (
+                <button className="artist-link" onClick={() => openArtistFromTrack(track)}>
+                  {track.artist || 'Unknown artist'}
+                </button>
+              )}
+            </div>
 
             <Waveform
               className="np-wave"

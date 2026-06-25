@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
-import { HeartIcon, ClockIcon, FolderIcon, CompassIcon, RefreshIcon, SoundCloudIcon } from './Icons'
+import {
+  HeartIcon,
+  ClockIcon,
+  FolderIcon,
+  CompassIcon,
+  RefreshIcon,
+  SoundCloudIcon,
+  YandexMusicIcon
+} from './Icons'
 import type { Track } from '@shared/types'
+import type { Source } from '../store'
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -39,6 +48,7 @@ export function HomePage(): JSX.Element {
   const openMix = usePlayer((s) => s.openMix)
   const generateMixes = usePlayer((s) => s.generateMixes)
   const scAuth = usePlayer((s) => s.scAuth)
+  const ymAuth = usePlayer((s) => s.ymAuth)
   const scConnecting = usePlayer((s) => s.scConnecting)
   const connectSoundCloud = usePlayer((s) => s.connectSoundCloud)
   const disconnectSoundCloud = usePlayer((s) => s.disconnectSoundCloud)
@@ -53,7 +63,7 @@ export function HomePage(): JSX.Element {
 
   const jumpBack = recentlyPlayed.slice(0, 8)
 
-  const quick = [
+  const quick: { key: Source; label: string; sub: string; Icon: typeof HeartIcon }[] = [
     {
       key: 'likes',
       label: t('yourLikes'),
@@ -66,9 +76,12 @@ export function HomePage(): JSX.Element {
       sub: `${recentlyPlayed.length} ${t('tracks')}`,
       Icon: ClockIcon
     },
-    { key: 'local', label: t('localFiles'), sub: `${tracks.length} ${t('tracks')}`, Icon: FolderIcon },
+    // When signed in to Yandex, surface My Wave here instead of Local Files.
+    ymAuth
+      ? { key: 'wave', label: t('myWave'), sub: t('yandexMusic'), Icon: YandexMusicIcon }
+      : { key: 'local', label: t('localFiles'), sub: `${tracks.length} ${t('tracks')}`, Icon: FolderIcon },
     { key: 'explore', label: t('explore'), sub: 'SoundCloud', Icon: CompassIcon }
-  ] as const
+  ]
 
   return (
     <section className="tracklist home">

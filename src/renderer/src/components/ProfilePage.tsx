@@ -3,7 +3,15 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTotal } from '../util'
-import { ActivityIcon, ClockIcon, EditIcon, HeartIcon, QueueIcon, SoundCloudIcon } from './Icons'
+import {
+  ActivityIcon,
+  ClockIcon,
+  EditIcon,
+  HeartIcon,
+  QueueIcon,
+  RealSoundCloudIcon,
+  RealYandexMusicIcon
+} from './Icons'
 
 /** Compact number: 12300 → 12.3K, 4_500_000 → 4.5M. */
 function compact(n: number): string {
@@ -68,6 +76,10 @@ export function ProfilePage(): JSX.Element {
   const scConnecting = usePlayer((s) => s.scConnecting)
   const connectSoundCloud = usePlayer((s) => s.connectSoundCloud)
   const disconnectSoundCloud = usePlayer((s) => s.disconnectSoundCloud)
+  const ymAuth = usePlayer((s) => s.ymAuth)
+  const ymConnecting = usePlayer((s) => s.ymConnecting)
+  const connectYandex = usePlayer((s) => s.connectYandex)
+  const disconnectYandex = usePlayer((s) => s.disconnectYandex)
   const profileName = usePlayer((s) => s.profileName)
   const profileAvatar = usePlayer((s) => s.profileAvatar)
   const setProfileName = usePlayer((s) => s.setProfileName)
@@ -263,7 +275,7 @@ export function ProfilePage(): JSX.Element {
         <h2 className="home-h2">{t('account')}</h2>
         <div className="profile-account">
           <span className="pa-icon">
-            <SoundCloudIcon size={24} />
+            <RealSoundCloudIcon size={28} />
           </span>
           <div className="pa-text">
             <div className="pa-title">{scAuth ? t('connectedAs') : 'SoundCloud'}</div>
@@ -276,6 +288,24 @@ export function ProfilePage(): JSX.Element {
           ) : (
             <button className="sync-btn" onClick={connectSoundCloud} disabled={scConnecting}>
               {scConnecting ? t('connecting') : t('signInSc')}
+            </button>
+          )}
+        </div>
+        <div className="profile-account">
+          <span className="pa-icon">
+            <RealYandexMusicIcon size={28} />
+          </span>
+          <div className="pa-text">
+            <div className="pa-title">{ymAuth ? t('connectedAs') : t('yandexMusic')}</div>
+            <div className="pa-sub">{ymAuth ? ymAuth.name : t('ymPlusHint')}</div>
+          </div>
+          {ymAuth ? (
+            <button className="sync-btn ghost" onClick={disconnectYandex}>
+              {t('signOut')}
+            </button>
+          ) : (
+            <button className="sync-btn" onClick={connectYandex} disabled={ymConnecting}>
+              {ymConnecting ? t('connecting') : t('signInYm')}
             </button>
           )}
         </div>

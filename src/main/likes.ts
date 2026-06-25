@@ -36,3 +36,24 @@ export async function toggle(track: Track): Promise<Track[]> {
   await persist()
   return likes
 }
+
+/** Bulk-add tracks not already liked (used to import likes from a service). */
+export async function addMany(tracks: Track[]): Promise<Track[]> {
+  const have = new Set(likes.map((t) => t.id))
+  const fresh = tracks.filter((t) => t.id && !have.has(t.id))
+  if (fresh.length) {
+    likes = [...fresh, ...likes]
+    await persist()
+  }
+  return likes
+}
+
+/** Drop all liked tracks from a given provider (undo an import). */
+export async function removeByProvider(providerId: Track['providerId']): Promise<Track[]> {
+  const next = likes.filter((t) => t.providerId !== providerId)
+  if (next.length !== likes.length) {
+    likes = next
+    await persist()
+  }
+  return likes
+}

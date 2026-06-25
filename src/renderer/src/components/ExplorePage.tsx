@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
-import { SearchIcon, SoundCloudIcon, ClockIcon, PlayIcon } from './Icons'
+import { SearchIcon, SoundCloudIcon, YandexIcon, ClockIcon, PlayIcon } from './Icons'
 import { TrackRow } from './TrackRow'
+import { ProviderBadge } from './ProviderBadge'
 
 const GENRES = [
   'lofi',
@@ -47,28 +48,36 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 export function ExplorePage(): JSX.Element {
-  const scResults = usePlayer((s) => s.scResults)
-  const scUsers = usePlayer((s) => s.scUsers)
-  const scQuery = usePlayer((s) => s.scQuery)
-  const scLoading = usePlayer((s) => s.scLoading)
-  const searchSoundCloud = usePlayer((s) => s.searchSoundCloud)
+  const searchResults = usePlayer((s) => s.searchResults)
+  const searchArtists = usePlayer((s) => s.searchArtists)
+  const searchQuery = usePlayer((s) => s.searchQuery)
+  const searchLoading = usePlayer((s) => s.searchLoading)
+  const searchSource = usePlayer((s) => s.searchSource)
+  const setSearchSource = usePlayer((s) => s.setSearchSource)
+  const runSearch = usePlayer((s) => s.runSearch)
   const openArtist = usePlayer((s) => s.openArtist)
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
 
   const [mode, setMode] = useState<Mode>('tracks')
 
-  // ----- Tracks mode (SoundCloud keyword search) -----
-  const [input, setInput] = useState(scQuery)
+  // ----- Tracks mode (keyword search on the selected source) -----
+  const [input, setInput] = useState(searchQuery)
 
-  function runSearch(q: string): void {
+  function submitSearch(q: string): void {
     setInput(q)
-    searchSoundCloud(q)
+    runSearch(q)
+  }
+  function chooseSource(source: 'soundcloud' | 'yandex'): void {
+    if (source === searchSource) return
+    setSearchSource(source)
+    // Re-run the keyword search on the new source; lyric mode re-resolves via effect.
+    if (mode === 'tracks' && input.trim()) runSearch(input)
   }
   function play(index: number): void {
-    playQueue(scResults, index)
+    playQueue(searchResults, index)
   }
-  const hasResults = scResults.length > 0
+  const hasResults = searchResults.length > 0
 
   // ----- Lyrics mode (find a song by a remembered line) -----
   // Pipeline: Genius matches the line -> we take each song's title+artist and
@@ -87,11 +96,12 @@ export function ExplorePage(): JSX.Element {
     if (mode === 'lyrics') lyricRef.current?.focus()
   }, [mode])
 
-  /** Resolve one Genius hit to a SoundCloud track (best title match), or null. */
+  /** Resolve one Genius hit to a track on the selected source (best title match). */
   async function resolveHit(hit: LyricHit): Promise<ResolvedLyricHit | null> {
     try {
       const q = `${hit.artist} ${hit.title}`.trim()
-      const results = await window.api.scSearch(q)
+      const results =
+        searchSource === 'yandex' ? await window.api.ymSearch(q) : await window.api.scSearch(q)
       if (!results.length) return null
       const titleLc = hit.title.toLowerCase()
       const target =
@@ -138,7 +148,7 @@ export function ExplorePage(): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [debouncedLyric, mode])
+  }, [debouncedLyric, mode, searchSource])
 
   function playResolved(index: number): void {
     playQueue(resolved.map((r) => r.track), index)
@@ -150,8 +160,8 @@ export function ExplorePage(): JSX.Element {
 
       <div className="ex-hero">
         <div className="ex-badge">
-          <SoundCloudIcon size={16} />
-          <span>Powered by SoundCloud</span>
+          {searchSource === 'yandex' ? <YandexIcon size={16} /> : <SoundCloudIcon size={16} />}
+          <span>Powered by {searchSource === 'yandex' ? 'Yandex Music' : 'SoundCloud'}</span>
         </div>
         <h1 className="ex-title">{t('explore')}</h1>
         <p className="ex-sub">{mode === 'lyrics' ? t('lyricSearchHint') : t('exploreSub')}</p>
@@ -171,6 +181,23 @@ export function ExplorePage(): JSX.Element {
           </button>
         </div>
 
+        <div className="ex-source">
+          <button
+            className={`ex-source-btn ${searchSource === 'soundcloud' ? 'active' : ''}`}
+            onClick={() => chooseSource('soundcloud')}
+          >
+            <SoundCloudIcon size={15} />
+            SoundCloud
+          </button>
+          <button
+            className={`ex-source-btn ${searchSource === 'yandex' ? 'active' : ''}`}
+            onClick={() => chooseSource('yandex')}
+          >
+            <YandexIcon size={15} />
+            {t('yandexMusic')}
+          </button>
+        </div>
+
         {mode === 'tracks' ? (
           <>
             <div className="ex-search">
@@ -181,12 +208,12 @@ export function ExplorePage(): JSX.Element {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') runSearch(input)
+                  if (e.key === 'Enter') submitSearch(input)
                 }}
               />
               <button
                 className="ex-search-btn"
-                onClick={() => runSearch(input)}
+                onClick={() => submitSearch(input)}
                 disabled={!input.trim()}
               >
                 {t('search')}
@@ -197,8 +224,8 @@ export function ExplorePage(): JSX.Element {
               {GENRES.map((g) => (
                 <button
                   key={g}
-                  className={`ex-chip ${scQuery === g ? 'active' : ''}`}
-                  onClick={() => runSearch(g)}
+                  className={`ex-chip ${searchQuery === g ? 'active' : ''}`}
+                  onClick={() => submitSearch(g)}
                 >
                   {g}
                 </button>
@@ -222,17 +249,17 @@ export function ExplorePage(): JSX.Element {
       {/* ---------- Tracks mode results ---------- */}
       {mode === 'tracks' && (
         <>
-          {scLoading && <div className="empty">{t('searching')}</div>}
+          {searchLoading && <div className="empty">{t('searching')}</div>}
 
-          {!scLoading && scQuery && !hasResults && scUsers.length === 0 && (
-            <div className="empty">Nothing found for “{scQuery}”.</div>
+          {!searchLoading && searchQuery && !hasResults && searchArtists.length === 0 && (
+            <div className="empty">Nothing found for “{searchQuery}”.</div>
           )}
 
-          {!scLoading && scUsers.length > 0 && (
+          {!searchLoading && searchArtists.length > 0 && (
             <div className="ex-profiles">
               <div className="ex-results-head">{t('profiles')}</div>
               <div className="profile-row">
-                {scUsers.map((u) => (
+                {searchArtists.map((u) => (
                   <button
                     key={u.id}
                     className="profile-chip"
@@ -241,6 +268,7 @@ export function ExplorePage(): JSX.Element {
                   >
                     <div className="profile-avatar">
                       {u.avatar ? <img src={u.avatar} alt="" /> : <span>{u.name[0] ?? '?'}</span>}
+                      <ProviderBadge provider={u.provider} size={12} className="on-avatar" />
                     </div>
                     <span className="profile-name">{u.name}</span>
                     <span className="profile-sub">
@@ -255,7 +283,7 @@ export function ExplorePage(): JSX.Element {
           {hasResults && (
             <>
               <div className="ex-results-head">
-                Tracks for <strong>{scQuery}</strong> · {scResults.length}
+                Tracks for <strong>{searchQuery}</strong> · {searchResults.length}
               </div>
               <div className="tl-head">
                 <span className="c-index">#</span>
@@ -268,7 +296,7 @@ export function ExplorePage(): JSX.Element {
                 <span className="c-more" />
               </div>
               <div className="rows">
-                {scResults.map((track, i) => (
+                {searchResults.map((track, i) => (
                   <TrackRow key={`${track.id}-${i}`} track={track} index={i} onPlay={play} />
                 ))}
               </div>
