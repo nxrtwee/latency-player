@@ -305,7 +305,8 @@ export async function fetchLyrics(
   title: string,
   artist: string,
   durationSec?: number,
-  useGenius = true
+  useGenius = true,
+  force = false
 ): Promise<LyricsResult | null> {
   const cleanTitle = title.trim()
   const cleanArtist = (artist || '').trim()
@@ -315,8 +316,14 @@ export async function fetchLyrics(
   // a manually-synced version always wins over network sources
   const manual = await readCache(`${key}.manual`)
   if (manual) return manual
-  const cached = await readCache(key)
+  // `force` (the karaoke "reset" button) bypasses the cached auto result and refetches.
+  const cached = force ? null : await readCache(key)
   if (cached) return cached
+
+  // Best plain-text we've seen so far. A SYNCED result always wins over this; we
+  // only fall back to it when nothing timed turns up (prefer synced from search
+  // over plain from the exact match).
+  let plainFallback: LyricsResult | null = null
 
   // 1) exact get (uses duration for accuracy when available)
   try {
@@ -326,10 +333,11 @@ export async function fetchLyrics(
     if (res.status === 200) {
       const item = (await res.json()) as LrclibItem
       const result = toResult(item)
-      if (result.synced || result.plain) {
+      if (result.synced) {
         await writeCache(key, result)
         return result
       }
+      if (result.plain && !plainFallback) plainFallback = result
     }
   } catch {
     /* fall through to search */
@@ -351,14 +359,21 @@ export async function fetchLyrics(
           .sort((a, b) => Number(b.synced) - Number(a.synced) || a.durDiff - b.durDiff)
         const best = scored[0].it
         const result = toResult(best)
-        if (result.synced || result.plain) {
+        if (result.synced) {
           await writeCache(key, result)
           return result
         }
+        if (result.plain && !plainFallback) plainFallback = result
       }
     }
   } catch {
     /* give up on lrclib */
+  }
+
+  // Nothing timed anywhere — use the best plain text we collected.
+  if (plainFallback) {
+    await writeCache(key, plainFallback)
+    return plainFallback
   }
 
   // (manual sync handled at top)

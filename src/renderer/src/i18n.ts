@@ -256,6 +256,18 @@ const dict: Record<string, { en: string; ru: string }> = {
   local: { en: 'local', ru: 'локальные' },
   // artist / mix
   followers: { en: 'followers', ru: 'подписчиков' },
+  listeners: { en: 'monthly listeners', ru: 'слушателей в месяц' },
+  similarArtists: { en: 'Fans also like', ru: 'Похожие артисты' },
+  albums: { en: 'Albums', ru: 'Альбомы' },
+  album: { en: 'Album', ru: 'Альбом' },
+  albumsAndPlaylists: { en: 'Albums & playlists', ru: 'Альбомы и плейлисты' },
+  searchAlbumsTitle: { en: 'Albums in search', ru: 'Альбомы в поиске' },
+  searchAlbumsSub: { en: 'Show artist albums in search results', ru: 'Показывать альбомы артистов в поиске' },
+  searchPlaylistsTitle: { en: 'Playlists in search', ru: 'Плейлисты в поиске' },
+  searchPlaylistsSub: {
+    en: 'Show editorial/user playlists in search results',
+    ru: 'Показывать плейлисты (подборки) в поиске'
+  },
   loadingTracks: { en: 'Loading tracks…', ru: 'Загрузка треков…' },
   noArtistTracks: { en: 'No tracks found for this artist.', ru: 'Треки артиста не найдены.' },
   dailyMix: { en: 'Daily mix · updates every day', ru: 'Ежедневный микс · обновляется каждый день' },
@@ -265,6 +277,7 @@ const dict: Record<string, { en: string; ru: string }> = {
   checkedSources: { en: 'Checked LRCLIB & Genius', ru: 'Проверено в LRCLIB и Genius' },
   syncManually: { en: 'Sync manually', ru: 'Синхронизировать' },
   editSync: { en: 'Edit sync', ru: 'Изменить синхро' },
+  resetLyrics: { en: 'Reset', ru: 'Сбросить текст' },
   manualSynced: { en: 'Manually synced', ru: 'Ручная синхронизация' },
   approxSync: { en: 'approximate sync', ru: 'примерная синхро' },
   plainLyricsNote: {

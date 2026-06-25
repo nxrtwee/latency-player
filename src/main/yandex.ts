@@ -2,7 +2,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import { app, BrowserWindow } from 'electron'
-import type { Artist, Track } from '../shared/types'
+import type { Album, Artist, Track } from '../shared/types'
 
 // Yandex Music has no open public API, so — like the SoundCloud module — we talk
 // to the same private API its own apps use, authenticating with the user's own
@@ -157,10 +157,30 @@ export async function getArtist(artistId: string): Promise<Artist | null> {
       headers: apiHeaders()
     })
     if (!res.ok) return null
-    const data = (await res.json()) as { result?: { artist?: YmArtist } }
-    return data.result?.artist ? toArtist(data.result.artist) : null
+    const data = (await res.json()) as {
+      result?: { artist?: YmArtist; stats?: { lastMonthListeners?: number } }
+    }
+    if (!data.result?.artist) return null
+    const artist = toArtist(data.result.artist)
+    // Yandex exposes monthly listeners on the brief-info `stats`, not on the artist.
+    artist.monthlyListeners = data.result.stats?.lastMonthListeners
+    return artist
   } catch {
     return null
+  }
+}
+
+/** Artists Yandex considers similar (from the artist's brief-info). */
+export async function getSimilarArtists(artistId: string, limit = 12): Promise<Artist[]> {
+  try {
+    const res = await fetch(`${API}/artists/${encodeURIComponent(artistId)}/brief-info`, {
+      headers: apiHeaders()
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { result?: { similarArtists?: YmArtist[] } }
+    return (data.result?.similarArtists || []).slice(0, limit).map(toArtist)
+  } catch {
+    return []
   }
 }
 
@@ -172,6 +192,141 @@ export async function getArtistTracks(artistId: string, limit = 50): Promise<Tra
   if (!res.ok) throw new Error(`Yandex artist tracks failed (${res.status})`)
   const data = (await res.json()) as { result?: { tracks?: YmTrack[] } }
   return (data.result?.tracks || []).map(toTrack).filter((t): t is Track => t !== null)
+}
+
+interface YmAlbum {
+  id?: number | string
+  title?: string
+  coverUri?: string
+  year?: number
+  artists?: { name?: string }[]
+  trackCount?: number
+}
+
+function toAlbum(a: YmAlbum): Album | null {
+  if (a.id == null || !a.title) return null
+  return {
+    id: String(a.id),
+    provider: 'yandex',
+    kind: 'album',
+    title: a.title,
+    artist: (a.artists || []).map((ar) => ar.name).filter(Boolean).join(', ') || undefined,
+    cover: cover(a.coverUri, '400x400'),
+    year: a.year,
+    trackCount: a.trackCount
+  }
+}
+
+interface YmPlaylist {
+  uid?: number | string
+  kind?: number | string
+  title?: string
+  trackCount?: number
+  cover?: { uri?: string }
+  ogImage?: string
+  owner?: { name?: string; login?: string }
+}
+
+function toPlaylist(p: YmPlaylist): Album | null {
+  if (p.uid == null || p.kind == null || !p.title) return null
+  return {
+    id: `${p.uid}:${p.kind}`,
+    provider: 'yandex',
+    kind: 'playlist',
+    title: p.title,
+    artist: p.owner?.name || p.owner?.login,
+    cover: cover(p.cover?.uri || p.ogImage, '400x400'),
+    trackCount: p.trackCount
+  }
+}
+
+/** Search Yandex albums. */
+export async function searchAlbums(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const url = `${API}/search?text=${encodeURIComponent(q)}&type=album&page=0&nocorrect=false`
+    const res = await fetch(url, { headers: apiHeaders() })
+    if (!res.ok) return []
+    const data = (await res.json()) as { result?: { albums?: { results?: YmAlbum[] } } }
+    return (data.result?.albums?.results || [])
+      .slice(0, limit)
+      .map(toAlbum)
+      .filter((a): a is Album => a !== null)
+  } catch {
+    return []
+  }
+}
+
+/** Search Yandex playlists. */
+export async function searchPlaylists(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const url = `${API}/search?text=${encodeURIComponent(q)}&type=playlist&page=0&nocorrect=false`
+    const res = await fetch(url, { headers: apiHeaders() })
+    if (!res.ok) return []
+    const data = (await res.json()) as { result?: { playlists?: { results?: YmPlaylist[] } } }
+    return (data.result?.playlists?.results || [])
+      .slice(0, limit)
+      .map(toPlaylist)
+      .filter((a): a is Album => a !== null)
+  } catch {
+    return []
+  }
+}
+
+/** Tracks of a Yandex playlist (`id` is `ownerUid:kind`). */
+export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
+  const [uid, kind] = playlistId.split(':')
+  if (!uid || !kind) return []
+  const res = await fetch(
+    `${API}/users/${encodeURIComponent(uid)}/playlists/${encodeURIComponent(kind)}?rich-tracks=true`,
+    { headers: apiHeaders() }
+  )
+  if (!res.ok) throw new Error(`Yandex playlist failed (${res.status})`)
+  const data = (await res.json()) as {
+    result?: { tracks?: { id?: number | string; track?: YmTrack }[] }
+  }
+  const rows = data.result?.tracks || []
+  const out: Track[] = []
+  const missing: string[] = []
+  for (const r of rows) {
+    const mapped = r.track ? toTrack(r.track) : null
+    if (mapped) out.push(mapped)
+    else if (r.id != null) missing.push(String(r.id))
+  }
+  if (missing.length) out.push(...(await hydrateTracks(missing)))
+  return out
+}
+
+/** An artist's albums (from brief-info), newest first where possible. */
+export async function getArtistAlbums(artistId: string, limit = 30): Promise<Album[]> {
+  try {
+    const res = await fetch(`${API}/artists/${encodeURIComponent(artistId)}/brief-info`, {
+      headers: apiHeaders()
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { result?: { albums?: YmAlbum[] } }
+    return (data.result?.albums || [])
+      .slice(0, limit)
+      .map(toAlbum)
+      .filter((a): a is Album => a !== null)
+  } catch {
+    return []
+  }
+}
+
+/** Full track list of an album (flattened across its volumes/discs). */
+export async function getAlbumTracks(albumId: string): Promise<Track[]> {
+  const bare = albumId.replace(/^ym:/, '')
+  const res = await fetch(`${API}/albums/${encodeURIComponent(bare)}/with-tracks`, {
+    headers: apiHeaders()
+  })
+  if (!res.ok) throw new Error(`Yandex album tracks failed (${res.status})`)
+  const data = (await res.json()) as { result?: { volumes?: YmTrack[][] } }
+  const flat = (data.result?.volumes || []).flat()
+  return flat.map(toTrack).filter((t): t is Track => t !== null)
 }
 
 // ---------------- Auth ----------------

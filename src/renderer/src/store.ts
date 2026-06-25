@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Artist, Playlist, Track } from '@shared/types'
+import type { Album, Artist, Playlist, Track } from '@shared/types'
 import type { PlaybackHandle } from './providers/types'
 import { getProvider } from './providers/registry'
 
@@ -18,6 +18,7 @@ export type Source =
   | 'comments'
   | 'info'
   | 'artist'
+  | 'album'
   | 'mix'
   | 'wave'
   | 'profile'
@@ -62,6 +63,7 @@ interface PlayerState {
   searchQuery: string
   searchResults: Track[]
   searchArtists: Artist[]
+  searchAlbums: Album[]
   searchLoading: boolean
 
   // global search history (most-recent first)
@@ -70,7 +72,13 @@ interface PlayerState {
   // artist page
   selectedArtist: Artist | null
   artistTracks: Track[]
+  artistSimilar: Artist[]
+  artistAlbums: Album[]
   artistLoading: boolean
+  // album page
+  selectedAlbum: Album | null
+  albumTracks: Track[]
+  albumLoading: boolean
 
   // daily mixes
   mixes: Mix[]
@@ -131,6 +139,9 @@ interface PlayerState {
   avPosY: number
   avZoom: number
   compact: boolean
+  // search-results visibility for the "Albums & playlists" section
+  showSearchAlbums: boolean
+  showSearchPlaylists: boolean
   lyricsSize: 'sm' | 'md' | 'lg'
   lang: 'en' | 'ru'
 
@@ -185,6 +196,7 @@ interface PlayerState {
   // artist navigation
   openArtist: (artist: Artist) => Promise<void>
   openArtistFromTrack: (track: Track) => Promise<void>
+  openAlbum: (album: Album) => Promise<void>
 
   // daily mixes
   generateMixes: (force?: boolean) => Promise<void>
@@ -237,6 +249,8 @@ interface PlayerState {
   setAvatarFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   openAvatarFraming: () => void
   setCompact: (v: boolean) => void
+  setShowSearchAlbums: (v: boolean) => void
+  setShowSearchPlaylists: (v: boolean) => void
   setLyricsSize: (v: 'sm' | 'md' | 'lg') => void
   setLang: (v: 'en' | 'ru') => void
 
@@ -543,13 +557,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
       return
     }
     const track = queue[index]
-    // If this SoundCloud track is cached offline, play the local file instead —
-    // swap to the local provider + media:// uri so no network is touched. We keep
-    // `track` as the original (for history/presence) and use `playTrack` only for
-    // the actual playback handle.
+    // If this SoundCloud/Yandex track is cached offline, play the local file
+    // instead — swap to the local provider + media:// uri so no network is touched.
+    // We keep `track` as the original (for history/presence) and use `playTrack`
+    // only for the actual playback handle.
     const cachedUrl = offlineUrls.get(track.id)
     const playTrack: Track =
-      cachedUrl && track.providerId === 'soundcloud'
+      cachedUrl && (track.providerId === 'soundcloud' || track.providerId === 'yandex')
         ? { ...track, providerId: 'local', uri: cachedUrl }
         : track
     const provider = getProvider(playTrack.providerId)
@@ -628,13 +642,19 @@ export const usePlayer = create<PlayerState>((set, get) => {
     searchQuery: '',
     searchResults: [],
     searchArtists: [],
+    searchAlbums: [],
     searchLoading: false,
 
     searchHistory: initialSearchHistory,
 
     selectedArtist: null,
     artistTracks: [],
+    artistSimilar: [],
+    artistAlbums: [],
     artistLoading: false,
+    selectedAlbum: null,
+    albumTracks: [],
+    albumLoading: false,
 
     mixes: [],
     mixesLoading: false,
@@ -679,6 +699,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
     avPosY: readNum('lp.avPosY', 50),
     avZoom: readNum('lp.avZoom', 1),
     compact: localStorage.getItem('lp.compact') === '1',
+    showSearchAlbums: localStorage.getItem('lp.searchAlbums') !== '0',
+    showSearchPlaylists: localStorage.getItem('lp.searchPlaylists') === '1',
     lyricsSize: (localStorage.getItem('lp.lyricsSize') as 'sm' | 'md' | 'lg') || 'md',
     lang: (localStorage.getItem('lp.lang') as 'en' | 'ru') || 'en',
     resumeSession: localStorage.getItem('lp.resume') !== '0',
@@ -823,23 +845,32 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ searchQuery: query })
       const q = query.trim()
       if (!q) {
-        set({ searchResults: [], searchArtists: [], searchLoading: false })
+        set({ searchResults: [], searchArtists: [], searchAlbums: [], searchLoading: false })
         return
       }
       const source = get().searchSource
       set({ searchLoading: true, error: null })
       try {
-        const [results, artists] =
+        const [results, artists, albums, playlists] =
           source === 'yandex'
             ? await Promise.all([
                 window.api.ymSearch(q),
-                window.api.ymSearchArtists(q).catch(() => [])
+                window.api.ymSearchArtists(q).catch(() => []),
+                window.api.ymSearchAlbums(q).catch(() => []),
+                window.api.ymSearchPlaylists(q).catch(() => [])
               ])
             : await Promise.all([
                 window.api.scSearch(q),
-                window.api.scSearchUsers(q).catch(() => [])
+                window.api.scSearchUsers(q).catch(() => []),
+                window.api.scSearchAlbums(q).catch(() => []),
+                window.api.scSearchPlaylists(q).catch(() => [])
               ])
-        set({ searchResults: results, searchArtists: artists, searchLoading: false })
+        set({
+          searchResults: results,
+          searchArtists: artists,
+          searchAlbums: [...albums, ...playlists],
+          searchLoading: false
+        })
       } catch (e) {
         const label = source === 'yandex' ? 'Yandex' : 'SoundCloud'
         set({
@@ -874,21 +905,44 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     async openArtist(artist) {
-      set({ source: 'artist', selectedArtist: artist, artistTracks: [], error: null })
+      set({
+        source: 'artist',
+        selectedArtist: artist,
+        artistTracks: [],
+        artistSimilar: [],
+        artistAlbums: [],
+        error: null
+      })
+      // Only apply async results if the user is still on this artist.
+      const stillHere = (): boolean => get().selectedArtist?.id === artist.id
       if (artist.provider === 'soundcloud') {
         set({ artistLoading: true })
         try {
           // Fetch full profile (avatar/followers) in parallel when we only have a bare id.
           const needProfile = !artist.avatar || artist.followers == null
-          const [tracks, profile] = await Promise.all([
+          const [tracks, profile, albums] = await Promise.all([
             window.api.scUserTracks(artist.id),
-            needProfile ? window.api.scUser(artist.id).catch(() => null) : Promise.resolve(null)
+            needProfile ? window.api.scUser(artist.id).catch(() => null) : Promise.resolve(null),
+            window.api.scUserAlbums(artist.id).catch(() => [])
           ])
           set((s) => ({
             artistTracks: tracks,
             artistLoading: false,
+            artistAlbums: s.selectedArtist?.id === artist.id ? albums : s.artistAlbums,
             selectedArtist: profile && s.selectedArtist?.id === artist.id ? profile : s.selectedArtist
           }))
+          // SoundCloud has no related-artists API — derive from the top track's
+          // related tracks (their uploaders, with avatars, current artist excluded).
+          const seed = tracks.find((t) => t.id.startsWith('sc:'))
+          if (seed) {
+            window.api
+              .scRelatedArtists(seed.id.slice(3))
+              .then((rel) => {
+                const similar = rel.filter((a) => a.id !== artist.id).slice(0, 12)
+                if (stillHere()) set({ artistSimilar: similar })
+              })
+              .catch(() => {})
+          }
         } catch (e) {
           set({
             artistLoading: false,
@@ -900,14 +954,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (artist.provider === 'yandex') {
         set({ artistLoading: true })
         try {
-          const needProfile = !artist.avatar
-          const [tracks, profile] = await Promise.all([
+          // Also refetch when we lack the monthly-listeners stat (search results
+          // carry an avatar but no stats, so an avatar alone isn't enough).
+          const needProfile = !artist.avatar || artist.monthlyListeners == null
+          const [tracks, profile, similar, albums] = await Promise.all([
             window.api.ymArtistTracks(artist.id),
-            needProfile ? window.api.ymArtist(artist.id).catch(() => null) : Promise.resolve(null)
+            needProfile ? window.api.ymArtist(artist.id).catch(() => null) : Promise.resolve(null),
+            window.api.ymSimilarArtists(artist.id).catch(() => []),
+            window.api.ymArtistAlbums(artist.id).catch(() => [])
           ])
           set((s) => ({
             artistTracks: tracks,
             artistLoading: false,
+            artistSimilar: s.selectedArtist?.id === artist.id ? similar : s.artistSimilar,
+            artistAlbums: s.selectedArtist?.id === artist.id ? albums : s.artistAlbums,
             selectedArtist: profile && s.selectedArtist?.id === artist.id ? profile : s.selectedArtist
           }))
         } catch (e) {
@@ -925,6 +985,29 @@ export const usePlayer = create<PlayerState>((set, get) => {
         if ((t.artist || '').toLowerCase() === artist.name.toLowerCase()) pool.set(t.id, t)
       }
       set({ artistTracks: [...pool.values()], artistLoading: false })
+    },
+
+    async openAlbum(album) {
+      set({ source: 'album', selectedAlbum: album, albumTracks: [], albumLoading: true, error: null })
+      try {
+        const tracks =
+          album.provider === 'yandex'
+            ? album.kind === 'playlist'
+              ? await window.api.ymPlaylistTracks(album.id)
+              : await window.api.ymAlbumTracks(album.id)
+            : album.provider === 'soundcloud'
+              ? // SoundCloud albums and sets are both /playlists/{id}
+                await window.api.scAlbumTracks(album.id)
+              : []
+        if (get().selectedAlbum?.id === album.id) set({ albumTracks: tracks, albumLoading: false })
+      } catch (e) {
+        set({
+          albumLoading: false,
+          error: `${album.provider === 'yandex' ? 'Yandex' : 'SoundCloud'}: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        })
+      }
     },
 
     async openArtistFromTrack(track) {
@@ -1240,6 +1323,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
     openAvatarFraming() {
       const { profileAvatar, scAuth } = get()
       if (profileAvatar || scAuth?.avatar) set({ framingOpen: true, framingTarget: 'avatar' })
+    },
+
+    setShowSearchAlbums(v) {
+      set({ showSearchAlbums: v })
+      localStorage.setItem('lp.searchAlbums', v ? '1' : '0')
+    },
+
+    setShowSearchPlaylists(v) {
+      set({ showSearchPlaylists: v })
+      localStorage.setItem('lp.searchPlaylists', v ? '1' : '0')
     },
 
     setCompact(v) {

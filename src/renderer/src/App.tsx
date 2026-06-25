@@ -11,6 +11,7 @@ import { HomePage } from './components/HomePage'
 import { ExplorePage } from './components/ExplorePage'
 import { ActivityPage } from './components/ActivityPage'
 import { ArtistPage } from './components/ArtistPage'
+import { AlbumPage } from './components/AlbumPage'
 import { MixPage } from './components/MixPage'
 import { WavePage } from './components/WavePage'
 import { LyricsView } from './components/LyricsView'
@@ -48,6 +49,7 @@ export function App(): JSX.Element {
   const source = usePlayer((s) => s.source)
   const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
   const selectedArtistId = usePlayer((s) => s.selectedArtist?.id)
+  const selectedAlbumId = usePlayer((s) => s.selectedAlbum?.id)
   const selectedMixId = usePlayer((s) => s.selectedMix?.id)
   const infoService = usePlayer((s) => s.infoService)
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
@@ -86,7 +88,9 @@ export function App(): JSX.Element {
       ? `pl-${selectedPlaylistId}`
       : source === 'artist'
         ? `ar-${selectedArtistId}`
-        : source === 'mix'
+        : source === 'album'
+          ? `al-${selectedAlbumId}`
+          : source === 'mix'
           ? `mix-${selectedMixId}`
           : source === 'info'
             ? `in-${infoService}`
@@ -152,6 +156,8 @@ export function App(): JSX.Element {
               <ActivityPage />
             ) : source === 'artist' ? (
               <ArtistPage />
+            ) : source === 'album' ? (
+              <AlbumPage />
             ) : source === 'mix' ? (
               <MixPage />
             ) : source === 'wave' ? (

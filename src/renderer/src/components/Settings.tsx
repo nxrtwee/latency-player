@@ -74,6 +74,10 @@ export function Settings(): JSX.Element {
   const setBgScope = usePlayer((s) => s.setBgScope)
   const compact = usePlayer((s) => s.compact)
   const setCompact = usePlayer((s) => s.setCompact)
+  const showSearchAlbums = usePlayer((s) => s.showSearchAlbums)
+  const setShowSearchAlbums = usePlayer((s) => s.setShowSearchAlbums)
+  const showSearchPlaylists = usePlayer((s) => s.showSearchPlaylists)
+  const setShowSearchPlaylists = usePlayer((s) => s.setShowSearchPlaylists)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const setLyricsSize = usePlayer((s) => s.setLyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
@@ -191,6 +195,22 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('compactSub')}</span>
               </div>
               <Toggle checked={compact} onChange={setCompact} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('searchAlbumsTitle')}</span>
+                <span className="set-row-sub">{t('searchAlbumsSub')}</span>
+              </div>
+              <Toggle checked={showSearchAlbums} onChange={setShowSearchAlbums} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('searchPlaylistsTitle')}</span>
+                <span className="set-row-sub">{t('searchPlaylistsSub')}</span>
+              </div>
+              <Toggle checked={showSearchPlaylists} onChange={setShowSearchPlaylists} />
             </div>
 
             <div className="set-row col">

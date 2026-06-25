@@ -26,6 +26,8 @@ export interface Track {
   durationSec?: number
   /** data URL of embedded cover art, if extracted */
   artwork?: string
+  /** total play count, when the source exposes it (SoundCloud `playback_count`) */
+  playCount?: number
 }
 
 /** A navigable artist/creator profile. */
@@ -34,8 +36,25 @@ export interface Artist {
   name: string
   provider: ProviderId
   avatar?: string
+  /** SoundCloud followers count */
   followers?: number
+  /** Yandex Music monthly listeners (`stats.lastMonthListeners`) */
+  monthlyListeners?: number
   trackCount?: number
+}
+
+/** A navigable album or playlist/set. `id` is the bare provider id (for Yandex
+ *  playlists it's `ownerUid:kind`). */
+export interface Album {
+  id: string
+  provider: ProviderId
+  title: string
+  artist?: string
+  cover?: string
+  year?: number
+  trackCount?: number
+  /** album (default) or a user/editorial playlist — changes the page label + fetch */
+  kind?: 'album' | 'playlist'
 }
 
 /** Persisted library state owned by the main process. */

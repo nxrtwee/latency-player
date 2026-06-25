@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Artist, LibraryState, Playlist, Track } from '../shared/types'
+import type { Album, Artist, LibraryState, Playlist, Track } from '../shared/types'
 
 const api = {
   getLibrary: (): Promise<LibraryState> => ipcRenderer.invoke('library:get'),
@@ -12,7 +12,16 @@ const api = {
   scSearchUsers: (query: string): Promise<Artist[]> => ipcRenderer.invoke('sc:searchUsers', query),
   scUser: (userId: string): Promise<Artist | null> => ipcRenderer.invoke('sc:user', userId),
   scUserTracks: (userId: string): Promise<Track[]> => ipcRenderer.invoke('sc:userTracks', userId),
+  scUserAlbums: (userId: string): Promise<Album[]> => ipcRenderer.invoke('sc:userAlbums', userId),
+  scAlbumTracks: (albumId: string): Promise<Track[]> =>
+    ipcRenderer.invoke('sc:albumTracks', albumId),
+  scSearchAlbums: (query: string): Promise<Album[]> =>
+    ipcRenderer.invoke('sc:searchAlbums', query),
+  scSearchPlaylists: (query: string): Promise<Album[]> =>
+    ipcRenderer.invoke('sc:searchPlaylists', query),
   scRelated: (trackId: string): Promise<Track[]> => ipcRenderer.invoke('sc:related', trackId),
+  scRelatedArtists: (trackId: string): Promise<Artist[]> =>
+    ipcRenderer.invoke('sc:relatedArtists', trackId),
   scComments: (
     trackId: string
   ): Promise<{ timeSec: number; body: string; user: string; avatar?: string }[]> =>
@@ -34,6 +43,18 @@ const api = {
     ipcRenderer.invoke('ym:artist', artistId),
   ymArtistTracks: (artistId: string): Promise<Track[]> =>
     ipcRenderer.invoke('ym:artistTracks', artistId),
+  ymSimilarArtists: (artistId: string): Promise<Artist[]> =>
+    ipcRenderer.invoke('ym:similarArtists', artistId),
+  ymArtistAlbums: (artistId: string): Promise<Album[]> =>
+    ipcRenderer.invoke('ym:artistAlbums', artistId),
+  ymAlbumTracks: (albumId: string): Promise<Track[]> =>
+    ipcRenderer.invoke('ym:albumTracks', albumId),
+  ymSearchAlbums: (query: string): Promise<Album[]> =>
+    ipcRenderer.invoke('ym:searchAlbums', query),
+  ymSearchPlaylists: (query: string): Promise<Album[]> =>
+    ipcRenderer.invoke('ym:searchPlaylists', query),
+  ymPlaylistTracks: (playlistId: string): Promise<Track[]> =>
+    ipcRenderer.invoke('ym:playlistTracks', playlistId),
   ymLogin: (): Promise<Artist | null> => ipcRenderer.invoke('ym:login'),
   ymLogout: (): Promise<void> => ipcRenderer.invoke('ym:logout'),
   ymMe: (): Promise<Artist | null> => ipcRenderer.invoke('ym:me'),
@@ -72,14 +93,15 @@ const api = {
     title: string,
     artist: string,
     durationSec?: number,
-    useGenius?: boolean
+    useGenius?: boolean,
+    force?: boolean
   ): Promise<{
     source: string
     synced: boolean
     manual?: boolean
     lines: { timeSec: number; text: string }[]
     plain: string | null
-  } | null> => ipcRenderer.invoke('lyrics:get', title, artist, durationSec, useGenius),
+  } | null> => ipcRenderer.invoke('lyrics:get', title, artist, durationSec, useGenius, force),
   clearLyricsCache: (): Promise<void> => ipcRenderer.invoke('lyrics:clearCache'),
   searchByLyrics: (
     query: string

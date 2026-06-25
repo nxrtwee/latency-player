@@ -109,9 +109,14 @@ function registerIpc(): void {
 
   ipcMain.handle('sc:search', (_e, query: string) => soundcloud.search(query))
   ipcMain.handle('sc:searchUsers', (_e, query: string) => soundcloud.searchUsers(query))
+  ipcMain.handle('sc:searchAlbums', (_e, query: string) => soundcloud.searchAlbums(query))
+  ipcMain.handle('sc:searchPlaylists', (_e, query: string) => soundcloud.searchPlaylists(query))
   ipcMain.handle('sc:user', (_e, userId: string) => soundcloud.getUser(userId))
   ipcMain.handle('sc:userTracks', (_e, userId: string) => soundcloud.getUserTracks(userId))
+  ipcMain.handle('sc:userAlbums', (_e, userId: string) => soundcloud.getUserAlbums(userId))
+  ipcMain.handle('sc:albumTracks', (_e, albumId: string) => soundcloud.getAlbumTracks(albumId))
   ipcMain.handle('sc:related', (_e, trackId: string) => soundcloud.relatedTracks(trackId))
+  ipcMain.handle('sc:relatedArtists', (_e, trackId: string) => soundcloud.relatedArtists(trackId))
   ipcMain.handle('sc:comments', (_e, trackId: string) => soundcloud.getComments(trackId))
   ipcMain.handle('sc:login', () => soundcloud.login())
   ipcMain.handle('sc:logout', () => soundcloud.logout())
@@ -125,8 +130,16 @@ function registerIpc(): void {
 
   ipcMain.handle('ym:search', (_e, query: string) => yandex.search(query))
   ipcMain.handle('ym:searchArtists', (_e, query: string) => yandex.searchArtists(query))
+  ipcMain.handle('ym:searchAlbums', (_e, query: string) => yandex.searchAlbums(query))
+  ipcMain.handle('ym:searchPlaylists', (_e, query: string) => yandex.searchPlaylists(query))
+  ipcMain.handle('ym:playlistTracks', (_e, playlistId: string) =>
+    yandex.getPlaylistTracks(playlistId)
+  )
   ipcMain.handle('ym:artist', (_e, artistId: string) => yandex.getArtist(artistId))
   ipcMain.handle('ym:artistTracks', (_e, artistId: string) => yandex.getArtistTracks(artistId))
+  ipcMain.handle('ym:similarArtists', (_e, artistId: string) => yandex.getSimilarArtists(artistId))
+  ipcMain.handle('ym:artistAlbums', (_e, artistId: string) => yandex.getArtistAlbums(artistId))
+  ipcMain.handle('ym:albumTracks', (_e, albumId: string) => yandex.getAlbumTracks(albumId))
   ipcMain.handle('ym:login', () => yandex.login())
   ipcMain.handle('ym:logout', () => yandex.logout())
   ipcMain.handle('ym:me', () => yandex.getMe())
@@ -179,8 +192,8 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'lyrics:get',
-    (_e, title: string, artist: string, durationSec?: number, useGenius?: boolean) =>
-      lyrics.fetchLyrics(title, artist, durationSec, useGenius)
+    (_e, title: string, artist: string, durationSec?: number, useGenius?: boolean, force?: boolean) =>
+      lyrics.fetchLyrics(title, artist, durationSec, useGenius, force)
   )
   ipcMain.handle(
     'lyrics:hasManual',

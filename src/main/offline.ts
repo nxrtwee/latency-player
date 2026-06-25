@@ -4,13 +4,15 @@ import { createHash } from 'crypto'
 import { app, net } from 'electron'
 import type { Track } from '../shared/types'
 import * as soundcloud from './soundcloud'
+import * as yandex from './yandex'
 
-// Offline cache for SoundCloud tracks. We download the resolved progressive MP3
-// to userData/offline and remember it in an index keyed by track id. On desktop
-// this is mostly a convenience/parity feature (mobile builds already have it).
+// Offline cache for SoundCloud and Yandex Music tracks. We download the resolved
+// progressive MP3 to userData/offline and remember it in an index keyed by track
+// id. On desktop this is mostly a convenience/parity feature (mobile builds have it).
 //
-// Only `progressive` streams are cached — HLS would require muxing segments,
-// which isn't worth it here. The renderer falls back to streaming for those.
+// SoundCloud HLS streams aren't cached (would require muxing segments) — the
+// renderer falls back to streaming for those. Yandex always resolves to a single
+// signed MP3, so it caches cleanly.
 
 const dir = (): string => join(app.getPath('userData'), 'offline')
 const indexFile = (): string => join(dir(), 'index.json')
@@ -85,18 +87,25 @@ export function localUrl(trackId: string): string | null {
 }
 
 /**
- * Download a SoundCloud track for offline use. Resolves the transcoding to a CDN
- * URL, fetches the bytes (progressive only), and records it. Returns true on
+ * Download a SoundCloud or Yandex Music track for offline use. Resolves the
+ * source to a single MP3 URL, fetches the bytes, and records it. Returns true on
  * success. Safe to call again — already-cached tracks short-circuit to true.
  */
 export async function download(track: Track): Promise<boolean> {
   if (index[track.id]) return true
-  if (track.providerId !== 'soundcloud') return false
-  // HLS streams aren't downloadable as a single file here.
-  if (track.uri.includes('/stream/hls')) return false
   try {
     await ensureDir()
-    const streamUrl = await soundcloud.resolveStream(track.uri)
+    let streamUrl: string
+    if (track.providerId === 'soundcloud') {
+      // HLS streams aren't downloadable as a single file here.
+      if (track.uri.includes('/stream/hls')) return false
+      streamUrl = await soundcloud.resolveStream(track.uri)
+    } else if (track.providerId === 'yandex') {
+      // track.uri is the bare Yandex track id; resolveStream signs a CDN MP3 URL.
+      streamUrl = await yandex.resolveStream(track.uri)
+    } else {
+      return false
+    }
     const res = await net.fetch(streamUrl)
     if (!res.ok) return false
     const buf = Buffer.from(await res.arrayBuffer())

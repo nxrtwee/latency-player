@@ -1078,6 +1078,18 @@ body.resizing * {
   align-items: center;
   gap: 14px;
 }
+/* Artist pages add a play-count column (between the like button and duration). */
+.tl-head.with-plays,
+.trow.with-plays {
+  grid-template-columns: 36px minmax(0, 1.7fr) minmax(0, 1fr) 44px 84px 58px 64px;
+}
+.c-plays {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .tl-head {
   position: relative;
   z-index: 1;
@@ -3147,8 +3159,118 @@ button:disabled {
   object-fit: cover;
 }
 
+/* "Fans also like" — similar artists at the bottom of an artist page */
+.similar {
+  margin-top: 28px;
+}
+.similar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 6px 2px 10px;
+}
+.similar-card {
+  flex: 0 0 auto;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.similar-card:hover {
+  background: var(--row-hover);
+}
+.similar-av {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.similar-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.similar-name {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 104px;
+}
+
+/* Album cards (artist discography). Reuse .similar / .similar-row for layout. */
+.album-card {
+  flex: 0 0 auto;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.album-card:hover {
+  background: var(--row-hover);
+}
+.album-cover {
+  width: 126px;
+  height: 126px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  color: var(--accent);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+.album-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.album-title {
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 126px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.album-year {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* Profiles row in Explore */
-.ex-profiles {
+.ex-profiles,
+.ex-albums {
   position: relative;
   z-index: 1;
   margin: 8px 0 18px;
@@ -3447,6 +3569,9 @@ button:disabled {
   gap: 8px;
 }
 .sync-corner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid var(--border);
   color: var(--text);

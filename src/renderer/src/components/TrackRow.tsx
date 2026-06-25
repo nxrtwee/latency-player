@@ -24,9 +24,18 @@ interface TrackRowProps {
   track: Track
   index: number
   onPlay: (index: number) => void
+  /** When set, show a play-count column (used on artist pages). */
+  plays?: number
 }
 
-function TrackRowImpl({ track, index, onPlay }: TrackRowProps): JSX.Element {
+/** 1234 → 1.2K, 4_500_000 → 4.5M. */
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function TrackRowImpl({ track, index, onPlay, plays }: TrackRowProps): JSX.Element {
   const currentTrackId = usePlayer((s) =>
     s.currentIndex >= 0 ? s.queue[s.currentIndex]?.id : undefined
   )
@@ -40,10 +49,14 @@ function TrackRowImpl({ track, index, onPlay }: TrackRowProps): JSX.Element {
   const removeOffline = usePlayer((s) => s.removeOffline)
   const playing = track.id === currentTrackId
   const canOpenArtist = track.artistId || track.artist
-  const isSc = track.providerId === 'soundcloud'
+  // SoundCloud and Yandex tracks can be cached offline (both resolve to an MP3).
+  const canCache = track.providerId === 'soundcloud' || track.providerId === 'yandex'
 
   return (
-    <div className={`trow ${playing ? 'active' : ''}`} onDoubleClick={() => onPlay(index)}>
+    <div
+      className={`trow ${playing ? 'active' : ''} ${plays != null ? 'with-plays' : ''}`}
+      onDoubleClick={() => onPlay(index)}
+    >
       <div className="c-index">
         {playing ? (
           <span className="eq">
@@ -103,9 +116,10 @@ function TrackRowImpl({ track, index, onPlay }: TrackRowProps): JSX.Element {
       >
         {liked ? <HeartFilledIcon size={16} /> : <HeartIcon size={16} />}
       </button>
+      {plays != null && <span className="c-plays">{formatCount(plays)}</span>}
       <span className="c-time">{formatTime(track.durationSec ?? 0)}</span>
       <div className="c-more">
-        {isSc && (
+        {canCache && (
           <button
             className={`row-dl ${cached ? 'cached' : ''} ${downloading ? 'spin' : ''}`}
             title={cached ? 'Downloaded — click to remove' : downloading ? 'Downloading…' : 'Download for offline'}

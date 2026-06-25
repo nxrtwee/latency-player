@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import { app, BrowserWindow } from 'electron'
-import type { Artist, Track } from '../shared/types'
+import type { Album, Artist, Track } from '../shared/types'
 
 // SoundCloud has no open API registration anymore, so we discover the public
 // web player's client_id (the same one the website uses). Network lives in the
@@ -94,7 +94,8 @@ interface ScTrack {
   title: string
   duration: number
   artwork_url: string | null
-  user?: { id?: number; username?: string }
+  playback_count?: number
+  user?: { id?: number; username?: string; avatar_url?: string | null }
   media?: { transcodings?: ScTranscoding[] }
 }
 interface ScUser {
@@ -121,7 +122,8 @@ function toTrack(sc: ScTrack): Track | null {
     artistId: sc.user?.id != null ? String(sc.user.id) : undefined,
     durationSec: sc.duration ? sc.duration / 1000 : undefined,
     // -large is 100px; -t500x500 is crisp for the big now-playing art (downscales fine for thumbs).
-    artwork: sc.artwork_url ? sc.artwork_url.replace('-large', '-t500x500') : undefined
+    artwork: sc.artwork_url ? sc.artwork_url.replace('-large', '-t500x500') : undefined,
+    playCount: sc.playback_count
   }
 }
 
@@ -181,6 +183,36 @@ export async function relatedTracks(trackId: string, limit = 25): Promise<Track[
   return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
 }
 
+/** Distinct uploaders behind a track's related tracks — our "fans also like" for
+ *  SoundCloud (no real related-artists API). Carries avatars, unlike deriving from
+ *  Track objects (which drop the user's avatar). */
+export async function relatedArtists(trackId: string, limit = 12): Promise<Artist[]> {
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/tracks/${encodeURIComponent(trackId)}/related?limit=25&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScTrack[] }
+    const seen = new Set<string>()
+    const out: Artist[] = []
+    for (const t of data.collection || []) {
+      const u = t.user
+      if (u?.id != null && u.username && !seen.has(String(u.id))) {
+        seen.add(String(u.id))
+        out.push({
+          id: String(u.id),
+          name: u.username,
+          provider: 'soundcloud',
+          avatar: u.avatar_url ? u.avatar_url.replace('-large', '-t200x200') : undefined
+        })
+      }
+    }
+    return out.slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
 export interface ScComment {
   timeSec: number
   body: string
@@ -220,6 +252,109 @@ export async function getUserTracks(userId: string, limit = 60): Promise<Track[]
   if (!res.ok) throw new Error(`SoundCloud artist tracks failed (${res.status})`)
   const data = (await res.json()) as { collection?: ScTrack[] }
   return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
+}
+
+interface ScPlaylist {
+  id: number
+  title: string
+  artwork_url?: string | null
+  calculated_artwork_url?: string | null
+  track_count?: number
+  release_date?: string | null
+  created_at?: string
+  user?: { username?: string }
+  tracks?: Array<{ id?: number } | number | ScTrack>
+}
+
+function toAlbum(p: ScPlaylist, kind: 'album' | 'playlist' = 'album'): Album {
+  const date = p.release_date || p.created_at
+  const year = date ? Number(date.slice(0, 4)) : NaN
+  // SoundCloud albums frequently have a null artwork_url — fall back to the
+  // derived cover, then to the first track's art that the listing includes.
+  const trackArt = (p.tracks || [])
+    .map((t) => (t && typeof t === 'object' ? (t as ScTrack).artwork_url : null))
+    .find((a): a is string => !!a)
+  const raw = p.artwork_url || p.calculated_artwork_url || trackArt || undefined
+  return {
+    id: String(p.id),
+    provider: 'soundcloud',
+    kind,
+    title: p.title,
+    artist: p.user?.username,
+    cover: raw ? raw.replace('-large', '-t500x500') : undefined,
+    year: Number.isFinite(year) ? year : undefined,
+    trackCount: p.track_count
+  }
+}
+
+/** Search SoundCloud albums. */
+export async function searchAlbums(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/search/albums?q=${encodeURIComponent(q)}&limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+  } catch {
+    return []
+  }
+}
+
+/** Search SoundCloud playlists (sets that aren't albums). */
+export async function searchPlaylists(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const res = await authedFetch(
+      (id) =>
+        `${API}/search/playlists_without_albums?q=${encodeURIComponent(q)}&limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'playlist'))
+  } catch {
+    return []
+  }
+}
+
+/** Albums (and album-like sets) published by a SoundCloud user. */
+export async function getUserAlbums(userId: string, limit = 30): Promise<Album[]> {
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/users/${encodeURIComponent(userId)}/albums?limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+  } catch {
+    return []
+  }
+}
+
+/** Full track list of an album/set (hydrates partial entries the API returns). */
+export async function getAlbumTracks(albumId: string): Promise<Track[]> {
+  const bare = albumId.replace(/^sc:/, '')
+  const res = await authedFetch(
+    (id) => `${API}/playlists/${encodeURIComponent(bare)}?client_id=${id}`
+  )
+  if (!res.ok) throw new Error(`SoundCloud album failed (${res.status})`)
+  const data = (await res.json()) as ScPlaylist
+  const ids: number[] = []
+  const fulls: ScTrack[] = []
+  for (const t of data.tracks || []) {
+    if (typeof t === 'number') ids.push(t)
+    else if (t && typeof t === 'object') {
+      const o = t as ScTrack
+      if (o.media?.transcodings?.length) fulls.push(o)
+      else if (typeof o.id === 'number') ids.push(o.id)
+    }
+  }
+  let tracks = fulls.map(toTrack).filter((t): t is Track => t !== null)
+  if (ids.length) tracks = [...tracks, ...(await hydrateTrackIds(ids))]
+  return tracks
 }
 
 // ---------------- Authenticated (user web-session) ----------------

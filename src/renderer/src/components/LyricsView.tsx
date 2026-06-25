@@ -5,7 +5,15 @@ import { formatTime } from '../util'
 import { Waveform } from './Waveform'
 import { extractPalette, type Palette } from '../palette'
 import { SyncEditor } from './SyncEditor'
-import { PlayIcon, PauseIcon, PrevIcon, NextIcon, ChevronDownIcon, ImageIcon } from './Icons'
+import {
+  PlayIcon,
+  PauseIcon,
+  PrevIcon,
+  NextIcon,
+  ChevronDownIcon,
+  ImageIcon,
+  RefreshIcon
+} from './Icons'
 
 interface Lyrics {
   source: string
@@ -86,6 +94,8 @@ export function LyricsView(): JSX.Element {
   }
   const viewportRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLParagraphElement>(null)
+  // Set by the "reset" button so the next fetch bypasses the cache and refetches.
+  const forceRef = useRef(false)
 
   const trackKey = track ? `${track.title}|${track.artist}` : ''
 
@@ -109,10 +119,18 @@ export function LyricsView(): JSX.Element {
       return
     }
     let cancelled = false
+    const force = forceRef.current
+    forceRef.current = false
     setStatus('loading')
     setLyrics(null)
     window.api
-      .getLyrics(track.title, track.artist || '', track.durationSec, usePlayer.getState().geniusFallback)
+      .getLyrics(
+        track.title,
+        track.artist || '',
+        track.durationSec,
+        usePlayer.getState().geniusFallback,
+        force
+      )
       .then((res) => {
         if (cancelled) return
         if (res && (res.synced || res.plain)) {
@@ -331,6 +349,17 @@ export function LyricsView(): JSX.Element {
               {tr('remove')}
             </button>
           )}
+          <button
+            className="sync-corner-btn ghost"
+            onClick={() => {
+              forceRef.current = true
+              setReloadKey((k) => k + 1)
+            }}
+            title={tr('resetLyrics')}
+          >
+            <RefreshIcon size={15} />
+            <span>{tr('resetLyrics')}</span>
+          </button>
           <button
             className="sync-corner-btn"
             onClick={() => setEditing(true)}

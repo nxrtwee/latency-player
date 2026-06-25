@@ -49,12 +49,16 @@ function useDebounced<T>(value: T, ms: number): T {
 export function ExplorePage(): JSX.Element {
   const searchResults = usePlayer((s) => s.searchResults)
   const searchArtists = usePlayer((s) => s.searchArtists)
+  const searchAlbums = usePlayer((s) => s.searchAlbums)
+  const showSearchAlbums = usePlayer((s) => s.showSearchAlbums)
+  const showSearchPlaylists = usePlayer((s) => s.showSearchPlaylists)
   const searchQuery = usePlayer((s) => s.searchQuery)
   const searchLoading = usePlayer((s) => s.searchLoading)
   const searchSource = usePlayer((s) => s.searchSource)
   const setSearchSource = usePlayer((s) => s.setSearchSource)
   const runSearch = usePlayer((s) => s.runSearch)
   const openArtist = usePlayer((s) => s.openArtist)
+  const openAlbum = usePlayer((s) => s.openAlbum)
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
 
@@ -77,6 +81,10 @@ export function ExplorePage(): JSX.Element {
     playQueue(searchResults, index)
   }
   const hasResults = searchResults.length > 0
+  // Albums/playlists section respects the Settings visibility toggles.
+  const visibleAlbums = searchAlbums.filter((a) =>
+    a.kind === 'playlist' ? showSearchPlaylists : showSearchAlbums
+  )
 
   // ----- Lyrics mode (find a song by a remembered line) -----
   // Pipeline: Genius matches the line -> we take each song's title+artist and
@@ -250,9 +258,13 @@ export function ExplorePage(): JSX.Element {
         <>
           {searchLoading && <div className="empty">{t('searching')}</div>}
 
-          {!searchLoading && searchQuery && !hasResults && searchArtists.length === 0 && (
-            <div className="empty">Nothing found for “{searchQuery}”.</div>
-          )}
+          {!searchLoading &&
+            searchQuery &&
+            !hasResults &&
+            searchArtists.length === 0 &&
+            searchAlbums.length === 0 && (
+              <div className="empty">Nothing found for “{searchQuery}”.</div>
+            )}
 
           {!searchLoading && searchArtists.length > 0 && (
             <div className="ex-profiles">
@@ -271,6 +283,31 @@ export function ExplorePage(): JSX.Element {
                     <span className="profile-name">{u.name}</span>
                     <span className="profile-sub">
                       {u.trackCount != null ? `${u.trackCount} tracks` : 'Artist'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!searchLoading && visibleAlbums.length > 0 && (
+            <div className="ex-albums">
+              <div className="ex-results-head">{t('albumsAndPlaylists')}</div>
+              <div className="similar-row">
+                {visibleAlbums.map((al) => (
+                  <button
+                    key={`${al.provider}-${al.kind}-${al.id}`}
+                    className="album-card"
+                    onClick={() => openAlbum(al)}
+                    title={al.title}
+                  >
+                    <div className="album-cover">
+                      {al.cover ? <img src={al.cover} alt="" /> : <span>♪</span>}
+                    </div>
+                    <span className="album-title">{al.title}</span>
+                    <span className="album-year">
+                      {al.kind === 'playlist' ? t('playlist') : t('album')}
+                      {al.artist ? ` · ${al.artist}` : ''}
                     </span>
                   </button>
                 ))}
