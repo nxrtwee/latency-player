@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { usePlayer } from '../store'
 import { formatTime } from '../util'
 import { PlayIcon, HeartIcon, HeartFilledIcon, DownloadIcon, CheckIcon } from './Icons'
@@ -25,7 +26,7 @@ interface TrackRowProps {
   onPlay: (index: number) => void
 }
 
-export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
+function TrackRowImpl({ track, index, onPlay }: TrackRowProps): JSX.Element {
   const currentTrackId = usePlayer((s) =>
     s.currentIndex >= 0 ? s.queue[s.currentIndex]?.id : undefined
   )
@@ -123,3 +124,7 @@ export function TrackRow({ track, index, onPlay }: TrackRowProps): JSX.Element {
     </div>
   )
 }
+
+// Memoized: during windowed scrolling only newly-entering rows render; rows that
+// stay in view keep the same (track, index, onPlay) props and skip re-rendering.
+export const TrackRow = memo(TrackRowImpl)

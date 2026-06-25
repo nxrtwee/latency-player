@@ -282,12 +282,14 @@ export function LyricsView(): JSX.Element {
           )}
           {status === 'ok' && karyLines.length === 0 && plainLines.length > 0 && (
             <div className="kary-viewport static">
-              <div className="kary-static">
+              <div className="kary-scroll">
+                <div className="kary-static">
                 {plainLines.map((line, i) => (
                   <p key={i} className="kary-line static">
                     {line || ' '}
                   </p>
                 ))}
+                </div>
               </div>
               <div className="kary-note" title={tr('plainLyricsNote')}>
                 {tr('plainLyricsNote')} · {lyrics?.source}

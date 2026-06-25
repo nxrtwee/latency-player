@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
+import { useVirtualRows } from '../useVirtualRows'
 import { Waveform } from './Waveform'
 import { Slider } from './Slider'
 import {
@@ -74,6 +75,17 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
     : upcoming
   // Drag-reorder is only meaningful on the unfiltered list.
   const dragEnabled = !fq
+
+  // Windowing: a 300-track queue would otherwise mount 300 rows. Stride = q-item
+  // height + its 2px bottom margin (see styles.css .q-item / .q-window), 50+2
+  // normal / 46+2 compact.
+  const compact = usePlayer((s) => s.compact)
+  const Q_ROW = compact ? 48 : 52
+  const { containerRef: qRef, win: qWin } = useVirtualRows(
+    filteredUpcoming.length,
+    Q_ROW,
+    '.q-list'
+  )
 
   function handleDrop(targetAbs: number): void {
     if (dragIndex !== null && dragIndex !== targetAbs) reorderQueue(dragIndex, targetAbs)
@@ -229,7 +241,10 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
           {upcoming.length > 0 && filteredUpcoming.length === 0 && (
             <div className="q-empty">{t('noQueueMatch')}</div>
           )}
-          {filteredUpcoming.map(({ track: tr, absIndex }) => (
+          {filteredUpcoming.length > 0 && (
+          <div className="q-window" ref={qRef}>
+          {qWin.start > 0 && <div style={{ height: qWin.start * Q_ROW, flexShrink: 0 }} />}
+          {filteredUpcoming.slice(qWin.start, qWin.end).map(({ track: tr, absIndex }) => (
             <div
               key={`${tr.id}-${absIndex}`}
               className={`q-item ${dragEnabled ? 'draggable' : ''} ${
@@ -273,6 +288,11 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               </button>
             </div>
           ))}
+          {qWin.end < filteredUpcoming.length && (
+            <div style={{ height: (filteredUpcoming.length - qWin.end) * Q_ROW, flexShrink: 0 }} />
+          )}
+          </div>
+          )}
         </div>
       </div>
 

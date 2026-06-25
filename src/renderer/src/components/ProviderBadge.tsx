@@ -15,7 +15,9 @@ export function ProviderBadge({
   className?: string
 }): JSX.Element | null {
   if (provider === 'soundcloud') {
-    return <RealSoundCloudIcon size={size} className={`prov-badge ${className}`} />
+    // Neutral white so the badge reads as a clean monochrome mark over avatars and
+    // thumbnails (the surrounding label color would otherwise tint it).
+    return <RealSoundCloudIcon size={size} color="#fff" className={`prov-badge ${className}`} />
   }
   if (provider === 'yandex') {
     return <RealYandexMusicIcon size={size} bg={false} className={`prov-badge ${className}`} />

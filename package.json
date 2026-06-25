@@ -1,6 +1,6 @@
 {
   "name": "latency-player",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Desktop media player with pluggable playback sources (local, SoundCloud, ...)",
   "author": "",
   "license": "MIT",

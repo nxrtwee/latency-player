@@ -101,13 +101,37 @@ button {
   backdrop-filter: blur(12px);
 }
 .app.has-bg .sidebar,
-.app.has-bg .content,
 .app.has-bg .rp-card {
   background-color: rgba(11, 14, 13, 0.62);
   backdrop-filter: blur(14px);
 }
+/* The main content panel hosts the scroll view (.cscroll-view). A
+   backdrop-filter on a scroll *ancestor* triggers a Chromium/Electron
+   compositor bug: wheel scrolling happens on the compositor thread and the
+   filtered region is not re-rasterized, so the view "freezes" mid-frame until
+   a click forces a repaint. (Dragging the thumb sets scrollTop on the main
+   thread, which is why that path never froze.) Fix: push the glass onto a
+   non-scrolling ::before layer so the filter is no longer an ancestor of the
+   scroller — the blur looks identical but no longer gates scroll repaints. */
 .app.has-bg .content {
+  background-color: transparent;
   background-image: none;
+}
+.app.has-bg .content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-color: rgba(11, 14, 13, 0.62);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+/* Keep the real content (and its scroller) above the glass layer. */
+.app.has-bg .content > * {
+  position: relative;
+  z-index: 1;
 }
 .app-body {
   flex: 1;
@@ -1079,6 +1103,9 @@ body.resizing * {
   padding: 7px 12px;
   border-radius: 8px;
   cursor: default;
+  /* Fixed height so list windowing (useVirtualRows, ROW_H=54) stays accurate. */
+  height: 54px;
+  box-sizing: border-box;
 }
 .trow:hover {
   background: var(--row-hover);
@@ -1782,9 +1809,12 @@ body.resizing * {
   transform: translateX(18px);
 }
 
-/* Compact density */
+/* Compact density. Heights are pinned (and mirrored by the windowing constants
+   ROW_H_COMPACT / Q stride in TrackList & RightPanel) so virtualization stays
+   accurate in both densities. */
 [data-compact='1'] .trow {
   padding: 3px 12px;
+  height: 38px;
 }
 [data-compact='1'] .thumb {
   width: 32px;
@@ -1798,6 +1828,7 @@ body.resizing * {
 }
 [data-compact='1'] .q-item {
   padding: 4px 6px;
+  height: 46px;
 }
 
 /* Lyrics text size */
@@ -1925,7 +1956,11 @@ body.resizing * {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+}
+/* Inner window holding the virtualized q-items + spacers (see useVirtualRows). */
+.q-window {
+  display: flex;
+  flex-direction: column;
 }
 .q-item {
   display: flex;
@@ -1938,6 +1973,11 @@ body.resizing * {
   cursor: pointer;
   text-align: left;
   width: 100%;
+  /* Fixed height + margin = 52px stride, matching the windowing constant. The
+     2px margin replaces the old flex gap (gap would break the spacer math). */
+  height: 50px;
+  box-sizing: border-box;
+  margin-bottom: 2px;
 }
 .q-item:hover {
   background: var(--row-hover);
@@ -3354,8 +3394,16 @@ button:disabled {
   letter-spacing: 0.3px;
 }
 
-/* Static (unsynced) lyrics: plain scrollable text, no karaoke highlight. */
+/* Static (unsynced/Genius) lyrics: plain scrollable text, no karaoke highlight.
+   Scrolling lives on an inner .kary-scroll, NOT on .kary-viewport: the viewport
+   keeps the edge-fade mask, and a *masked* element that also scrolls triggers a
+   Chromium/Electron wheel-scroll repaint freeze whenever a backdrop-filter (the
+   custom-background glass) is in view. A plain inner scroller avoids the freeze. */
 .kary-viewport.static {
+  overflow: hidden;
+}
+.kary-scroll {
+  height: 100%;
   overflow-y: auto;
 }
 .kary-static {

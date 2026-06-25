@@ -156,10 +156,40 @@ jobs:
     needs: [desktop-win, android-apk, ios-ipa]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4 # needed to read CHANGELOG.md for the notes
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
+      - name: Build release notes
+        # Banner + download list (desktop version from the tag, mobile pinned to
+        # 0.1.0) followed by this version's CHANGELOG.md section.
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          {
+            echo "## Latency — медиаплеер"
+            echo
+            echo "### ⚠️ Обновление только для ПК (Windows) — v${VERSION}"
+            echo "**Мобильные версии (Android/iOS) остаются на 0.1.0 без изменений.**"
+            echo
+            echo "**Скачать:**"
+            echo "- **Windows (v${VERSION})** — \`Latency-${VERSION}-x64.exe\` (установщик) или \`Latency-${VERSION}-portable.exe\`"
+            echo "- **Android (v0.1.0)** — \`Latency-0.1.0.apk\` (включите «установка из неизвестных источников»)"
+            echo "- **iOS (v0.1.0)** — \`Latency-0.1.0-unsigned.ipa\` (подпишите своим Apple ID через AltStore/Sideloadly)"
+            echo
+            echo "---"
+            echo
+            awk -v ver="$VERSION" '
+              index($0, "## [" ver "]") == 1 { f = 1; print; next }
+              f && index($0, "## ") == 1 { exit }
+              f { print }
+            ' CHANGELOG.md
+            echo
+            echo "> ⚠️ Плеер разрабатывался исключительно для десктопа. Мобильные порты"
+            echo "> (особенно Android) сделаны «для галочки» — рабочие, но местами сырые."
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -167,20 +197,5 @@ jobs:
             dist/desktop-win/*.exe
             dist/android-apk/Latency-0.1.0.apk
             dist/ios-ipa/Latency-0.1.0-unsigned.ipa
-          body: |
-            ## Latency — медиаплеер
-
-            ### ⚠️ Это обновление только для ПК (Windows) — v0.3.0
-            Десктоп получает интеграцию **Яндекс Музыки** (доступ без VPN в России),
-            **«Мою волну»**, импорт/удаление лайков, настоящие логотипы источников и
-            другое. **Мобильные версии (Android/iOS) остаются на 0.1.0 без изменений.**
-
-            **Скачать:**
-            - **Windows (v0.3.0)** — `Latency-0.3.0-x64.exe` (установщик) или `Latency-0.3.0-portable.exe`
-            - **Android (v0.1.0)** — `Latency-0.1.0.apk` (включите «установка из неизвестных источников»)
-            - **iOS (v0.1.0)** — `Latency-0.1.0-unsigned.ipa` (подпишите своим Apple ID через AltStore/Sideloadly)
-
-            > ⚠️ Плеер разрабатывался исключительно для десктопа. Мобильные порты
-            > (особенно Android) сделаны «для галочки» — они рабочие, но местами
-            > сырые. Эталонный опыт — на десктопе.
+          body_path: RELEASE_NOTES.md
           fail_on_unmatched_files: true

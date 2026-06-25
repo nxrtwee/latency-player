@@ -16,6 +16,9 @@ import type { Track } from '../shared/types'
 process.title = 'Latency'
 app.setPath('userData', join(app.getPath('appData'), 'latency-player'))
 app.setName('Latency')
+// Identify the app to Windows so the system media overlay (SMTC) labels playback
+// as "Latency" instead of "unknown application". Must match build.appId.
+app.setAppUserModelId('com.latency.app')
 
 // Register our media scheme as privileged BEFORE the app is ready, so the
 // renderer can fetch/stream local files through it with fetch + range support.
@@ -130,7 +133,12 @@ function registerIpc(): void {
   ipcMain.handle('ym:isAuthed', () => yandex.isAuthed())
   ipcMain.handle('ym:resolveStream', (_e, trackId: string) => yandex.resolveStream(trackId))
   ipcMain.handle('ym:myLikes', () => yandex.getMyLikes())
-  ipcMain.handle('ym:myWave', () => yandex.getMyWave())
+  ipcMain.handle('ym:myWave', (_e, queueId?: string) => yandex.getMyWave(queueId))
+  ipcMain.handle(
+    'ym:waveFeedback',
+    (_e, type: 'trackStarted' | 'trackFinished', trackId: string, seconds?: number) =>
+      yandex.waveTrackFeedback(type, trackId, seconds)
+  )
 
   ipcMain.handle('likes:get', () => likes.getLikes())
   ipcMain.handle('likes:toggle', (_e, track: Track) => likes.toggle(track))

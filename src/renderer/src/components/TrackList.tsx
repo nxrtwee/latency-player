@@ -1,10 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { usePlayer } from '../store'
 import { formatTotal } from '../util'
 import { PlayIcon, SearchIcon, ShuffleIcon, ClockIcon, DownloadIcon, MoreIcon } from './Icons'
 import { TrackRow } from './TrackRow'
 import { useT } from '../i18n'
+import { useVirtualRows } from '../useVirtualRows'
 import type { Track } from '@shared/types'
+
+// Pinned .trow heights (see styles.css) — windowing math depends on them.
+const ROW_H_NORMAL = 54
+const ROW_H_COMPACT = 38
 
 export function TrackList(): JSX.Element {
   const t = useT()
@@ -68,9 +73,17 @@ export function TrackList(): JSX.Element {
   const headerCover = list.find((t) => t.artwork)?.artwork
   const totalSec = list.reduce((sum, t) => sum + (t.durationSec ?? 0), 0)
 
-  function play(index: number): void {
-    playQueue(list, index)
-  }
+  const compact = usePlayer((s) => s.compact)
+  const ROW_H = compact ? ROW_H_COMPACT : ROW_H_NORMAL
+  const { containerRef, win } = useVirtualRows(list.length, ROW_H, '.cscroll-view')
+
+  // Stable so React.memo on TrackRow can skip re-rendering rows during scroll.
+  const play = useCallback(
+    (index: number): void => {
+      playQueue(list, index)
+    },
+    [playQueue, list]
+  )
   function shufflePlay(): void {
     if (!list.length) return
     if (!shuffle) toggleShuffle()
@@ -153,10 +166,15 @@ export function TrackList(): JSX.Element {
       {list.length === 0 ? (
         <div className="empty">{emptyText()}</div>
       ) : (
-        <div className="rows">
-          {list.map((track, i) => (
-            <TrackRow key={`${track.id}-${i}`} track={track} index={i} onPlay={play} />
-          ))}
+        <div className="rows" ref={containerRef}>
+          {win.start > 0 && <div style={{ height: win.start * ROW_H, flexShrink: 0 }} />}
+          {list.slice(win.start, win.end).map((track, i) => {
+            const idx = win.start + i
+            return <TrackRow key={`${track.id}-${idx}`} track={track} index={idx} onPlay={play} />
+          })}
+          {win.end < list.length && (
+            <div style={{ height: (list.length - win.end) * ROW_H, flexShrink: 0 }} />
+          )}
         </div>
       )}
 

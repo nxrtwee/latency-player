@@ -41,7 +41,13 @@ const api = {
   ymResolveStream: (trackId: string): Promise<string> =>
     ipcRenderer.invoke('ym:resolveStream', trackId),
   ymMyLikes: (): Promise<Track[]> => ipcRenderer.invoke('ym:myLikes'),
-  ymMyWave: (): Promise<{ cover?: string; tracks: Track[] }> => ipcRenderer.invoke('ym:myWave'),
+  ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
+    ipcRenderer.invoke('ym:myWave', queueId),
+  ymWaveFeedback: (
+    type: 'trackStarted' | 'trackFinished',
+    trackId: string,
+    seconds?: number
+  ): Promise<void> => ipcRenderer.invoke('ym:waveFeedback', type, trackId, seconds),
 
   getLikes: (): Promise<Track[]> => ipcRenderer.invoke('likes:get'),
   toggleLike: (track: Track): Promise<Track[]> => ipcRenderer.invoke('likes:toggle', track),

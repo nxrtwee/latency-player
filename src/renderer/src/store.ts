@@ -357,6 +357,76 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  /**
+   * Mirror the current track + play state to the OS media controls. Chromium maps
+   * navigator.mediaSession onto the Windows System Media Transport Controls
+   * (SMTC), so this is what fills the system media overlay with cover/title/
+   * artist/progress — without it Windows shows "unknown application".
+   */
+  function updateMediaSession(): void {
+    if (!('mediaSession' in navigator)) return
+    try {
+      const { queue, currentIndex, isPlaying, positionSec, durationSec } = get()
+      const ms = navigator.mediaSession
+      const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+      if (!track) {
+        ms.metadata = null
+        ms.playbackState = 'none'
+        return
+      }
+      ms.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist || '',
+        album: track.album || '',
+        // http(s) covers and local data: URLs both work for SMTC artwork.
+        artwork: track.artwork ? [{ src: track.artwork, sizes: '512x512' }] : []
+      })
+      ms.playbackState = isPlaying ? 'playing' : 'paused'
+      if (durationSec > 0 && Number.isFinite(durationSec)) {
+        try {
+          ms.setPositionState({
+            duration: durationSec,
+            position: Math.max(0, Math.min(positionSec, durationSec)),
+            playbackRate: 1
+          })
+        } catch {
+          /* position can briefly exceed duration during a track swap — ignore */
+        }
+      }
+    } catch {
+      /* MediaSession unsupported — ignore */
+    }
+  }
+
+  /**
+   * Wire the OS media buttons (play/pause/next/prev/seek) to the player controls.
+   * Registered once at startup; each handler reads the latest controls via get().
+   */
+  function bindMediaSessionHandlers(): void {
+    if (!('mediaSession' in navigator)) return
+    const ms = navigator.mediaSession
+    const on = (action: MediaSessionAction, fn: MediaSessionActionHandler): void => {
+      try {
+        ms.setActionHandler(action, fn)
+      } catch {
+        /* action unsupported by this Chromium build — ignore */
+      }
+    }
+    on('play', () => get().togglePlay())
+    on('pause', () => get().togglePlay())
+    on('previoustrack', () => get().prev())
+    on('nexttrack', () => get().next())
+    on('seekto', (d) => {
+      if (d.seekTime != null) get().seek(d.seekTime)
+    })
+    on('seekbackward', (d) => {
+      get().seek(Math.max(0, get().positionSec - (d.seekOffset ?? 10)))
+    })
+    on('seekforward', (d) => {
+      get().seek(Math.min(get().durationSec, get().positionSec + (d.seekOffset ?? 10)))
+    })
+  }
+
   function recordRecent(track: Track): void {
     const existing = get().recentlyPlayed.filter((t) => t.id !== track.id)
     const recentlyPlayed = [{ ...track, playedAt: Date.now() }, ...existing].slice(0, RECENT_MAX)
@@ -401,18 +471,23 @@ export const usePlayer = create<PlayerState>((set, get) => {
   }
 
   /**
-   * My Wave is endless: when the queue runs out while the wave is active, fetch a
-   * fresh batch from Yandex's radio, append the new tracks, and keep playing.
+   * Fetch the next batch of My Wave tracks and append the fresh ones to the queue.
+   * Passing the last queued track id makes the rotor return the NEXT tracks rather
+   * than the same opening batch. When `playFirstNew` is set it also starts playing
+   * the first appended track (used when the queue ran dry); otherwise it's a silent
+   * top-up (lookahead prefetch) that leaves the current track alone.
    */
-  async function extendQueueWithWave(): Promise<boolean> {
+  async function topUpWave(playFirstNew: boolean): Promise<boolean> {
     try {
-      const wave = await window.api.ymMyWave()
-      const have = new Set(get().queue.map((t) => t.id))
+      const q = get().queue
+      const lastId = q.length ? q[q.length - 1].id : undefined
+      const wave = await window.api.ymMyWave(lastId)
+      const have = new Set(q.map((t) => t.id))
       const fresh = wave.tracks.filter((t) => !have.has(t.id))
       if (fresh.length === 0) return false
       const startIndex = get().queue.length
       set({ queue: [...get().queue, ...fresh] })
-      loadIndex(startIndex, true)
+      if (playFirstNew) loadIndex(startIndex, true)
       persistQueue()
       return true
     } catch {
@@ -420,13 +495,51 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  const extendQueueWithWave = (): Promise<boolean> => topUpWave(true)
+
+  // Keep at least this many tracks queued ahead while the wave plays, so the
+  // next/prev buttons always have a target (an empty look-ahead used to wedge the
+  // player). Prefetch is guarded so it never runs twice concurrently.
+  const WAVE_LOOKAHEAD = 3
+  let wavePrefetching = false
+  async function maybePrefetchWave(): Promise<void> {
+    if (wavePrefetching || !get().waveActive) return
+    const { queue, currentIndex } = get()
+    if (queue.length - currentIndex - 1 >= WAVE_LOOKAHEAD) return
+    wavePrefetching = true
+    try {
+      await topUpWave(false)
+    } finally {
+      wavePrefetching = false
+    }
+  }
+
+  // Rotor feedback drives My Wave's recommendations — without trackStarted/Finished
+  // the station keeps replaying the same opening batch. Best-effort, Yandex-only.
+  function reportWaveFinished(): void {
+    const { waveActive, currentIndex, queue, positionSec } = get()
+    if (!waveActive || currentIndex < 0) return
+    const cur = queue[currentIndex]
+    if (cur?.providerId === 'yandex') {
+      window.api.ymWaveFeedback('trackFinished', cur.id, Math.max(0, Math.round(positionSec)))
+    }
+  }
+  function reportWaveStarted(track: Track): void {
+    if (get().waveActive && track.providerId === 'yandex') {
+      window.api.ymWaveFeedback('trackStarted', track.id, 0)
+    }
+  }
+
   function loadIndex(index: number, autoplay: boolean): void {
     const { queue, volume } = get()
+    // Tell the rotor the outgoing wave track finished before we switch.
+    reportWaveFinished()
     if (index < 0 || index >= queue.length) {
       handle?.destroy()
       handle = null
       set({ currentIndex: -1, isPlaying: false, positionSec: 0, durationSec: 0 })
       updatePresence()
+      updateMediaSession()
       return
     }
     const track = queue[index]
@@ -447,13 +560,19 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     handle?.destroy()
     set({ currentIndex: index, positionSec: 0, durationSec: track.durationSec ?? 0, error: null })
+    // Surface the new track to the OS media overlay immediately (before it plays).
+    updateMediaSession()
 
     handle = provider.createPlayback(playTrack, {
       onTime: (sec) => set({ positionSec: sec }),
-      onDuration: (sec) => set({ durationSec: sec }),
+      onDuration: (sec) => {
+        set({ durationSec: sec })
+        updateMediaSession()
+      },
       onPlayingChange: (playing) => {
         set({ isPlaying: playing })
         updatePresence()
+        updateMediaSession()
       },
       onError: (message) => set({ error: message }),
       onEnded: () => {
@@ -470,14 +589,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
     if (autoplay) {
       handle.play()
       recordRecent(track)
+      reportWaveStarted(track)
     }
     persistQueue()
+    // Keep a few tracks queued ahead so next/prev never hit an empty queue.
+    void maybePrefetchWave()
   }
 
   // O(1) liked lookup for track rows: rebuilt whenever likes/scLikes change so
   // a 300+ liked list doesn't make every row scan the array on each state tick.
   const syncLikedIds = (): void =>
     set({ likedIds: new Set([...get().likes, ...get().scLikes].map((t) => t.id)) })
+
+  // Register the OS media-key / overlay button handlers once at startup.
+  bindMediaSessionHandlers()
 
   return {
     source: 'home',
@@ -1437,11 +1562,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
       persistQueue()
     },
 
-    playMyWave(startIndex = 0) {
+    async playMyWave(startIndex = 0) {
+      // Pull a FRESH batch every time the wave starts (the cached myWave is only
+      // for the home/wave-page preview) — otherwise each start replays the same
+      // tracks. loadMyWave re-fetches from the rotor and rotates via feedback.
+      await get().loadMyWave()
       const wave = get().myWave
       if (!wave || wave.tracks.length === 0) return
       set({ queue: wave.tracks, waveActive: true })
-      loadIndex(startIndex, true)
+      // The fresh batch may differ in length from what the caller saw — clamp the
+      // start index so a stale random/shuffle index can't fall off the end.
+      loadIndex(Math.min(Math.max(0, startIndex), wave.tracks.length - 1), true)
       persistQueue()
     },
 
@@ -1571,6 +1702,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       handle?.seek(sec)
       set({ positionSec: sec })
       updatePresence()
+      updateMediaSession()
     },
 
     setVolume(v) {

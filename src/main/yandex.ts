@@ -320,15 +320,68 @@ export interface YmWave {
   tracks: Track[]
 }
 
-/** Yandex's personal radio ("Моя волна" / My Wave) as a batch of tracks. */
-export async function getMyWave(limit = 40): Promise<YmWave> {
+// Batch id of the most recent wave fetch — trackStarted/trackFinished feedback
+// must reference it so the rotor attributes the signal to the right batch.
+let lastWaveBatchId: string | null = null
+
+/** Best-effort rotor feedback (radioStarted/trackFinished/…). Fire-and-forget:
+ *  the station uses it to vary recommendations, but playback must not depend on it. */
+async function waveFeedback(type: string, extra: Record<string, unknown> = {}): Promise<void> {
+  if (!oauthToken) return
+  try {
+    await fetch(`${API}/rotor/station/user:onyourwave/feedback`, {
+      method: 'POST',
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type,
+        timestamp: new Date().toISOString(),
+        ...(lastWaveBatchId ? { batchId: lastWaveBatchId } : {}),
+        ...extra
+      })
+    })
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Per-track rotor feedback from the renderer. `trackStarted` when a wave track
+ * begins, `trackFinished` (with seconds played) when it ends or is skipped — this
+ * is what teaches the station and keeps each run varied.
+ */
+export async function waveTrackFeedback(
+  type: 'trackStarted' | 'trackFinished',
+  trackId: string,
+  totalPlayedSeconds = 0
+): Promise<void> {
+  const extra: Record<string, unknown> = { trackId: trackId.replace(/^ym:/, ''), from: 'desktop-latency' }
+  if (type === 'trackFinished') extra.totalPlayedSeconds = totalPlayedSeconds
+  await waveFeedback(type, extra)
+}
+
+/**
+ * Yandex's personal radio ("Моя волна" / My Wave) as a batch of tracks.
+ *
+ * `queueId` is the id of the last track already queued. Passing it makes the
+ * rotor return the NEXT, non-repeating tracks — this is what keeps the wave
+ * endless (without it the endpoint keeps returning the same opening batch). On a
+ * fresh start (no queueId) we send `radioStarted` feedback so each new run of
+ * the wave is rotated instead of replaying the identical set.
+ */
+export async function getMyWave(queueId?: string, limit = 40): Promise<YmWave> {
   if (!oauthToken) return { tracks: [] }
   try {
-    const res = await fetch(`${API}/rotor/station/user:onyourwave/tracks?settings2=true`, {
-      headers: apiHeaders()
-    })
+    if (!queueId) await waveFeedback('radioStarted', { from: 'desktop-latency' })
+    const bare = queueId ? queueId.replace(/^ym:/, '') : ''
+    const url =
+      `${API}/rotor/station/user:onyourwave/tracks?settings2=true` +
+      (bare ? `&queue=${encodeURIComponent(bare)}` : '')
+    const res = await fetch(url, { headers: apiHeaders() })
     if (!res.ok) return { tracks: [] }
-    const data = (await res.json()) as { result?: { sequence?: { track?: YmTrack }[] } }
+    const data = (await res.json()) as {
+      result?: { batchId?: string; sequence?: { track?: YmTrack }[] }
+    }
+    lastWaveBatchId = data.result?.batchId ?? lastWaveBatchId
     const tracks = (data.result?.sequence || [])
       .map((s) => (s.track ? toTrack(s.track) : null))
       .filter((t): t is Track => t !== null)
