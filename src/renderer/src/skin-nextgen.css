@@ -86,6 +86,14 @@
   padding: 0 12px;
   gap: 12px;
 }
+/* The resizer is a flex item, so an expanded boundary was gap + resizer + gap
+   (12 + 8 + 12 = 32) while a collapsed one (no resizer) was just the gap (12).
+   Pull the resizer in with negative margins so EVERY column boundary equals the
+   collapsed gap (12) — uniform, tighter spacing on both sides of the middle. */
+[data-skin='nextgen'] .resizer {
+  margin-left: -10px;
+  margin-right: -10px;
+}
 
 /* ---- Window controls ---- */
 [data-skin='nextgen'] .win-btn {
@@ -673,6 +681,228 @@
 [data-skin='nextgen'] .fsplayer-close:hover,
 [data-skin='nextgen'] .fsplayer-bg-btn:hover {
   transform: scale(1.08);
+}
+
+/* ---- Profile ---- */
+[data-skin='nextgen'] .pf-avatar {
+  box-shadow:
+    0 28px 64px -24px rgba(0, 0, 0, 0.9),
+    0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 0 54px -16px var(--accent);
+}
+[data-skin='nextgen'] .profile-account {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  transition:
+    transform 0.26s var(--ng-ease),
+    border-color 0.26s var(--ng-ease),
+    box-shadow 0.26s var(--ng-ease);
+}
+[data-skin='nextgen'] .profile-account:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 16px 36px -22px rgba(0, 0, 0, 0.9);
+}
+[data-skin='nextgen'] .pa-artist-av {
+  box-shadow: 0 14px 32px -18px rgba(0, 0, 0, 0.9);
+  transition: transform 0.28s var(--ng-ease), box-shadow 0.28s var(--ng-ease);
+}
+[data-skin='nextgen'] .pa-artist:hover .pa-artist-av {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 22px 44px -18px rgba(0, 0, 0, 0.95), 0 0 24px -10px var(--accent);
+}
+/* recent-track cards: cover-forward (no box) */
+[data-skin='nextgen'] .pt-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+[data-skin='nextgen'] .pt-card:hover {
+  background: transparent;
+}
+[data-skin='nextgen'] .pt-cover {
+  border-radius: 16px;
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.95);
+  transition: transform 0.3s var(--ng-ease), box-shadow 0.3s var(--ng-ease);
+}
+[data-skin='nextgen'] .pt-cover img {
+  transition: transform 0.45s var(--ng-ease);
+}
+[data-skin='nextgen'] .pt-card:hover .pt-cover {
+  transform: translateY(-6px);
+  box-shadow: 0 28px 56px -20px rgba(0, 0, 0, 0.95), 0 0 28px -10px var(--accent);
+}
+[data-skin='nextgen'] .pt-card:hover .pt-cover img {
+  transform: scale(1.07);
+}
+/* profile buttons */
+[data-skin='nextgen'] .sync-btn {
+  border-radius: 16px;
+}
+[data-skin='nextgen'] .sync-btn.primary {
+  color: #fff;
+  box-shadow: var(--ng-accent-glow);
+}
+[data-skin='nextgen'] .sync-btn.ghost {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ---- My Wave: recolor the gold disc/rings to the accent (matches concept) ---- */
+[data-skin='nextgen'] .wave-disc-core {
+  background: linear-gradient(150deg, var(--accent-2), var(--accent) 62%, color-mix(in srgb, var(--accent) 68%, #000));
+  color: #fff;
+  box-shadow: 0 18px 56px -10px var(--accent);
+}
+[data-skin='nextgen'] .wave-ring {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+/* My Wave home banner — glass slab + accent disc, matching the Wave tab. */
+[data-skin='nextgen'] .home-wave {
+  background: linear-gradient(180deg, rgba(24, 20, 40, 0.5), rgba(12, 10, 22, 0.5));
+  border: 1px solid var(--border-2);
+  border-radius: var(--ng-r-lg);
+  box-shadow: var(--ng-shadow), var(--ng-ring);
+  transition: transform 0.2s var(--ng-ease), box-shadow 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .home-wave:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ng-shadow), 0 0 26px -10px var(--accent);
+}
+[data-skin='nextgen'] .home-wave-core {
+  background: linear-gradient(150deg, var(--accent-2), var(--accent) 62%, color-mix(in srgb, var(--accent) 68%, #000));
+  color: #fff;
+  box-shadow: 0 14px 40px -10px var(--accent);
+}
+[data-skin='nextgen'] .home-wave-play {
+  box-shadow: var(--ng-accent-glow);
+}
+[data-skin='nextgen'] .wave-headline {
+  letter-spacing: -1.4px;
+}
+[data-skin='nextgen'] .wave-play {
+  box-shadow: var(--ng-accent-glow);
+}
+[data-skin='nextgen'] .wave-chip {
+  border-radius: 16px;
+  transition: transform 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .wave-chip:hover {
+  transform: translateY(-2px);
+}
+/* My Wave constellation: covers orbiting the logo, each with an artist avatar */
+[data-skin='nextgen'] .wave-disc.has-orbit {
+  width: 400px;
+  height: 400px;
+  margin-bottom: 30px;
+}
+[data-skin='nextgen'] .wave-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+[data-skin='nextgen'] .wave-orb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: ngOrbIn 0.5s var(--ng-ease) both;
+}
+[data-skin='nextgen'] .wave-orb-cover {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--art-ph);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.85);
+  transition: transform 0.25s var(--ng-ease), box-shadow 0.25s var(--ng-ease);
+}
+[data-skin='nextgen'] .wave-orb-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+[data-skin='nextgen'] .wave-orb-av {
+  width: 22px;
+  height: 22px;
+  margin-top: -12px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg);
+  box-shadow: 0 4px 10px -3px rgba(0, 0, 0, 0.7);
+  position: relative;
+  z-index: 1;
+}
+[data-skin='nextgen'] .wave-orb:hover .wave-orb-cover {
+  transform: translateY(-3px) scale(1.08);
+  box-shadow: 0 18px 36px -12px rgba(0, 0, 0, 0.9), 0 0 24px -8px var(--accent);
+}
+@keyframes ngOrbIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Comments ---- */
+[data-skin='nextgen'] .comments-title {
+  letter-spacing: -1.6px;
+}
+[data-skin='nextgen'] .cm-bubble {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+[data-skin='nextgen'] .cm-entry {
+  border-radius: 11px;
+}
+[data-skin='nextgen'] .cm-entry.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+[data-skin='nextgen'] .cm-empty {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-2);
+  border-radius: 20px;
+}
+[data-skin='nextgen'] .cm-empty-icon {
+  background: linear-gradient(140deg, var(--accent-soft), transparent);
+  box-shadow: 0 0 30px -10px var(--accent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+/* ---- Info (source marketing pages) ---- */
+[data-skin='nextgen'] .info-icon {
+  border-radius: 22px;
+  box-shadow: 0 0 40px -14px var(--accent);
+}
+[data-skin='nextgen'] .info-tagline {
+  font-size: 19px;
+}
+[data-skin='nextgen'] .sync-btn.primary,
+[data-skin='nextgen'] .info-actions .btn-play {
+  color: #fff;
 }
 
 /* ---- Modals: Settings / Equalizer / BgFraming / SyncEditor ---- */

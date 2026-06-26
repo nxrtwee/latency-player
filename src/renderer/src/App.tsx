@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePlayer } from './store'
 import { Sidebar } from './components/Sidebar'
+import { OverlayScrollbar } from './components/OverlayScrollbar'
 import { TrackList } from './components/TrackList'
 import { PlayerBar } from './components/PlayerBar'
 import { RightPanel } from './components/RightPanel'
@@ -103,6 +104,7 @@ export function App(): JSX.Element {
 
   const [sidebarW, setSidebarW] = usePersistentWidth('lp.sidebarW', 236, 200, 360)
   const [rightW, setRightW] = usePersistentWidth('lp.rightW', 332, 280, 540)
+  const sidebarRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     loadLibrary()
@@ -139,7 +141,12 @@ export function App(): JSX.Element {
       )}
       <TitleBar />
       <div className="app-body">
-        <Sidebar width={sidebarCollapsed ? undefined : sidebarW} collapsed={sidebarCollapsed} />
+        <Sidebar
+          ref={sidebarRef}
+          width={sidebarCollapsed ? undefined : sidebarW}
+          collapsed={sidebarCollapsed}
+        />
+        <OverlayScrollbar scrollRef={sidebarRef} />
         {!sidebarCollapsed && (
           <Resizer
             width={sidebarW}

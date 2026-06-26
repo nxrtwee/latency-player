@@ -8,7 +8,9 @@ import {
   CompassIcon,
   RefreshIcon,
   SoundCloudIcon,
-  YandexMusicIcon
+  YandexMusicIcon,
+  DownloadIcon,
+  PlayIcon
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
@@ -54,6 +56,10 @@ export function HomePage(): JSX.Element {
   const disconnectSoundCloud = usePlayer((s) => s.disconnectSoundCloud)
   const mixSource = usePlayer((s) => s.mixSource)
   const setMixSource = usePlayer((s) => s.setMixSource)
+  const showHomeMixes = usePlayer((s) => s.showHomeMixes)
+  const myWave = usePlayer((s) => s.myWave)
+  const playMyWave = usePlayer((s) => s.playMyWave)
+  const offlineCount = usePlayer((s) => s.offlineIds.length)
   const t = useT()
 
   const [firstRun] = useState(() => !localStorage.getItem('lp.visited'))
@@ -76,9 +82,10 @@ export function HomePage(): JSX.Element {
       sub: `${recentlyPlayed.length} ${t('tracks')}`,
       Icon: ClockIcon
     },
-    // When signed in to Yandex, surface My Wave here instead of Local Files.
+    // When signed in to Yandex, My Wave gets its own banner above the mixes, so
+    // this slot becomes Downloaded (avoids duplicating the Wave tile).
     ymAuth
-      ? { key: 'wave', label: t('myWave'), sub: t('yandexMusic'), Icon: YandexMusicIcon }
+      ? { key: 'offline', label: t('downloaded'), sub: `${offlineCount} ${t('tracks')}`, Icon: DownloadIcon }
       : { key: 'local', label: t('localFiles'), sub: `${tracks.length} ${t('tracks')}`, Icon: FolderIcon },
     { key: 'explore', label: t('explore'), sub: 'SoundCloud', Icon: CompassIcon }
   ]
@@ -120,6 +127,43 @@ export function HomePage(): JSX.Element {
         ))}
       </div>
 
+      {ymAuth && myWave && (
+        <div
+          className="home-wave"
+          role="button"
+          tabIndex={0}
+          onClick={() => setSource('wave')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setSource('wave')
+          }}
+          title={t('myWave')}
+        >
+          <span className="home-wave-disc">
+            <span className="wave-ring r1" />
+            <span className="wave-ring r2" />
+            <span className="home-wave-core">
+              <YandexMusicIcon size={34} />
+            </span>
+          </span>
+          <span className="home-wave-text">
+            <span className="home-wave-label">{t('yandexMusic')}</span>
+            <span className="home-wave-title">{t('myWave')}</span>
+            <span className="home-wave-sub">{t('myWaveBannerSub')}</span>
+          </span>
+          <button
+            className="home-wave-play"
+            title={t('playWave')}
+            onClick={(e) => {
+              e.stopPropagation()
+              playMyWave(0)
+            }}
+          >
+            <PlayIcon size={20} />
+          </button>
+        </div>
+      )}
+
+      {showHomeMixes && (
       <div className="home-section">
         <div className="home-h2-row">
           <h2 className="home-h2">{t('yourMixes')}</h2>
@@ -210,6 +254,7 @@ export function HomePage(): JSX.Element {
           )}
         </div>
       </div>
+      )}
 
       {jumpBack.length > 0 && (
         <div className="home-section">

@@ -8,10 +8,10 @@ export function ActivityPage(): JSX.Element {
   const recentlyPlayed = usePlayer((s) => s.recentlyPlayed)
   const likes = usePlayer((s) => s.likes)
   const playQueue = usePlayer((s) => s.playQueue)
+  const listenedSec = usePlayer((s) => s.listenedSec)
   const t = useT()
 
   const stats = useMemo(() => {
-    const totalSec = recentlyPlayed.reduce((s, t) => s + (t.durationSec ?? 0), 0)
     const artistCount = new Map<string, number>()
     let sc = 0
     let local = 0
@@ -29,7 +29,7 @@ export function ActivityPage(): JSX.Element {
         topArtist = a
       }
     }
-    return { totalSec, topArtist, sc, local }
+    return { topArtist, sc, local }
   }, [recentlyPlayed])
 
   const now = Date.now()
@@ -55,7 +55,7 @@ export function ActivityPage(): JSX.Element {
           <div className="stat-icon">
             <ClockIcon size={20} />
           </div>
-          <span className="stat-value">{formatTotal(stats.totalSec)}</span>
+          <span className="stat-value">{formatTotal(listenedSec)}</span>
           <span className="stat-label">{t('listeningTime')}</span>
         </div>
         <div className="stat-card">

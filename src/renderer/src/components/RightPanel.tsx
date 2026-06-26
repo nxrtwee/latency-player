@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
 import { useVirtualRows } from '../useVirtualRows'
 import { Waveform } from './Waveform'
 import { Slider } from './Slider'
+import { OverlayScrollbar } from './OverlayScrollbar'
+import { grabScroll } from '../grabScroll'
 import {
   PlayIcon,
   PauseIcon,
@@ -60,6 +62,7 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
   const [queueFilter, setQueueFilter] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
+  const qListRef = useRef<HTMLDivElement>(null)
 
   // Upcoming tracks carry their absolute queue index so reorder/remove stay correct.
   const upcoming = (currentIndex >= 0 ? queue.slice(currentIndex + 1) : []).map((tr, i) => ({
@@ -153,7 +156,7 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               durationSec={durationSec}
               onSeek={seek}
               bars={64}
-              reactivity={0.5}
+              reactivity={0.42}
             />
             <div className="np-times">
               <span>{formatTime(positionSec)}</span>
@@ -236,7 +239,7 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
           </div>
         )}
 
-        <div className="q-list">
+        <div className="q-list" ref={qListRef} onMouseDown={grabScroll}>
           {upcoming.length === 0 && <div className="q-empty">{t('queueEmpty')}</div>}
           {upcoming.length > 0 && filteredUpcoming.length === 0 && (
             <div className="q-empty">{t('noQueueMatch')}</div>
@@ -294,6 +297,7 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
           </div>
           )}
         </div>
+        <OverlayScrollbar scrollRef={qListRef} />
       </div>
 
     </aside>

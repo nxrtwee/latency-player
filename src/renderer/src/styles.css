@@ -146,6 +146,8 @@ button {
   min-height: 0;
   gap: 0;
   padding: 0 8px 0;
+  /* offset parent for the sidebar's overlay scrollbar */
+  position: relative;
 }
 
 /* Custom title bar (frameless window) — fully transparent; window controls are
@@ -732,6 +734,9 @@ aside.sidebar.collapsed {
   cursor: pointer;
   text-align: left;
   transition: background 0.15s ease;
+  /* Grid items default to min-width:auto, so a long no-wrap title/artist would
+     widen the track instead of ellipsizing. Pin to 0 so the ellipsis kicks in. */
+  min-width: 0;
 }
 .pt-card:hover {
   background: var(--panel-2);
@@ -761,6 +766,8 @@ aside.sidebar.collapsed {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 .pt-artist {
   font-size: 12px;
@@ -768,6 +775,8 @@ aside.sidebar.collapsed {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 .pa-artist-name {
   font-size: 12.5px;
@@ -1608,6 +1617,7 @@ aside.sidebar.collapsed {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 .sidebar-settings {
   margin-top: auto;
@@ -1882,6 +1892,7 @@ aside.sidebar.collapsed {
   max-height: 86vh;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 .settings-modal .modal-body {
   overflow-y: auto;
@@ -2066,8 +2077,11 @@ aside.sidebar.collapsed {
   margin-top: 2px;
 }
 .np-wave {
-  height: 46px;
-  margin: 16px 0 4px;
+  height: 40px;
+  margin: 16px 0 8px;
+  /* Bars scale from center; on loud bass the overshoot would spill onto .np-times.
+     Clip it and keep the visualizer a touch shorter. */
+  overflow: hidden;
 }
 .np-times {
   display: flex;
@@ -2708,6 +2722,104 @@ button:disabled {
   position: relative;
   z-index: 1;
   margin-bottom: 28px;
+}
+
+/* "My Wave" banner — shown above the SoundCloud mixes when signed in to Yandex.
+   Compact pulsing disc (from the Wave tab, sans the blurb/chips) + a play button. */
+.home-wave {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  transition: background 0.15s ease;
+}
+.home-wave:hover {
+  background: var(--panel-2);
+}
+.home-wave-disc {
+  position: relative;
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.home-wave-disc .wave-ring.r1 {
+  width: 64px;
+  height: 64px;
+}
+.home-wave-disc .wave-ring.r2 {
+  width: 84px;
+  height: 84px;
+}
+.home-wave-core {
+  position: relative;
+  z-index: 2;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a1a1a;
+  background: linear-gradient(150deg, #ffe45e, #ffcc00 65%, #ff9f1c);
+  box-shadow: 0 10px 30px rgba(255, 184, 0, 0.35);
+}
+.home-wave-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-wave-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.home-wave-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  line-height: 1.12;
+  color: var(--text);
+}
+.home-wave-sub {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-wave-play {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 8px 24px -6px var(--accent);
+  transition: transform 0.15s ease;
+}
+.home-wave-play:hover {
+  transform: scale(1.06);
 }
 .home-h2 {
   position: relative;
@@ -3635,7 +3747,10 @@ button:disabled {
   transform: scale(1.05);
 }
 .kary-line.past {
-  filter: blur(1.2px);
+  /* No CSS `filter` here: the line under the wheel cursor having a filter while a
+     backdrop-filter (custom-bg glass) is in the frame suppresses repaint during
+     wheel-scroll → karaoke freeze. The "past" softening is carried by opacity
+     (lineOpacity) + this small lift. See scroll-freeze notes. */
   transform: translateY(-4px);
 }
 .kary-line:hover {
@@ -3662,6 +3777,10 @@ button:disabled {
 .kary-scroll {
   height: 100%;
   overflow-y: auto;
+  cursor: grab;
+}
+.kary-scroll.grabbing {
+  cursor: grabbing;
 }
 .kary-static {
   padding: 8px 10px 36px;
@@ -3992,6 +4111,26 @@ button:disabled {
 .cscroll-thumb:hover,
 .cscroll-thumb.dragging {
   width: 9px;
+}
+
+/* While grab-scrolling (grabScroll), show the grabbing cursor and suppress text
+   selection across the dragged element. */
+.grabbing,
+.grabbing * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* Overlay scrollbar attached to an existing scroller (OverlayScrollbar). Reuses
+   the thumb styles above; positioned inline over the host scroll element. */
+.cscroll-ovl {
+  position: absolute;
+  width: 10px;
+  pointer-events: none;
+  z-index: 6;
+}
+.cscroll-ovl.reveal .cscroll-thumb {
+  opacity: 1;
 }
 @keyframes viewIn {
   from {
@@ -4677,7 +4816,8 @@ button:disabled {
   align-items: center;
 }
 
-/* Bubble slot above waveform */
+/* Active-comment bubble slot (the seekable waveform that used to follow it was
+   removed — it duplicated the two on-screen progress bars). */
 .cm-card {
   position: relative;
   z-index: 1;
@@ -4686,7 +4826,6 @@ button:disabled {
 .cm-bubble-slot {
   position: relative;
   height: 52px;
-  margin-bottom: 6px;
 }
 /* Absolutely positioned bubbles — no layout shift */
 .cm-bubble {
@@ -4710,11 +4849,6 @@ button:disabled {
 }
 @keyframes cm-in { from { opacity: 0; transform: translateY(6px) scale(0.94); } }
 @keyframes cm-out { to { opacity: 0; transform: translateY(8px) scale(0.92); } }
-.cm-wave-wrap {
-  height: 64px;
-  overflow: hidden;
-}
-.cm-wave-wrap .wave { height: 100%; }
 .cm-transport {
   display: flex; align-items: center; justify-content: center; gap: 14px;
   margin-top: 8px;
@@ -4736,6 +4870,43 @@ button:disabled {
 /* List heading */
 .cm-list-head {
   margin-bottom: 12px;
+}
+
+/* Designed empty state (non-SC track, or SC track with no comments) */
+.cm-empty {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+}
+.cm-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  margin-bottom: 4px;
+}
+.cm-empty-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+.cm-empty-sub {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 420px;
+  line-height: 1.5;
 }
 
 /* Comment entries — no opacity, just color differences */

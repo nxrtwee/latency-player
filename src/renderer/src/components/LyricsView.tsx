@@ -3,6 +3,8 @@ import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
 import { Waveform } from './Waveform'
+import { OverlayScrollbar } from './OverlayScrollbar'
+import { grabScroll } from '../grabScroll'
 import { extractPalette, type Palette } from '../palette'
 import { SyncEditor } from './SyncEditor'
 import {
@@ -94,6 +96,8 @@ export function LyricsView(): JSX.Element {
   }
   const viewportRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLParagraphElement>(null)
+  const karyScrollRef = useRef<HTMLDivElement>(null)
+  const lyricsAreaRef = useRef<HTMLDivElement>(null)
   // Set by the "reset" button so the next fetch bypasses the cache and refetches.
   const forceRef = useRef(false)
 
@@ -175,6 +179,20 @@ export function LyricsView(): JSX.Element {
     }
     return ans
   }, [karyLines, positionSec])
+
+  // Block mouse-wheel scrolling inside the lyrics area entirely — wheel-scrolling
+  // over the masked karaoke viewport while a backdrop-filter is in the frame
+  // freezes Chromium's repaint (the karaoke "freeze" bug). Scrolling here is done
+  // only by dragging the overlay scrollbar, which sets scrollTop on the main
+  // thread and never triggers the freeze. Must be a non-passive listener so
+  // preventDefault actually cancels the scroll.
+  useEffect(() => {
+    const el = lyricsAreaRef.current
+    if (!el) return
+    const block = (e: WheelEvent): void => e.preventDefault()
+    el.addEventListener('wheel', block, { passive: false })
+    return () => el.removeEventListener('wheel', block)
+  }, [])
 
   // keep the active line centered in the karaoke viewport
   useEffect(() => {
@@ -271,7 +289,7 @@ export function LyricsView(): JSX.Element {
           {isManual && <span className="sync-badge side">{tr('manualSynced')}</span>}
         </div>
 
-        <div className="fsplayer-lyrics">
+        <div className="fsplayer-lyrics" ref={lyricsAreaRef}>
           {status === 'loading' && <div className="lyrics-msg">{tr('searchingLyrics')}</div>}
           {status === 'none' && (
             <div className="lyrics-msg">
@@ -300,7 +318,7 @@ export function LyricsView(): JSX.Element {
           )}
           {status === 'ok' && karyLines.length === 0 && plainLines.length > 0 && (
             <div className="kary-viewport static">
-              <div className="kary-scroll">
+              <div className="kary-scroll" ref={karyScrollRef} onMouseDown={grabScroll}>
                 <div className="kary-static">
                 {plainLines.map((line, i) => (
                   <p key={i} className="kary-line static">
@@ -309,6 +327,7 @@ export function LyricsView(): JSX.Element {
                 ))}
                 </div>
               </div>
+              <OverlayScrollbar scrollRef={karyScrollRef} />
               <div className="kary-note" title={tr('plainLyricsNote')}>
                 {tr('plainLyricsNote')} · {lyrics?.source}
               </div>

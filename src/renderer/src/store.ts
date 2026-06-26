@@ -54,6 +54,9 @@ interface PlayerState {
 
   // recently played (most-recent first), with play timestamps
   recentlyPlayed: PlayedTrack[]
+  // total seconds actually listened (accumulated from real playback progress,
+  // not track durations) — drives the "listening time" stat
+  listenedSec: number
 
   // playlists
   playlists: Playlist[]
@@ -144,6 +147,8 @@ interface PlayerState {
   // search-results visibility for the "Albums & playlists" section
   showSearchAlbums: boolean
   showSearchPlaylists: boolean
+  // whether the SoundCloud "Your Mixes" section shows on the home page
+  showHomeMixes: boolean
   lyricsSize: 'sm' | 'md' | 'lg'
   lang: 'en' | 'ru'
 
@@ -224,6 +229,9 @@ interface PlayerState {
   // yandex personal radio ("My Wave")
   loadMyWave: () => Promise<void>
   playMyWave: (startIndex?: number) => void
+  // Play a SPECIFIC already-shown wave track (no fresh fetch) — for the orbit
+  // covers, where the user expects the cover they clicked to actually play.
+  playWaveTrack: (index: number) => void
 
   // profile
   setProfileName: (name: string) => void
@@ -255,6 +263,7 @@ interface PlayerState {
   toggleSidebar: () => void
   setShowSearchAlbums: (v: boolean) => void
   setShowSearchPlaylists: (v: boolean) => void
+  setShowHomeMixes: (v: boolean) => void
   setLyricsSize: (v: 'sm' | 'md' | 'lg') => void
   setLang: (v: 'en' | 'ru') => void
 
@@ -294,6 +303,13 @@ interface PlayerState {
 // The live playback handle lives outside React state — it's an imperative
 // resource, not render data.
 let handle: PlaybackHandle | null = null
+
+// Real-listening-time accounting. `lastTickPos` is the previous reported play
+// position for the current track; positive deltas under 2s are summed into the
+// listenedSec accumulator (seeks/track-changes jump more and are ignored). Reset
+// to 0 whenever a new track loads. Persist is throttled to avoid hammering disk.
+let lastTickPos = 0
+let lastListenPersist = 0
 
 // Synchronous map of trackId -> local media:// URL for offline-cached tracks, so
 // loadIndex can swap a streamed SoundCloud track for its downloaded file without
@@ -577,12 +593,33 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
 
     handle?.destroy()
+    lastTickPos = 0
     set({ currentIndex: index, positionSec: 0, durationSec: track.durationSec ?? 0, error: null })
     // Surface the new track to the OS media overlay immediately (before it plays).
     updateMediaSession()
 
     handle = provider.createPlayback(playTrack, {
-      onTime: (sec) => set({ positionSec: sec }),
+      onTime: (sec) => {
+        // Accumulate REAL listened time: only positive sub-2s deltas while playing
+        // count (ignores the jump from a seek or the reset on a new track).
+        const d = sec - lastTickPos
+        lastTickPos = sec
+        if (d > 0 && d < 2 && get().isPlaying) {
+          const listenedSec = get().listenedSec + d
+          set({ positionSec: sec, listenedSec })
+          const now = Date.now()
+          if (now - lastListenPersist > 5000) {
+            lastListenPersist = now
+            try {
+              localStorage.setItem('lp.listenedSec', String(Math.round(listenedSec)))
+            } catch {
+              /* non-fatal */
+            }
+          }
+        } else {
+          set({ positionSec: sec })
+        }
+      },
       onDuration: (sec) => {
         set({ durationSec: sec })
         updateMediaSession()
@@ -639,6 +676,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     downloading: [],
 
     recentlyPlayed: initialRecent,
+    listenedSec: readNum('lp.listenedSec', 0),
 
     playlists: [],
 
@@ -710,6 +748,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     sidebarCollapsed: localStorage.getItem('lp.sidebarCollapsed') === '1',
     showSearchAlbums: localStorage.getItem('lp.searchAlbums') !== '0',
     showSearchPlaylists: localStorage.getItem('lp.searchPlaylists') === '1',
+    showHomeMixes: localStorage.getItem('lp.homeMixes') !== '0',
     lyricsSize: (localStorage.getItem('lp.lyricsSize') as 'sm' | 'md' | 'lg') || 'md',
     lang: (localStorage.getItem('lp.lang') as 'en' | 'ru') || 'en',
     resumeSession: localStorage.getItem('lp.resume') !== '0',
@@ -1354,6 +1393,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
       localStorage.setItem('lp.searchPlaylists', v ? '1' : '0')
     },
 
+    setShowHomeMixes(v) {
+      set({ showHomeMixes: v })
+      localStorage.setItem('lp.homeMixes', v ? '1' : '0')
+    },
+
     setCompact(v) {
       set({ compact: v })
       localStorage.setItem('lp.compact', v ? '1' : '0')
@@ -1691,6 +1735,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
       // The fresh batch may differ in length from what the caller saw — clamp the
       // start index so a stale random/shuffle index can't fall off the end.
       loadIndex(Math.min(Math.max(0, startIndex), wave.tracks.length - 1), true)
+      persistQueue()
+    },
+
+    playWaveTrack(index) {
+      // Play the CURRENT cached wave tracks as-is (no re-fetch), so the cover the
+      // user clicked is exactly what plays. The wave stays active and keeps
+      // refilling near the end via the normal feedback path.
+      const wave = get().myWave
+      if (!wave || wave.tracks.length === 0) return
+      set({ queue: wave.tracks, waveActive: true })
+      loadIndex(Math.min(Math.max(0, index), wave.tracks.length - 1), true)
       persistQueue()
     },
 

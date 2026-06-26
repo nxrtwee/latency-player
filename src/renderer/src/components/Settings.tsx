@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Toggle } from './Toggle'
 import { ColorPicker } from './ColorPicker'
+import { OverlayScrollbar } from './OverlayScrollbar'
+import { grabScroll } from '../grabScroll'
 import { CloseIcon, RealSoundCloudIcon, RealYandexMusicIcon } from './Icons'
 
 const THEMES = [
@@ -80,6 +82,8 @@ export function Settings(): JSX.Element {
   const setShowSearchAlbums = usePlayer((s) => s.setShowSearchAlbums)
   const showSearchPlaylists = usePlayer((s) => s.showSearchPlaylists)
   const setShowSearchPlaylists = usePlayer((s) => s.setShowSearchPlaylists)
+  const showHomeMixes = usePlayer((s) => s.showHomeMixes)
+  const setShowHomeMixes = usePlayer((s) => s.setShowHomeMixes)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const setLyricsSize = usePlayer((s) => s.setLyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
@@ -97,6 +101,7 @@ export function Settings(): JSX.Element {
   const [lyricsCleared, setLyricsCleared] = useState(false)
   const [mixesCleared, setMixesCleared] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   // Discord Rich Presence config lives in the main process (a small JSON file).
   const [discordEnabled, setDiscordEnabled] = useState(false)
@@ -147,7 +152,7 @@ export function Settings(): JSX.Element {
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" ref={bodyRef} onMouseDown={grabScroll}>
           {/* Appearance */}
           <section className="set-block">
             <div className="set-label">{t('appearance')}</div>
@@ -234,6 +239,14 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('searchPlaylistsSub')}</span>
               </div>
               <Toggle checked={showSearchPlaylists} onChange={setShowSearchPlaylists} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('homeMixesTitle')}</span>
+                <span className="set-row-sub">{t('homeMixesSub')}</span>
+              </div>
+              <Toggle checked={showHomeMixes} onChange={setShowHomeMixes} />
             </div>
 
             <div className="set-row col">
@@ -511,6 +524,7 @@ export function Settings(): JSX.Element {
             </p>
           </section>
         </div>
+        <OverlayScrollbar scrollRef={bodyRef} />
       </div>
     </div>
   )

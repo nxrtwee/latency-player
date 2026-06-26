@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { forwardRef, useMemo, useState } from 'react'
 import type { Track } from '@shared/types'
+import { grabScroll } from '../grabScroll'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { Logo } from './Logo'
@@ -41,13 +42,13 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }): JSX.Element {
   )
 }
 
-export function Sidebar({
-  width,
-  collapsed
-}: {
-  width?: number
-  collapsed?: boolean
-}): JSX.Element {
+export const Sidebar = forwardRef<
+  HTMLElement,
+  {
+    width?: number
+    collapsed?: boolean
+  }
+>(function Sidebar({ width, collapsed }, ref): JSX.Element {
   const folders = usePlayer((s) => s.folders)
   const addFolder = usePlayer((s) => s.addFolder)
   const removeFolder = usePlayer((s) => s.removeFolder)
@@ -123,8 +124,10 @@ export function Sidebar({
 
   return (
     <aside
+      ref={ref}
       className={`sidebar ${collapsed ? 'collapsed' : ''}`}
       style={width && !collapsed ? { width, flex: '0 0 auto' } : undefined}
+      onMouseDown={grabScroll}
     >
       <div className="brand">
         <span className="brand-logo">
@@ -383,7 +386,7 @@ export function Sidebar({
               </li>
             )
           })}
-          {playlists.length === 0 && !creating && (
+          {playlists.length === 0 && !creating && !collapsed && (
             <li className="muted small">{t('noPlaylists')}</li>
           )}
         </ul>
@@ -437,4 +440,4 @@ export function Sidebar({
       </button>
     </aside>
   )
-}
+})

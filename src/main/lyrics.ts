@@ -156,6 +156,38 @@ function extractContainers(html: string): string[] {
   return out
 }
 
+/** Normalize a title/artist for fuzzy matching: lowercase, drop feat/brackets/punct. */
+function normMatch(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .replace(/\(.*?\)|\[.*?\]/g, ' ')
+    .replace(/\bfeat\.?\b|\bft\.?\b|\bprod\.?\b/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+}
+function tokenSet(s: string): Set<string> {
+  return new Set(normMatch(s).split(' ').filter((w) => w.length > 1))
+}
+/** Fraction of `need` tokens that appear in `have` (0..1). */
+function tokenOverlap(need: Set<string>, have: Set<string>): number {
+  if (need.size === 0) return 0
+  let hit = 0
+  for (const w of need) if (have.has(w)) hit++
+  return hit / need.size
+}
+
+/** LRCLIB fetch with a longer timeout and one retry on network failure/timeout. */
+async function lrclibFetch(url: string): Promise<Response | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fetchT(url, 8000, { 'User-Agent': UA })
+    } catch {
+      if (attempt === 1) return null
+    }
+  }
+  return null
+}
+
 /** Fallback: scrape plain lyrics from Genius (no official lyrics API). */
 async function geniusLyrics(title: string, artist: string): Promise<string | null> {
   try {
@@ -167,17 +199,35 @@ async function geniusLyrics(title: string, artist: string): Promise<string | nul
     )
     if (!sres.ok) return null
     const sdata = (await sres.json()) as {
-      response?: { sections?: Array<{ hits?: Array<{ type?: string; result?: { url?: string } }> }> }
+      response?: {
+        sections?: Array<{
+          hits?: Array<{
+            type?: string
+            result?: { url?: string; title?: string; full_title?: string; primary_artist?: { name?: string } }
+          }>
+        }>
+      }
     }
+    // Pick the BEST-matching song hit instead of the first one — Genius's search
+    // happily returns unrelated songs, which is how random page text crept in.
+    // Require a real title match so we never scrape an off-topic page.
+    const qTitle = tokenSet(title)
+    const qArtist = tokenSet(artist)
     let url: string | null = null
+    let bestScore = 0
     for (const sec of sdata.response?.sections || []) {
       for (const hit of sec.hits || []) {
-        if (hit.type === 'song' && hit.result?.url) {
-          url = hit.result.url
-          break
+        const r = hit.result
+        if (hit.type !== 'song' || !r?.url) continue
+        const titleScore = tokenOverlap(qTitle, tokenSet(r.title || r.full_title || ''))
+        if (titleScore < 0.5) continue
+        const artistScore = qArtist.size ? tokenOverlap(qArtist, tokenSet(r.primary_artist?.name || '')) : 1
+        const score = titleScore * 0.7 + artistScore * 0.3
+        if (score > bestScore) {
+          bestScore = score
+          url = r.url
         }
       }
-      if (url) break
     }
     if (!url) return null
 
@@ -301,6 +351,76 @@ export async function clearCache(): Promise<void> {
   }
 }
 
+/**
+ * Hit the network (LRCLIB exact → LRCLIB search → Genius) and return the best
+ * result, preferring SYNCED. Does NOT touch the cache — the caller decides what
+ * to persist (so a plain result never blocks a later synced upgrade).
+ */
+async function fetchFromNetwork(
+  cleanTitle: string,
+  cleanArtist: string,
+  durationSec: number | undefined,
+  useGenius: boolean
+): Promise<LyricsResult | null> {
+  // Best plain-text seen so far. A SYNCED result always wins over this.
+  let plainFallback: LyricsResult | null = null
+
+  // 1) exact get (uses duration for accuracy when available)
+  const getParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
+  if (durationSec) getParams.set('duration', String(Math.round(durationSec)))
+  const getRes = await lrclibFetch(`${API}/get?${getParams}`)
+  if (getRes && getRes.status === 200) {
+    try {
+      const result = toResult((await getRes.json()) as LrclibItem)
+      if (result.synced) return result
+      if (result.plain && !plainFallback) plainFallback = result
+    } catch {
+      /* malformed body — fall through to search */
+    }
+  }
+
+  // 2) fuzzy search — pick best by synced availability, then closest duration
+  const searchParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
+  const searchRes = await lrclibFetch(`${API}/search?${searchParams}`)
+  if (searchRes && searchRes.status === 200) {
+    try {
+      const items = (await searchRes.json()) as LrclibItem[]
+      if (Array.isArray(items) && items.length) {
+        const scored = items
+          .map((it) => ({
+            it,
+            synced: !!it.syncedLyrics,
+            durDiff: durationSec && it.duration ? Math.abs(it.duration - durationSec) : 999
+          }))
+          .sort((a, b) => Number(b.synced) - Number(a.synced) || a.durDiff - b.durDiff)
+        const result = toResult(scored[0].it)
+        if (result.synced) return result
+        if (result.plain && !plainFallback) plainFallback = result
+      }
+    } catch {
+      /* give up on lrclib */
+    }
+  }
+
+  // Nothing timed anywhere — use the best plain text we collected.
+  if (plainFallback) return plainFallback
+
+  // 3) Genius fallback (plain text only) — optional
+  const genius = useGenius ? await geniusLyrics(cleanTitle, cleanArtist) : null
+  if (genius) {
+    return {
+      source: 'genius',
+      synced: false,
+      lines: [],
+      plain: genius,
+      trackName: cleanTitle,
+      artistName: cleanArtist
+    }
+  }
+
+  return null
+}
+
 export async function fetchLyrics(
   title: string,
   artist: string,
@@ -316,83 +436,27 @@ export async function fetchLyrics(
   // a manually-synced version always wins over network sources
   const manual = await readCache(`${key}.manual`)
   if (manual) return manual
-  // `force` (the karaoke "reset" button) bypasses the cached auto result and refetches.
+
+  // `force` (the karaoke "reset" button) bypasses the cache entirely.
   const cached = force ? null : await readCache(key)
+  // A cached SYNCED result is authoritative — serve it without any network hit.
+  if (cached?.synced) return cached
+
+  // No cache, or only a PLAIN cache: go to the network and prefer synced. This is
+  // the fix for "everything shows up unsynced" — a plain-only cache used to be
+  // returned forever, so a track that later gained timing never upgraded.
+  const fresh = await fetchFromNetwork(cleanTitle, cleanArtist, durationSec, useGenius)
+  if (fresh?.synced) {
+    await writeCache(key, fresh)
+    return fresh
+  }
+
+  // No synced upstream: prefer an existing plain cache, else cache+return fresh plain.
   if (cached) return cached
-
-  // Best plain-text we've seen so far. A SYNCED result always wins over this; we
-  // only fall back to it when nothing timed turns up (prefer synced from search
-  // over plain from the exact match).
-  let plainFallback: LyricsResult | null = null
-
-  // 1) exact get (uses duration for accuracy when available)
-  try {
-    const params = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
-    if (durationSec) params.set('duration', String(Math.round(durationSec)))
-    const res = await fetchT(`${API}/get?${params}`, 6000, { 'User-Agent': UA })
-    if (res.status === 200) {
-      const item = (await res.json()) as LrclibItem
-      const result = toResult(item)
-      if (result.synced) {
-        await writeCache(key, result)
-        return result
-      }
-      if (result.plain && !plainFallback) plainFallback = result
-    }
-  } catch {
-    /* fall through to search */
+  if (fresh) {
+    await writeCache(key, fresh)
+    return fresh
   }
-
-  // 2) fuzzy search — pick best by synced availability, then closest duration
-  try {
-    const params = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
-    const res = await fetchT(`${API}/search?${params}`, 6000, { 'User-Agent': UA })
-    if (res.status === 200) {
-      const items = (await res.json()) as LrclibItem[]
-      if (Array.isArray(items) && items.length) {
-        const scored = items
-          .map((it) => ({
-            it,
-            synced: !!it.syncedLyrics,
-            durDiff: durationSec && it.duration ? Math.abs(it.duration - durationSec) : 999
-          }))
-          .sort((a, b) => Number(b.synced) - Number(a.synced) || a.durDiff - b.durDiff)
-        const best = scored[0].it
-        const result = toResult(best)
-        if (result.synced) {
-          await writeCache(key, result)
-          return result
-        }
-        if (result.plain && !plainFallback) plainFallback = result
-      }
-    }
-  } catch {
-    /* give up on lrclib */
-  }
-
-  // Nothing timed anywhere — use the best plain text we collected.
-  if (plainFallback) {
-    await writeCache(key, plainFallback)
-    return plainFallback
-  }
-
-  // (manual sync handled at top)
-
-  // 3) Genius fallback (plain text only) — optional
-  const genius = useGenius ? await geniusLyrics(cleanTitle, cleanArtist) : null
-  if (genius) {
-    const result: LyricsResult = {
-      source: 'genius',
-      synced: false,
-      lines: [],
-      plain: genius,
-      trackName: cleanTitle,
-      artistName: cleanArtist
-    }
-    await writeCache(key, result)
-    return result
-  }
-
   return null
 }
 

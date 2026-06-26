@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { grabScroll } from '../grabScroll'
 
 /**
  * A thin custom overlay scrollbar. Native scrollbars are hidden globally, so
@@ -89,7 +90,7 @@ export function CustomScroll({ children }: { children: ReactNode }): JSX.Element
       onMouseMove={onMouseMove}
       onMouseLeave={() => setNearEdge(false)}
     >
-      <div className="cscroll-view" ref={viewRef} onScroll={onScroll}>
+      <div className="cscroll-view" ref={viewRef} onScroll={onScroll} onMouseDown={grabScroll}>
         <div className="cscroll-content" ref={contentRef}>
           {children}
         </div>

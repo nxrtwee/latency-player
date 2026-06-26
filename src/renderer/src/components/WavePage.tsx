@@ -12,12 +12,18 @@ export function WavePage(): JSX.Element {
   const t = useT()
   const myWave = usePlayer((s) => s.myWave)
   const playMyWave = usePlayer((s) => s.playMyWave)
+  const playWaveTrack = usePlayer((s) => s.playWaveTrack)
   const loadMyWave = usePlayer((s) => s.loadMyWave)
   const shuffle = usePlayer((s) => s.shuffle)
   const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  const skin = usePlayer((s) => s.skin)
 
   const tracks = myWave?.tracks ?? []
   const upcoming = tracks.slice(0, 3)
+
+  // nextgen: a constellation of the upcoming covers (each with the artist's
+  // initial as a little avatar) orbiting the central logo. Click a cover to play.
+  const orbit = skin === 'nextgen' ? tracks.slice(0, 8) : []
 
   function shufflePlay(): void {
     if (!tracks.length) return
@@ -30,10 +36,37 @@ export function WavePage(): JSX.Element {
       <div className="ph-aurora wave-aurora" />
 
       <div className="wave-hero">
-        <div className="wave-disc" aria-hidden="true">
+        <div className={`wave-disc ${orbit.length ? 'has-orbit' : ''}`}>
           <span className="wave-ring r1" />
           <span className="wave-ring r2" />
           <span className="wave-ring r3" />
+          {orbit.length > 0 && (
+            <div className="wave-orbit" aria-hidden="true">
+              {orbit.map((tr, i) => {
+                const ang = (i / orbit.length) * 2 * Math.PI - Math.PI / 2
+                const r = 156
+                const x = Math.cos(ang) * r
+                const y = Math.sin(ang) * r
+                return (
+                  <button
+                    key={`${tr.id}-${i}`}
+                    className="wave-orb"
+                    style={{
+                      transform: `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`,
+                      animationDelay: `${(i * 0.06).toFixed(2)}s`
+                    }}
+                    onClick={() => playWaveTrack(i)}
+                    title={`${tr.title}${tr.artist ? ` — ${tr.artist}` : ''}`}
+                  >
+                    <span className="wave-orb-cover">
+                      {tr.artwork ? <img src={tr.artwork} alt="" /> : <span>♫</span>}
+                    </span>
+                    <span className="wave-orb-av">{(tr.artist || '♪')[0]?.toUpperCase()}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <span className="wave-disc-core">
             <YandexMusicIcon size={64} />
           </span>

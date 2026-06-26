@@ -90,6 +90,7 @@ export function ProfilePage(): JSX.Element {
   const avPosY = usePlayer((s) => s.avPosY)
   const avZoom = usePlayer((s) => s.avZoom)
   const recentlyPlayed = usePlayer((s) => s.recentlyPlayed)
+  const listenedSec = usePlayer((s) => s.listenedSec)
   const likes = usePlayer((s) => s.likes)
   const scLikes = usePlayer((s) => s.scLikes)
   const playlists = usePlayer((s) => s.playlists)
@@ -125,10 +126,9 @@ export function ProfilePage(): JSX.Element {
   }
 
   const stats = useMemo(() => {
-    const totalSec = recentlyPlayed.reduce((s, tr) => s + (tr.durationSec ?? 0), 0)
     const likeCount = new Set([...likes, ...scLikes].map((tr) => tr.id)).size
-    return { totalSec, likeCount }
-  }, [recentlyPlayed, likes, scLikes])
+    return { likeCount }
+  }, [likes, scLikes])
 
   const topArtists = useMemo(() => {
     const seen = new Set<string>()
@@ -252,7 +252,7 @@ export function ProfilePage(): JSX.Element {
           <div className="stat-icon">
             <ClockIcon size={20} />
           </div>
-          <span className="stat-value">{formatTotal(stats.totalSec)}</span>
+          <span className="stat-value">{formatTotal(listenedSec)}</span>
           <span className="stat-label">{t('listeningTime')}</span>
         </div>
         <div className="stat-card">
@@ -286,7 +286,7 @@ export function ProfilePage(): JSX.Element {
               {t('signOut')}
             </button>
           ) : (
-            <button className="sync-btn" onClick={connectSoundCloud} disabled={scConnecting}>
+            <button className="sync-btn primary" onClick={connectSoundCloud} disabled={scConnecting}>
               {scConnecting ? t('connecting') : t('signInSc')}
             </button>
           )}
@@ -304,7 +304,7 @@ export function ProfilePage(): JSX.Element {
               {t('signOut')}
             </button>
           ) : (
-            <button className="sync-btn" onClick={connectYandex} disabled={ymConnecting}>
+            <button className="sync-btn primary" onClick={connectYandex} disabled={ymConnecting}>
               {ymConnecting ? t('connecting') : t('signInYm')}
             </button>
           )}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
-import { RealSoundCloudIcon } from './Icons'
+import { RealSoundCloudIcon, RealYandexMusicIcon, FolderIcon, CommentIcon } from './Icons'
 
 interface ScComment {
   timeSec: number
@@ -30,6 +30,14 @@ export function CommentsPage(): JSX.Element {
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
 
   const isSc = track?.providerId === 'soundcloud' && !!track?.id.startsWith('sc:')
+
+  // Source label/icon for the header (was hardcoded to SoundCloud).
+  const source =
+    track?.providerId === 'yandex'
+      ? { label: t('yandexMusic'), Icon: RealYandexMusicIcon }
+      : track?.providerId === 'local'
+        ? { label: t('localFiles'), Icon: FolderIcon }
+        : { label: 'SoundCloud', Icon: RealSoundCloudIcon }
 
   const [comments, setComments] = useState<ScComment[]>([])
   const [loading, setLoading] = useState(false)
@@ -97,8 +105,8 @@ export function CommentsPage(): JSX.Element {
         </div>
         <div className="ph-info">
           <span className="ph-label">
-            <RealSoundCloudIcon size={14} />
-            <span>SoundCloud</span>
+            <source.Icon size={14} />
+            <span>{source.label}</span>
           </span>
           <h1 className="ph-title comments-title">{track.title}</h1>
           <button className="artist-link" style={{ fontSize: 15, color: 'var(--muted)' }} onClick={() => openArtistFromTrack(track)}>
@@ -107,7 +115,9 @@ export function CommentsPage(): JSX.Element {
         </div>
       </header>
 
-      {/* Waveform + reserved bubble slot */}
+      {/* Reserved bubble slot for the active comment. The seekable waveform that
+          used to live here was removed — it duplicated the two progress bars
+          already on screen (player bar + now-playing panel). */}
       <div className="cm-card">
         <div className="cm-bubble-slot">
           {exitComment && (
@@ -133,7 +143,6 @@ export function CommentsPage(): JSX.Element {
             </div>
           )}
         </div>
-
       </div>
 
       {/* Comment list */}
@@ -141,10 +150,24 @@ export function CommentsPage(): JSX.Element {
         <span className="ph-label">{comments.length} {t('comments').toLowerCase()}</span>
       </div>
 
-      {!isSc && <div className="empty">{t('commentsScOnly')}</div>}
       {loading && <div className="empty">{t('commentsLoading')}</div>}
+      {!loading && !isSc && (
+        <div className="cm-empty">
+          <span className="cm-empty-icon">
+            <CommentIcon size={28} />
+          </span>
+          <span className="cm-empty-title">{t('commentsScOnly')}</span>
+          <span className="cm-empty-sub">{t('commentsScOnlySub')}</span>
+        </div>
+      )}
       {!loading && isSc && comments.length === 0 && (
-        <div className="empty">{t('noComments')}</div>
+        <div className="cm-empty">
+          <span className="cm-empty-icon">
+            <CommentIcon size={28} />
+          </span>
+          <span className="cm-empty-title">{t('noComments')}</span>
+          <span className="cm-empty-sub">{t('noCommentsSub')}</span>
+        </div>
       )}
 
       {!loading && comments.length > 0 && (

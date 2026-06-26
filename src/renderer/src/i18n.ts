@@ -103,6 +103,14 @@ const dict: Record<string, { en: string; ru: string }> = {
     en: 'Comments are available for SoundCloud tracks.',
     ru: 'Комментарии доступны для треков SoundCloud.'
   },
+  commentsScOnlySub: {
+    en: 'Play a SoundCloud track to see timed comments scroll along with it.',
+    ru: 'Включите трек из SoundCloud — комментарии поедут по таймкодам вместе с ним.'
+  },
+  noCommentsSub: {
+    en: 'Be the first wave — nobody has dropped a comment here yet.',
+    ru: 'Здесь пока тихо — ни одного комментария по таймкодам.'
+  },
   // equalizer
   equalizer: { en: 'Equalizer', ru: 'Эквалайзер' },
   eqEnabled: { en: 'Enabled', ru: 'Включён' },
@@ -271,6 +279,15 @@ const dict: Record<string, { en: string; ru: string }> = {
   searchPlaylistsSub: {
     en: 'Show editorial/user playlists in search results',
     ru: 'Показывать плейлисты (подборки) в поиске'
+  },
+  homeMixesTitle: { en: 'SoundCloud mixes on home', ru: 'Миксы SoundCloud на главной' },
+  homeMixesSub: {
+    en: 'Show the "Your Mixes" section on the home page',
+    ru: 'Показывать секцию «Ваши миксы» на домашней'
+  },
+  myWaveBannerSub: {
+    en: 'Endless personal radio from Yandex',
+    ru: 'Бесконечное персональное радио Яндекса'
   },
   loadingTracks: { en: 'Loading tracks…', ru: 'Загрузка треков…' },
   noArtistTracks: { en: 'No tracks found for this artist.', ru: 'Треки артиста не найдены.' },
