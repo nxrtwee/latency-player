@@ -1,0 +1,764 @@
+/* ============================================================
+   nextgen skin — second, cinematic interface skin for latency.
+   Everything here is scoped under [data-skin='nextgen'] so the
+   default oldgen look (styles.css) stays byte-for-byte untouched.
+
+   Design language (see concept refs):
+   - cinematic, image-forward, dark; one saturated accent (inherits
+     the accent picker, default crimson)
+   - large radii, glass panels, grain, big typography
+   - ambient artwork backdrops, expressive "wow" motion
+
+   IMPORTANT — scroll-freeze grab: a backdrop-filter on a *scrolling*
+   element (or a scroll ancestor) freezes wheel-scroll in Electron.
+   So blur is applied only to non-scrolling chrome (playerbar) or via a
+   stationary ::before layer (content, whose real scroller is a child).
+   Scrollers themselves (sidebar, queue) get translucent solid fills, no blur.
+   ============================================================ */
+
+/* ============================================================
+   PHASE 2 — design tokens
+   ============================================================ */
+[data-skin='nextgen'] {
+  /* cinematic dark base — deep near-black with a faint cool/violet cast */
+  --bg: #08060f;
+  --sidebar: rgba(18, 16, 30, 0.46);
+  --panel: rgba(18, 16, 30, 0.44);
+  --panel-2: rgba(255, 255, 255, 0.05);
+  --row-hover: rgba(255, 255, 255, 0.06);
+  --text: #f1eefb;
+  --muted: #a59dc0;
+  --muted-2: #6f6790;
+  --border: rgba(255, 255, 255, 0.085);
+  --border-2: rgba(255, 255, 255, 0.045);
+  --scroll-thumb: rgba(255, 255, 255, 0.2);
+
+  /* nextgen-only design tokens */
+  --ng-r: 18px;
+  --ng-r-lg: 26px;
+  --ng-glass: blur(28px) saturate(1.35);
+  --ng-shadow: 0 26px 72px -30px rgba(0, 0, 0, 0.9);
+  --ng-ring: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --ng-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ng-accent-glow: 0 0 28px -4px var(--accent);
+}
+
+/* Accent is crimson by default (set in :root) and the picker drives the rest;
+   nextgen no longer needs a per-theme accent override. */
+
+/* ============================================================
+   AMBIENT BACKDROP — cinematic glow + film grain behind everything.
+   Hidden when the user supplies a custom background (that takes over).
+   ============================================================ */
+[data-skin='nextgen'] .app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 78% -10%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 60%),
+    radial-gradient(90% 70% at 8% 8%, rgba(96, 60, 200, 0.18), transparent 55%),
+    radial-gradient(140% 120% at 50% 120%, rgba(20, 14, 40, 0.6), transparent 60%),
+    linear-gradient(180deg, #0a0714, #060409);
+}
+[data-skin='nextgen'] .app::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* When the user has their own background, drop the synthetic glow but keep grain. */
+[data-skin='nextgen'] .app.has-bg::before {
+  display: none;
+}
+
+/* ============================================================
+   PHASE 3 — window chrome
+   ============================================================ */
+
+/* Slightly roomier frame so panels read as floating glass slabs. */
+[data-skin='nextgen'] .app-body {
+  padding: 0 12px;
+  gap: 12px;
+}
+
+/* ---- Window controls ---- */
+[data-skin='nextgen'] .win-btn {
+  border-radius: 9px;
+}
+
+/* ---- Sidebar (a scroller → translucent fill, NO blur) ---- */
+[data-skin='nextgen'] .sidebar {
+  background: linear-gradient(180deg, rgba(24, 20, 40, 0.5), rgba(12, 10, 22, 0.5));
+  border: 1px solid var(--border-2);
+  border-radius: var(--ng-r-lg);
+  box-shadow: var(--ng-shadow), var(--ng-ring);
+  padding: 18px 12px;
+}
+[data-skin='nextgen'] .app.has-bg .sidebar {
+  background: linear-gradient(180deg, rgba(24, 20, 40, 0.5), rgba(12, 10, 22, 0.5));
+  backdrop-filter: none;
+}
+[data-skin='nextgen'] .brand-name {
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  background: linear-gradient(90deg, var(--text), color-mix(in srgb, var(--accent) 70%, var(--text)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-skin='nextgen'] .nav-label {
+  letter-spacing: 1.1px;
+  font-size: 10px;
+}
+
+/* Nav items: pill rows with a sliding accent rail + glow on the active item. */
+[data-skin='nextgen'] .nav-item {
+  border-radius: 11px;
+  position: relative;
+  transition:
+    color 0.2s var(--ng-ease),
+    background 0.2s var(--ng-ease),
+    transform 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .nav-item:hover {
+  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.05);
+}
+[data-skin='nextgen'] .nav-item.active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+[data-skin='nextgen'] .nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: var(--ng-accent-glow);
+}
+[data-skin='nextgen'] .sidebar-profile,
+[data-skin='nextgen'] .mix-item,
+[data-skin='nextgen'] .artist-mini,
+[data-skin='nextgen'] .pl-row {
+  border-radius: 13px;
+  transition: all 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .mix-item:hover,
+[data-skin='nextgen'] .artist-mini:hover {
+  transform: translateX(3px);
+}
+
+/* ---- Collapsed icon rail (nextgen): frameless icons on the glass panel,
+   with a soft accent glow on the active item + a subtle ring on the avatar ---- */
+[data-skin='nextgen'] .sidebar.collapsed .nav-item,
+[data-skin='nextgen'] .sidebar.collapsed .sidebar-settings,
+[data-skin='nextgen'] .sidebar.collapsed .pl-row,
+[data-skin='nextgen'] .sidebar.collapsed .sidebar-collapse {
+  transition:
+    transform 0.2s var(--ng-ease),
+    background 0.2s var(--ng-ease),
+    color 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .sidebar.collapsed .nav-item:hover,
+[data-skin='nextgen'] .sidebar.collapsed .sidebar-settings:hover,
+[data-skin='nextgen'] .sidebar.collapsed .pl-row:hover,
+[data-skin='nextgen'] .sidebar.collapsed .sidebar-collapse:hover {
+  transform: translateY(-1px);
+}
+[data-skin='nextgen'] .sidebar.collapsed .nav-item.active {
+  box-shadow:
+    0 0 18px -8px var(--accent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+[data-skin='nextgen'] .sidebar.collapsed .sidebar-profile.active .sp-avatar {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 16px -6px var(--accent);
+}
+
+/* ---- Main content (scroller is a child → safe to blur via ::before) ---- */
+[data-skin='nextgen'] .content {
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: var(--ng-r-lg);
+  box-shadow: var(--ng-shadow), var(--ng-ring);
+}
+[data-skin='nextgen'] .content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(20, 16, 34, 0.5), rgba(10, 8, 18, 0.62));
+  backdrop-filter: var(--ng-glass);
+  -webkit-backdrop-filter: var(--ng-glass);
+}
+[data-skin='nextgen'] .content > * {
+  position: relative;
+  z-index: 1;
+}
+/* keep the same treatment with a custom bg (override oldgen's has-bg glass) */
+[data-skin='nextgen'] .app.has-bg .content::before {
+  background: linear-gradient(180deg, rgba(20, 16, 34, 0.42), rgba(10, 8, 18, 0.56));
+  backdrop-filter: var(--ng-glass);
+  -webkit-backdrop-filter: var(--ng-glass);
+}
+
+/* ---- Right panel cards (queue card has an inner scroller → no blur) ---- */
+[data-skin='nextgen'] .rp-card {
+  background: linear-gradient(180deg, rgba(22, 18, 38, 0.5), rgba(12, 10, 22, 0.52));
+  border: 1px solid var(--border-2);
+  border-radius: var(--ng-r-lg);
+  box-shadow: var(--ng-shadow), var(--ng-ring);
+}
+[data-skin='nextgen'] .app.has-bg .rp-card {
+  background: linear-gradient(180deg, rgba(22, 18, 38, 0.5), rgba(12, 10, 22, 0.52));
+  backdrop-filter: none;
+}
+
+/* ---- Player bar (fixed height, not a wheel scroller → real glass) ---- */
+[data-skin='nextgen'] .playerbar {
+  background: rgba(10, 8, 18, 0.55);
+  backdrop-filter: var(--ng-glass);
+  -webkit-backdrop-filter: var(--ng-glass);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -18px 50px -30px rgba(0, 0, 0, 0.9);
+}
+[data-skin='nextgen'] .app.has-bg .playerbar {
+  background: rgba(10, 8, 18, 0.55);
+  backdrop-filter: var(--ng-glass);
+}
+[data-skin='nextgen'] .pb-art {
+  border-radius: 12px;
+  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.8);
+}
+/* The transport play button glows in the accent rather than flat white. */
+[data-skin='nextgen'] .play-btn {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--ng-accent-glow);
+  transition:
+    transform 0.22s var(--ng-ease),
+    box-shadow 0.22s var(--ng-ease);
+}
+[data-skin='nextgen'] .play-btn:hover {
+  transform: scale(1.09);
+  background: var(--accent-2);
+  box-shadow: 0 0 36px -2px var(--accent);
+}
+
+/* ============================================================
+   WOW MOTION — cinematic view-entrance (overrides the plain viewIn).
+   The scroll wrapper (.cscroll) is keyed per view, so this fires on
+   every page change: rises, scales up and de-blurs into place.
+   ============================================================ */
+[data-skin='nextgen'] .cscroll {
+  animation: ngViewIn 0.55s var(--ng-ease) both;
+}
+@keyframes ngViewIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.985);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+/* ============================================================
+   PHASE 4 — pages (Home first)
+   ============================================================ */
+
+/* The page already sits on the global ambient backdrop — drop the per-page
+   aurora so the glow doesn't double up. */
+[data-skin='nextgen'] .ph-aurora {
+  display: none;
+}
+
+[data-skin='nextgen'] .tracklist.home {
+  padding: 34px 34px 18px;
+}
+
+/* ---- Hero: grand, cinematic, gradient headline ---- */
+[data-skin='nextgen'] .home-hero {
+  padding: 18px 4px 30px;
+}
+[data-skin='nextgen'] .home-eyebrow {
+  letter-spacing: 2.4px;
+  text-shadow: 0 0 22px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+[data-skin='nextgen'] .home-greet {
+  font-size: 56px;
+  letter-spacing: -2px;
+  background: linear-gradient(180deg, var(--text), color-mix(in srgb, var(--text) 60%, transparent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-skin='nextgen'] .home-greet .accent {
+  -webkit-text-fill-color: var(--accent);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* ---- Quick tiles: glass chips that lift + glow ---- */
+[data-skin='nextgen'] .home-quick {
+  gap: 14px;
+  margin-bottom: 36px;
+}
+[data-skin='nextgen'] .quick-tile {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  padding: 15px;
+  transition:
+    transform 0.28s var(--ng-ease),
+    box-shadow 0.28s var(--ng-ease),
+    border-color 0.28s var(--ng-ease),
+    background 0.28s var(--ng-ease);
+}
+[data-skin='nextgen'] .quick-tile:hover {
+  transform: translateY(-4px);
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.9), 0 0 26px -10px var(--accent);
+}
+[data-skin='nextgen'] .quick-icon {
+  border-radius: 13px;
+  background: linear-gradient(140deg, var(--accent-soft), transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* ---- Section headings ---- */
+[data-skin='nextgen'] .home-section {
+  margin-bottom: 38px;
+}
+[data-skin='nextgen'] .home-h2 {
+  font-size: 24px;
+  letter-spacing: -0.6px;
+}
+
+/* ---- Cover-forward cards (mixes + jump-back + playlists) ----
+   No card box: just the artwork (which lifts/zooms) and text beneath. */
+[data-skin='nextgen'] .mix-grid {
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: 22px;
+}
+[data-skin='nextgen'] .home-grid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 20px;
+}
+[data-skin='nextgen'] .mix-card:not(.skeleton),
+[data-skin='nextgen'] .home-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 10px;
+}
+[data-skin='nextgen'] .mix-art,
+[data-skin='nextgen'] .home-card-art {
+  border-radius: 18px;
+  margin-bottom: 4px;
+  box-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.95);
+  transition:
+    transform 0.3s var(--ng-ease),
+    box-shadow 0.3s var(--ng-ease);
+}
+[data-skin='nextgen'] .mix-art img,
+[data-skin='nextgen'] .home-card-art img {
+  transition: transform 0.45s var(--ng-ease);
+}
+/* lift the whole card, zoom the cover, add an accent halo on hover */
+[data-skin='nextgen'] .mix-card:not(.skeleton):hover .mix-art,
+[data-skin='nextgen'] .home-card:hover .home-card-art {
+  transform: translateY(-6px);
+  box-shadow: 0 28px 56px -20px rgba(0, 0, 0, 0.95), 0 0 30px -8px var(--accent);
+}
+[data-skin='nextgen'] .mix-card:not(.skeleton):hover .mix-art img,
+[data-skin='nextgen'] .home-card:hover .home-card-art img {
+  transform: scale(1.07);
+}
+[data-skin='nextgen'] .home-card-title,
+[data-skin='nextgen'] .mix-card .home-card-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* badge → frosted glass chip instead of the solid green sticker */
+[data-skin='nextgen'] .mix-badge {
+  top: 10px;
+  left: 10px;
+  color: #fff;
+  background: rgba(8, 6, 14, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* staggered cinematic rise-in for the cover grids */
+[data-skin='nextgen'] .mix-card:not(.skeleton),
+[data-skin='nextgen'] .home-card {
+  animation: ngRise 0.5s var(--ng-ease) both;
+}
+[data-skin='nextgen'] .mix-card:nth-child(1),
+[data-skin='nextgen'] .home-card:nth-child(1) { animation-delay: 0.02s; }
+[data-skin='nextgen'] .mix-card:nth-child(2),
+[data-skin='nextgen'] .home-card:nth-child(2) { animation-delay: 0.06s; }
+[data-skin='nextgen'] .mix-card:nth-child(3),
+[data-skin='nextgen'] .home-card:nth-child(3) { animation-delay: 0.1s; }
+[data-skin='nextgen'] .mix-card:nth-child(4),
+[data-skin='nextgen'] .home-card:nth-child(4) { animation-delay: 0.14s; }
+[data-skin='nextgen'] .mix-card:nth-child(5),
+[data-skin='nextgen'] .home-card:nth-child(5) { animation-delay: 0.18s; }
+[data-skin='nextgen'] .mix-card:nth-child(6),
+[data-skin='nextgen'] .home-card:nth-child(6) { animation-delay: 0.22s; }
+[data-skin='nextgen'] .mix-card:nth-child(n + 7),
+[data-skin='nextgen'] .home-card:nth-child(n + 7) { animation-delay: 0.26s; }
+@keyframes ngRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* promo card: retune the SoundCloud-orange wash to glassy neutral so it
+   doesn't fight the crimson skin (the SC icon stays orange for brand). */
+[data-skin='nextgen'] .mix-promo {
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
+}
+
+[data-skin='nextgen'] .home-foot {
+  opacity: 0.7;
+}
+
+/* ---- Track-list pages (likes / recent / local / offline / playlist / album) ---- */
+[data-skin='nextgen'] .tracklist {
+  padding: 34px 34px 16px;
+}
+[data-skin='nextgen'] .ph {
+  gap: 28px;
+  margin-bottom: 26px;
+}
+[data-skin='nextgen'] .ph-cover {
+  width: 210px;
+  height: 210px;
+  border-radius: 20px;
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.95), 0 0 40px -16px var(--accent);
+}
+[data-skin='nextgen'] .ph-label {
+  letter-spacing: 1.6px;
+  text-shadow: 0 0 20px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+[data-skin='nextgen'] .ph-title {
+  font-size: 66px;
+  letter-spacing: -2.2px;
+  background: linear-gradient(180deg, var(--text), color-mix(in srgb, var(--text) 58%, transparent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Primary play CTA: accent fill, white text, accent glow */
+[data-skin='nextgen'] .btn-play {
+  color: #fff;
+  border-radius: 24px;
+  padding: 11px 26px;
+  box-shadow: var(--ng-accent-glow);
+  transition:
+    transform 0.22s var(--ng-ease),
+    box-shadow 0.22s var(--ng-ease),
+    background 0.22s var(--ng-ease);
+}
+[data-skin='nextgen'] .btn-play:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 0 36px -2px var(--accent);
+}
+[data-skin='nextgen'] .btn-round {
+  border-radius: 50%;
+  transition:
+    transform 0.2s var(--ng-ease),
+    color 0.2s var(--ng-ease),
+    border-color 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .btn-round:hover:not(:disabled) {
+  transform: scale(1.08);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Glass search pill */
+[data-skin='nextgen'] .search-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-2);
+  border-radius: 22px;
+}
+[data-skin='nextgen'] .search-box:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Rows: glassy hover + accent active state (oldgen hardcodes green here) */
+[data-skin='nextgen'] .trow {
+  border-radius: 11px;
+  transition: background 0.16s var(--ng-ease);
+}
+[data-skin='nextgen'] .trow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+[data-skin='nextgen'] .trow.active {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 18%, transparent),
+    transparent 80%
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+[data-skin='nextgen'] .thumb,
+[data-skin='nextgen'] .thumb-wrap .thumb {
+  border-radius: 9px;
+}
+[data-skin='nextgen'] .tl-footer {
+  opacity: 0.7;
+}
+
+/* ---- Explore / search ---- */
+[data-skin='nextgen'] .ex-hero {
+  padding: 36px 0 26px;
+}
+[data-skin='nextgen'] .ex-badge {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-2);
+  backdrop-filter: blur(8px);
+}
+[data-skin='nextgen'] .ex-title {
+  font-size: 58px;
+  letter-spacing: -2px;
+  background: linear-gradient(180deg, var(--text), color-mix(in srgb, var(--text) 55%, transparent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-skin='nextgen'] .ex-search {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-2);
+  border-radius: 32px;
+  box-shadow: 0 16px 44px -26px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 0.25s var(--ng-ease), border-color 0.25s var(--ng-ease);
+}
+[data-skin='nextgen'] .ex-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 16px 44px -26px rgba(0, 0, 0, 0.9);
+}
+[data-skin='nextgen'] .ex-search-btn {
+  color: #fff;
+  box-shadow: var(--ng-accent-glow);
+  transition: transform 0.2s var(--ng-ease), box-shadow 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .ex-search-btn:hover:not(:disabled) {
+  transform: scale(1.04);
+  box-shadow: 0 0 30px -4px var(--accent);
+}
+[data-skin='nextgen'] .ex-chip,
+[data-skin='nextgen'] .ex-mode,
+[data-skin='nextgen'] .ex-source-btn {
+  border-radius: 16px;
+  transition: all 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .ex-chip {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: var(--border-2);
+}
+[data-skin='nextgen'] .ex-chip:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+[data-skin='nextgen'] .ex-chip.active {
+  box-shadow: 0 0 20px -8px var(--accent);
+}
+
+/* profile chips + album cards: cover-forward, lift + zoom on hover */
+[data-skin='nextgen'] .profile-chip,
+[data-skin='nextgen'] .album-card {
+  background: transparent;
+  border: none;
+  transition: transform 0.28s var(--ng-ease);
+}
+[data-skin='nextgen'] .album-cover,
+[data-skin='nextgen'] .profile-avatar {
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.95);
+  transition: transform 0.3s var(--ng-ease), box-shadow 0.3s var(--ng-ease);
+}
+[data-skin='nextgen'] .album-cover img,
+[data-skin='nextgen'] .profile-avatar img {
+  transition: transform 0.45s var(--ng-ease);
+}
+[data-skin='nextgen'] .profile-chip:hover .profile-avatar,
+[data-skin='nextgen'] .album-card:hover .album-cover {
+  transform: translateY(-5px);
+  box-shadow: 0 26px 52px -20px rgba(0, 0, 0, 0.95), 0 0 26px -10px var(--accent);
+}
+[data-skin='nextgen'] .profile-chip:hover .profile-avatar img,
+[data-skin='nextgen'] .album-card:hover .album-cover img {
+  transform: scale(1.07);
+}
+
+/* lyric-mode result cards */
+[data-skin='nextgen'] .lyric-hit {
+  border-radius: 14px;
+  transition: background 0.18s var(--ng-ease), transform 0.18s var(--ng-ease);
+}
+[data-skin='nextgen'] .lyric-hit:hover {
+  transform: translateX(3px);
+}
+
+/* ============================================================
+   PHASE 5 — fullscreen player + karaoke
+   ============================================================ */
+[data-skin='nextgen'] .fsplayer-art {
+  border-radius: 22px;
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.95), 0 0 60px -22px var(--accent);
+}
+[data-skin='nextgen'] .fsplayer-title {
+  font-size: 34px;
+  letter-spacing: -1px;
+}
+[data-skin='nextgen'] .fsplayer-artist {
+  font-size: 17px;
+}
+
+/* Karaoke: the active line blooms in the accent — bigger, heavier, glowing. */
+[data-skin='nextgen'] .kary-line {
+  font-size: 34px;
+  font-weight: 850;
+  transition:
+    opacity 0.5s ease,
+    color 0.35s ease,
+    transform 0.45s var(--ng-ease),
+    text-shadow 0.4s ease,
+    filter 0.5s ease;
+}
+[data-skin='nextgen'] .kary-line.active {
+  color: var(--accent);
+  font-weight: 900;
+  transform: scale(1.09);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Primary sync CTA + transport play already inherit the accent-glow play button. */
+[data-skin='nextgen'] .sync-corner-btn:not(.ghost) {
+  box-shadow: var(--ng-accent-glow);
+}
+[data-skin='nextgen'] .fsplayer-close,
+[data-skin='nextgen'] .fsplayer-bg-btn {
+  transition: transform 0.2s var(--ng-ease), background 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .fsplayer-close:hover,
+[data-skin='nextgen'] .fsplayer-bg-btn:hover {
+  transform: scale(1.08);
+}
+
+/* ---- Modals: Settings / Equalizer / BgFraming / SyncEditor ---- */
+[data-skin='nextgen'] .modal-backdrop {
+  background: rgba(4, 3, 8, 0.6);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+[data-skin='nextgen'] .modal {
+  background: linear-gradient(180deg, rgba(24, 20, 40, 0.95), rgba(12, 10, 22, 0.97));
+  border: 1px solid var(--border);
+  border-radius: var(--ng-r-lg);
+  box-shadow: 0 44px 110px -34px rgba(0, 0, 0, 0.95), var(--ng-ring);
+}
+[data-skin='nextgen'] .modal-head h2,
+[data-skin='nextgen'] .eq-header h2 {
+  letter-spacing: -0.5px;
+}
+[data-skin='nextgen'] .set-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* chips + segmented toggles */
+[data-skin='nextgen'] .theme-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  transition:
+    transform 0.2s var(--ng-ease),
+    box-shadow 0.2s var(--ng-ease),
+    border-color 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .theme-chip:hover {
+  transform: translateY(-2px);
+}
+[data-skin='nextgen'] .theme-chip.active {
+  box-shadow: 0 0 20px -6px var(--accent);
+}
+[data-skin='nextgen'] .theme-dot {
+  box-shadow: 0 0 10px -2px currentColor;
+}
+[data-skin='nextgen'] .mix-toggle {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-skin='nextgen'] .mix-toggle button.active {
+  box-shadow: 0 0 16px -6px var(--accent);
+}
+
+/* Equalizer presets */
+[data-skin='nextgen'] .eq-preset-chip {
+  border-radius: 13px;
+  transition: transform 0.2s var(--ng-ease), box-shadow 0.2s var(--ng-ease);
+}
+[data-skin='nextgen'] .eq-preset-chip:hover {
+  transform: translateY(-2px);
+}
+[data-skin='nextgen'] .eq-preset-chip.active {
+  box-shadow: 0 0 18px -6px var(--accent);
+}
+
+[data-skin='nextgen'] .framing-modal,
+[data-skin='nextgen'] .sync-editor {
+  border-radius: var(--ng-r-lg);
+}
+
+/* ---- Activity: glass stat cards that lift + glow ---- */
+[data-skin='nextgen'] .stat-card {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  transition:
+    transform 0.28s var(--ng-ease),
+    box-shadow 0.28s var(--ng-ease),
+    border-color 0.28s var(--ng-ease);
+}
+[data-skin='nextgen'] .stat-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.9), 0 0 24px -12px var(--accent);
+}
+[data-skin='nextgen'] .stat-icon {
+  border-radius: 12px;
+  background: linear-gradient(140deg, var(--accent-soft), transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+/* ============================================================
+   PHASE 6 — visualizers
+   ============================================================ */

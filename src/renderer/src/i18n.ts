@@ -183,6 +183,10 @@ const dict: Record<string, { en: string; ru: string }> = {
   },
   // settings
   appearance: { en: 'Appearance', ru: 'Оформление' },
+  skin: { en: 'Interface skin', ru: 'Стиль интерфейса' },
+  collapseSidebar: { en: 'Collapse sidebar', ru: 'Свернуть панель' },
+  expandSidebar: { en: 'Expand sidebar', ru: 'Развернуть панель' },
+  skinSub: { en: 'oldgen — classic · nextgen — cinematic', ru: 'oldgen — классика · nextgen — кино' },
   theme: { en: 'Theme', ru: 'Тема' },
   customColor: { en: 'Custom', ru: 'Свой цвет' },
   language: { en: 'Language', ru: 'Язык' },

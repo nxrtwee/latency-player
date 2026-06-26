@@ -207,7 +207,7 @@ export function LyricsView(): JSX.Element {
         style={{
           background: palette
             ? `linear-gradient(165deg, ${palette.top} 0%, ${palette.bottom} 70%, #060807 100%)`
-            : 'linear-gradient(165deg, #16241d, #080b0a)'
+            : 'linear-gradient(165deg, #141019, #070509)'
         }}
       />
       {showFsBg && bgReady && (

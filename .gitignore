@@ -9,6 +9,9 @@ release/
 Latency-*-win/
 *.tsbuildinfo
 
+# Dev-only CDP screenshot harness (not part of the app)
+.ngshot.cjs
+
 # iOS / Android / Capacitor build artifacts — the native projects are
 # regenerated in CI (cap add ios|android) on every run, so they're never committed.
 mobile/ios/

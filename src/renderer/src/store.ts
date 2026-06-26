@@ -124,6 +124,7 @@ interface PlayerState {
 
   // appearance
   theme: string
+  skin: string
   customAccent: string
   customBg: string | null
   // custom-background framing (object-position % + zoom scale)
@@ -139,6 +140,7 @@ interface PlayerState {
   avPosY: number
   avZoom: number
   compact: boolean
+  sidebarCollapsed: boolean
   // search-results visibility for the "Albums & playlists" section
   showSearchAlbums: boolean
   showSearchPlaylists: boolean
@@ -239,6 +241,7 @@ interface PlayerState {
 
   // appearance
   setTheme: (theme: string) => void
+  setSkin: (skin: string) => void
   setCustomAccent: (hex: string) => void
   pickBackground: () => Promise<void>
   clearBackground: () => void
@@ -249,6 +252,7 @@ interface PlayerState {
   setAvatarFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   openAvatarFraming: () => void
   setCompact: (v: boolean) => void
+  toggleSidebar: () => void
   setShowSearchAlbums: (v: boolean) => void
   setShowSearchPlaylists: (v: boolean) => void
   setLyricsSize: (v: 'sm' | 'md' | 'lg') => void
@@ -684,10 +688,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     eqOpen: false,
     // 'light' was removed — migrate any saved value back to the default.
     theme: ((): string => {
-      const t = localStorage.getItem('lp.theme') || 'green'
-      return t === 'light' ? 'green' : t
+      const t = localStorage.getItem('lp.theme') || 'crimson'
+      // 'light' and 'green' were removed — migrate them to the crimson default.
+      return t === 'light' || t === 'green' ? 'crimson' : t
     })(),
-    customAccent: localStorage.getItem('lp.customAccent') || '#1ed760',
+    // nextgen is the flagship skin: default to it unless the user explicitly
+    // chose oldgen (i.e. first launch / unset = nextgen).
+    skin: localStorage.getItem('lp.skin') === 'oldgen' ? 'oldgen' : 'nextgen',
+    customAccent: localStorage.getItem('lp.customAccent') || '#ff2e54',
     customBg: localStorage.getItem('lp.bg'),
     bgPosX: readNum('lp.bgPosX', 50),
     bgPosY: readNum('lp.bgPosY', 50),
@@ -699,6 +707,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     avPosY: readNum('lp.avPosY', 50),
     avZoom: readNum('lp.avZoom', 1),
     compact: localStorage.getItem('lp.compact') === '1',
+    sidebarCollapsed: localStorage.getItem('lp.sidebarCollapsed') === '1',
     showSearchAlbums: localStorage.getItem('lp.searchAlbums') !== '0',
     showSearchPlaylists: localStorage.getItem('lp.searchPlaylists') === '1',
     lyricsSize: (localStorage.getItem('lp.lyricsSize') as 'sm' | 'md' | 'lg') || 'md',
@@ -1231,6 +1240,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    setSkin(skin) {
+      const v = skin === 'nextgen' ? 'nextgen' : 'oldgen'
+      set({ skin: v })
+      try {
+        localStorage.setItem('lp.skin', v)
+      } catch {
+        /* ignore */
+      }
+    },
+
     setCustomAccent(hex) {
       // Choosing a custom color implies switching to the custom theme.
       set({ customAccent: hex, theme: 'custom' })
@@ -1338,6 +1357,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
     setCompact(v) {
       set({ compact: v })
       localStorage.setItem('lp.compact', v ? '1' : '0')
+    },
+
+    toggleSidebar() {
+      const v = !get().sidebarCollapsed
+      set({ sidebarCollapsed: v })
+      localStorage.setItem('lp.sidebarCollapsed', v ? '1' : '0')
     },
 
     setLyricsSize(v) {

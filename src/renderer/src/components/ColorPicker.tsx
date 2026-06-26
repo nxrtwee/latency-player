@@ -55,7 +55,7 @@ function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: n
   return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 }
 }
 
-const PRESETS = ['#1ed760', '#36e878', '#3aa0ff', '#8b5cff', '#ff48d0', '#ff5c5c', '#ffb02e', '#1fd6c9']
+const PRESETS = ['#ff2e54', '#ff5b78', '#3aa0ff', '#8b5cff', '#ff48d0', '#ff5c5c', '#ffb02e', '#1fd6c9']
 
 interface ColorPickerProps {
   value: string

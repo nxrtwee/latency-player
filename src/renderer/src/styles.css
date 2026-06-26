@@ -7,12 +7,19 @@
   --text: #e9efeb;
   --muted: #8b948f;
   --muted-2: #5f6864;
-  --accent: #1ed760;
-  --accent-2: #36e878;
-  --accent-soft: rgba(30, 215, 96, 0.14);
+  --accent: #ff2e54;
+  --accent-2: #ff5b78;
+  --accent-soft: rgba(255, 46, 84, 0.16);
   --border: rgba(255, 255, 255, 0.07);
   --border-2: rgba(255, 255, 255, 0.04);
   --scroll-thumb: rgba(255, 255, 255, 0.22);
+  /* Derived, theme-following tints. These reference var(--accent), which CSS
+     resolves at point-of-use, so they automatically track whatever accent the
+     active [data-theme] (or skin) sets — no more hardcoded green leaking into
+     purple/blue/crimson themes. */
+  --accent-ink: color-mix(in srgb, var(--accent) 22%, #070707);
+  --art-ph: linear-gradient(135deg, color-mix(in srgb, var(--accent) 26%, #0a0d0c), #090c0b);
+  --tile-hover: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
 }
 
 /* Themes — accent swaps on the dark base */
@@ -241,6 +248,134 @@ body.resizing * {
   font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.4px;
+  flex: 1;
+  min-width: 0;
+}
+.brand-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.sidebar-collapse {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.13s ease,
+    color 0.13s ease;
+}
+.sidebar-collapse:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+
+/* ---- Collapsed (icons-only) sidebar — works in both skins ----
+   Each item is its own framed icon button; the global panel background is
+   dropped. `aside.*` boosts specificity so these win over the nextgen
+   `[data-skin='nextgen'] .sidebar` panel rules (equal-class specificity). */
+/* Keep the panel backing (inherits the skin's .sidebar fill) — just resize it
+   into a tidy icon rail with an even rhythm and no per-section gaps. */
+aside.sidebar.collapsed {
+  width: 68px;
+  flex: 0 0 auto;
+  padding: 14px 10px;
+  gap: 6px;
+  align-items: center;
+  overflow-y: auto;
+}
+.sidebar.collapsed .nav-group {
+  gap: 6px;
+}
+.sidebar.collapsed .brand {
+  justify-content: center;
+  padding: 0;
+  margin-bottom: 4px;
+}
+/* hide all text / labels / secondary chrome */
+.sidebar.collapsed .brand-logo,
+.sidebar.collapsed .brand-name,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .nav-badge,
+.sidebar.collapsed .nav-soon,
+.sidebar.collapsed .sp-meta,
+.sidebar.collapsed .pl-name,
+.sidebar.collapsed .pl-count,
+.sidebar.collapsed .pl-del,
+.sidebar.collapsed .pl-new-input,
+.sidebar.collapsed .folders {
+  display: none;
+}
+/* frameless icon buttons sitting on the panel (no per-icon boxes) */
+.sidebar.collapsed .nav-item,
+.sidebar.collapsed .sidebar-settings,
+.sidebar.collapsed .pl-row,
+.sidebar.collapsed .sidebar-collapse {
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  flex-shrink: 0;
+  justify-content: center;
+  border-radius: 13px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+}
+.sidebar.collapsed .nav-item:hover,
+.sidebar.collapsed .sidebar-settings:hover,
+.sidebar.collapsed .pl-row:hover,
+.sidebar.collapsed .sidebar-collapse:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  transform: none;
+}
+.sidebar.collapsed .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sidebar.collapsed .nav-item.active::before {
+  display: none;
+}
+/* bigger glyphs in the frames */
+.sidebar.collapsed .nav-item svg,
+.sidebar.collapsed .sidebar-settings svg,
+.sidebar.collapsed .sidebar-collapse svg {
+  width: 22px;
+  height: 22px;
+}
+/* profile = clean round avatar, no square frame */
+.sidebar.collapsed .sidebar-profile {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sidebar.collapsed .sp-avatar {
+  width: 42px;
+  height: 42px;
+}
+.sidebar.collapsed .pl-thumb {
+  width: 28px;
+  height: 28px;
+}
+/* keep Settings pinned to the bottom */
+.sidebar.collapsed .sidebar-settings {
+  margin-top: auto;
 }
 
 .nav-group {
@@ -354,7 +489,7 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   color: var(--accent);
   font-weight: 800;
   text-transform: uppercase;
@@ -401,7 +536,7 @@ body.resizing * {
   border: none;
   padding: 0;
   cursor: pointer;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -566,7 +701,7 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   color: var(--accent);
   font-size: 30px;
   font-weight: 800;
@@ -610,7 +745,7 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   color: var(--accent);
   font-size: 26px;
 }
@@ -731,7 +866,7 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   color: var(--accent);
   font-size: 13px;
 }
@@ -943,7 +1078,7 @@ body.resizing * {
   overflow: hidden;
   flex-shrink: 0;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1007,7 +1142,7 @@ body.resizing * {
   align-items: center;
   gap: 8px;
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border: none;
   border-radius: 22px;
   padding: 10px 22px;
@@ -1123,7 +1258,7 @@ body.resizing * {
   background: var(--row-hover);
 }
 .trow.active {
-  background: linear-gradient(90deg, rgba(30, 215, 96, 0.12), rgba(30, 215, 96, 0.02));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 2%, transparent));
 }
 .trow.active .t-title,
 .trow.active .c-time {
@@ -1883,7 +2018,7 @@ body.resizing * {
   aspect-ratio: 1;
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2241,7 +2376,7 @@ body.resizing * {
   border-radius: 50%;
   border: none;
   background: #fff;
-  color: #07120c;
+  color: var(--accent-ink);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2333,7 +2468,7 @@ button:disabled {
   right: 0;
   z-index: 30;
   width: 230px;
-  background: #1a201d;
+  background: var(--tile-hover);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
@@ -2406,7 +2541,7 @@ button:disabled {
 }
 .pl-create button {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border: none;
   border-radius: 6px;
   padding: 0 12px;
@@ -2536,7 +2671,7 @@ button:disabled {
   transition: background 0.12s;
 }
 .quick-tile:hover {
-  background: #1a201d;
+  background: var(--tile-hover);
 }
 .quick-icon {
   width: 42px;
@@ -2605,7 +2740,7 @@ button:disabled {
   max-width: 100%;
 }
 .home-card:hover {
-  background: #1a201d;
+  background: var(--tile-hover);
 }
 .home-card-art {
   width: 100%;
@@ -2613,7 +2748,7 @@ button:disabled {
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 6px;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2709,7 +2844,7 @@ button:disabled {
   border-radius: 10px;
   overflow: hidden;
   margin-bottom: 8px;
-  background: linear-gradient(135deg, #14361f, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2728,14 +2863,14 @@ button:disabled {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1px;
-  color: #04210f;
+  color: var(--accent-ink);
   background: var(--accent);
   border-radius: 6px;
   padding: 2px 7px;
 }
 .mix-card.skeleton {
   height: 240px;
-  background: linear-gradient(100deg, var(--panel-2) 30%, #1b2320 50%, var(--panel-2) 70%);
+  background: linear-gradient(100deg, var(--panel-2) 30%, color-mix(in srgb, var(--accent) 9%, var(--panel-2)) 50%, var(--panel-2) 70%);
   background-size: 220% 100%;
   animation: skel 1.3s ease-in-out infinite;
   cursor: default;
@@ -2746,7 +2881,7 @@ button:disabled {
   }
 }
 .mix-cover {
-  background: linear-gradient(135deg, #14361f, #0c1512);
+  background: var(--art-ph);
 }
 
 /* SoundCloud account chip + sign-in promo */
@@ -2779,7 +2914,7 @@ button:disabled {
 }
 .mix-toggle button.active {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
 }
 .sc-chip {
   display: inline-flex;
@@ -2878,7 +3013,7 @@ button:disabled {
 .explore-aurora {
   background:
     radial-gradient(70% 60% at 50% -20%, rgba(255, 85, 0, 0.18), transparent 60%),
-    radial-gradient(50% 50% at 80% 0%, rgba(30, 215, 96, 0.14), transparent 70%) !important;
+    radial-gradient(50% 50% at 80% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%) !important;
 }
 .ex-hero {
   position: relative;
@@ -2938,7 +3073,7 @@ button:disabled {
 }
 .ex-search-btn {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border: none;
   border-radius: 24px;
   padding: 11px 26px;
@@ -3143,7 +3278,7 @@ button:disabled {
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3192,7 +3327,7 @@ button:disabled {
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3242,7 +3377,7 @@ button:disabled {
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3296,14 +3431,14 @@ button:disabled {
   transition: background 0.12s;
 }
 .profile-chip:hover {
-  background: #1a201d;
+  background: var(--tile-hover);
 }
 .profile-avatar {
   width: 72px;
   height: 72px;
   border-radius: 50%;
   overflow: hidden;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3417,7 +3552,7 @@ button:disabled {
   height: 300px;
   border-radius: 16px;
   overflow: hidden;
-  background: linear-gradient(135deg, #1a3a2a, #0c1512);
+  background: var(--art-ph);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3585,7 +3720,7 @@ button:disabled {
 }
 .sync-corner-btn:hover:not(:disabled) {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border-color: var(--accent);
 }
 .sync-corner-btn.ghost {
@@ -3671,7 +3806,7 @@ button:disabled {
 }
 .sync-btn.primary {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
 }
 .sync-btn.primary:disabled {
   opacity: 0.4;
@@ -3755,7 +3890,7 @@ button:disabled {
 }
 .sync-tap {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border: none;
   border-radius: 24px;
   padding: 14px 48px;
@@ -3916,7 +4051,7 @@ button:disabled {
 .mix-card:not(.skeleton):hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
-  background: #1a201d;
+  background: var(--tile-hover);
 }
 .stat-card:hover {
   border-color: var(--border);
@@ -4145,7 +4280,7 @@ button:disabled {
 }
 .fsplayer-bg-btn:hover {
   background: var(--accent);
-  color: #04210f;
+  color: var(--accent-ink);
   border-color: var(--accent);
 }
 

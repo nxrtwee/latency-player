@@ -68,6 +68,8 @@ export function App(): JSX.Element {
   // The image shows in the interface for 'interface' and 'global' scopes.
   const showInterfaceBg = !!customBg && bgScope !== 'fullscreen'
   const compact = usePlayer((s) => s.compact)
+  const sidebarCollapsed = usePlayer((s) => s.sidebarCollapsed)
+  const skin = usePlayer((s) => s.skin)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
   const loadPrefs = usePlayer((s) => s.loadPrefs)
@@ -75,13 +77,14 @@ export function App(): JSX.Element {
   useEffect(() => {
     const root = document.documentElement
     root.setAttribute('data-theme', theme)
+    root.setAttribute('data-skin', skin)
     root.setAttribute('data-compact', compact ? '1' : '0')
     root.setAttribute('data-lyrics', lyricsSize)
     // For the custom theme the accent comes from the user's color; --accent-2 and
     // --accent-soft are derived in CSS via color-mix. Other themes use their own.
     if (theme === 'custom') root.style.setProperty('--accent', customAccent)
     else root.style.removeProperty('--accent')
-  }, [theme, customAccent, compact, lyricsSize])
+  }, [theme, skin, customAccent, compact, lyricsSize])
 
   const viewKey =
     source === 'playlist'
@@ -136,15 +139,17 @@ export function App(): JSX.Element {
       )}
       <TitleBar />
       <div className="app-body">
-        <Sidebar width={sidebarW} />
-        <Resizer
-          width={sidebarW}
-          setWidth={setSidebarW}
-          min={200}
-          max={360}
-          dir={1}
-          persistKey="lp.sidebarW"
-        />
+        <Sidebar width={sidebarCollapsed ? undefined : sidebarW} collapsed={sidebarCollapsed} />
+        {!sidebarCollapsed && (
+          <Resizer
+            width={sidebarW}
+            setWidth={setSidebarW}
+            min={200}
+            max={360}
+            dir={1}
+            persistKey="lp.sidebarW"
+          />
+        )}
         <main className="content">
           {error && <div className="error-banner">{error}</div>}
           <CustomScroll key={viewKey}>

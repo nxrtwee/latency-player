@@ -20,6 +20,12 @@ app.setName('Latency')
 // as "Latency" instead of "unknown application". Must match build.appId.
 app.setAppUserModelId('com.latency.app')
 
+// Dev-only: expose a CDP endpoint for screenshot/inspection tooling.
+if (!app.isPackaged && process.env.LP_CDP) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.LP_CDP)
+  app.commandLine.appendSwitch('remote-allow-origins', '*')
+}
+
 // Register our media scheme as privileged BEFORE the app is ready, so the
 // renderer can fetch/stream local files through it with fetch + range support.
 protocol.registerSchemesAsPrivileged([

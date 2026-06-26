@@ -21,7 +21,33 @@ import {
   CommentIcon
 } from './Icons'
 
-export function Sidebar({ width }: { width?: number }): JSX.Element {
+function CollapseIcon({ collapsed }: { collapsed: boolean }): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      style={{ transform: collapsed ? 'rotate(180deg)' : undefined }}
+    >
+      <path
+        d="M10 3 L5 8 L10 13"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export function Sidebar({
+  width,
+  collapsed
+}: {
+  width?: number
+  collapsed?: boolean
+}): JSX.Element {
   const folders = usePlayer((s) => s.folders)
   const addFolder = usePlayer((s) => s.addFolder)
   const removeFolder = usePlayer((s) => s.removeFolder)
@@ -32,6 +58,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
   const infoService = usePlayer((s) => s.infoService)
   const openInfo = usePlayer((s) => s.openInfo)
   const setSettingsOpen = usePlayer((s) => s.setSettingsOpen)
+  const toggleSidebar = usePlayer((s) => s.toggleSidebar)
   const likesCount = usePlayer(
     (s) => new Set([...s.likes, ...s.scLikes].map((t) => t.id)).size
   )
@@ -95,10 +122,22 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
   }
 
   return (
-    <aside className="sidebar" style={width ? { width, flex: '0 0 auto' } : undefined}>
+    <aside
+      className={`sidebar ${collapsed ? 'collapsed' : ''}`}
+      style={width && !collapsed ? { width, flex: '0 0 auto' } : undefined}
+    >
       <div className="brand">
-        <Logo size={30} />
+        <span className="brand-logo">
+          <Logo size={30} />
+        </span>
         <span className="brand-name">Latency</span>
+        <button
+          className="sidebar-collapse"
+          title={collapsed ? t('expandSidebar') : t('collapseSidebar')}
+          onClick={toggleSidebar}
+        >
+          <CollapseIcon collapsed={!!collapsed} />
+        </button>
       </div>
 
       <button
@@ -128,6 +167,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'home' ? 'active' : ''}`}
           onClick={() => setSource('home')}
+          title={t('home')}
         >
           <HomeIcon size={18} />
           <span>{t('home')}</span>
@@ -135,6 +175,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'explore' ? 'active' : ''}`}
           onClick={() => setSource('explore')}
+          title={t('explore')}
         >
           <CompassIcon size={18} />
           <span>{t('explore')}</span>
@@ -142,6 +183,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'activity' ? 'active' : ''}`}
           onClick={() => setSource('activity')}
+          title={t('activity')}
         >
           <ActivityIcon size={18} />
           <span>{t('activity')}</span>
@@ -149,6 +191,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'comments' ? 'active' : ''}`}
           onClick={() => setSource('comments')}
+          title={t('commentsSidebar')}
         >
           <CommentIcon size={18} />
           <span>{t('commentsSidebar')}</span>
@@ -160,6 +203,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'likes' ? 'active' : ''}`}
           onClick={() => setSource('likes')}
+          title={t('yourLikes')}
         >
           <HeartIcon size={18} />
           <span>{t('yourLikes')}</span>
@@ -168,6 +212,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'recent' ? 'active' : ''}`}
           onClick={() => setSource('recent')}
+          title={t('recentlyPlayed')}
         >
           <ClockIcon size={18} />
           <span>{t('recentlyPlayed')}</span>
@@ -175,6 +220,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'local' ? 'active' : ''}`}
           onClick={() => setSource('local')}
+          title={t('localFiles')}
         >
           <FolderIcon size={18} />
           <span>{t('localFiles')}</span>
@@ -182,6 +228,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'offline' ? 'active' : ''}`}
           onClick={() => setSource('offline')}
+          title={t('downloaded')}
         >
           <DownloadIcon size={18} />
           <span>{t('downloaded')}</span>
@@ -191,6 +238,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
           <button
             className={`nav-item ${source === 'wave' ? 'active' : ''}`}
             onClick={() => setSource('wave')}
+            title={t('myWave')}
           >
             <YandexMusicIcon size={18} />
             <span>{t('myWave')}</span>
@@ -198,7 +246,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         )}
       </div>
 
-      {mixes.length > 0 && (
+      {!collapsed && mixes.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('madeForYou')}</div>
           {mixes.slice(0, 5).map((mix) => (
@@ -217,7 +265,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         </div>
       )}
 
-      {recentArtists.length > 0 && (
+      {!collapsed && recentArtists.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('recentArtists')}</div>
           {recentArtists.map((a) => (
@@ -243,6 +291,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'info' && infoService === 'soundcloud' ? 'active' : ''}`}
           onClick={() => openInfo('soundcloud')}
+          title="SoundCloud"
         >
           <SoundCloudIcon size={18} />
           <span>SoundCloud</span>
@@ -250,6 +299,7 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         <button
           className={`nav-item ${source === 'info' && infoService === 'yandex' ? 'active' : ''}`}
           onClick={() => openInfo('yandex')}
+          title={t('yandexMusic')}
         >
           <YandexIcon size={18} />
           <span>{t('yandexMusic')}</span>
@@ -377,7 +427,11 @@ export function Sidebar({ width }: { width?: number }): JSX.Element {
         </div>
       )}
 
-      <button className="nav-item sidebar-settings" onClick={() => setSettingsOpen(true)}>
+      <button
+        className="nav-item sidebar-settings"
+        onClick={() => setSettingsOpen(true)}
+        title={t('settings')}
+      >
         <SettingsIcon size={18} />
         <span>{t('settings')}</span>
       </button>

@@ -6,7 +6,7 @@ import { ColorPicker } from './ColorPicker'
 import { CloseIcon, RealSoundCloudIcon, RealYandexMusicIcon } from './Icons'
 
 const THEMES = [
-  { id: 'green', label: 'Green', color: '#1ed760' },
+  { id: 'crimson', label: 'Crimson', color: '#ff2e54' },
   { id: 'purple', label: 'Purple', color: '#8b5cff' },
   { id: 'blue', label: 'Blue', color: '#3aa0ff' },
   { id: 'pink', label: 'Pink', color: '#ff48d0' }
@@ -64,6 +64,8 @@ export function Settings(): JSX.Element {
 
   const theme = usePlayer((s) => s.theme)
   const setTheme = usePlayer((s) => s.setTheme)
+  const skin = usePlayer((s) => s.skin)
+  const setSkin = usePlayer((s) => s.setSkin)
   const customAccent = usePlayer((s) => s.customAccent)
   const setCustomAccent = usePlayer((s) => s.setCustomAccent)
   const customBg = usePlayer((s) => s.customBg)
@@ -149,6 +151,27 @@ export function Settings(): JSX.Element {
           {/* Appearance */}
           <section className="set-block">
             <div className="set-label">{t('appearance')}</div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('skin')}</span>
+                <span className="set-row-sub">{t('skinSub')}</span>
+              </div>
+              <div className="mix-toggle">
+                <button
+                  className={skin === 'oldgen' ? 'active' : ''}
+                  onClick={() => setSkin('oldgen')}
+                >
+                  oldgen
+                </button>
+                <button
+                  className={skin === 'nextgen' ? 'active' : ''}
+                  onClick={() => setSkin('nextgen')}
+                >
+                  nextgen
+                </button>
+              </div>
+            </div>
 
             <div className="set-row">
               <span className="set-row-title">{t('language')}</span>
