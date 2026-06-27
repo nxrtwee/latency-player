@@ -13,10 +13,13 @@ import { ActivityScreen } from './screens/Activity'
 import { LocalScreen } from './screens/Local'
 import { SettingsScreen } from './screens/Settings'
 import { ArtistScreen } from './screens/Artist'
+import { AlbumScreen } from './screens/Album'
+import { WaveScreen } from './screens/Wave'
 import { useT } from './i18n'
 import { installMediaSession } from './api/mediaSession'
 import { installStatusBar } from './api/statusBar'
-import type { Artist, Track } from '@shared/types'
+import { Splash } from '@renderer/components/Splash'
+import type { Album, Artist, Track } from '@shared/types'
 
 /** A pushed detail view over the tab content. List kinds resolve to a ListView;
  *  activity/local/artist are their own screens. */
@@ -28,8 +31,10 @@ export type Detail =
   | { kind: 'activity' }
   | { kind: 'local' }
   | { kind: 'artist'; track?: Track; artist?: Artist }
+  | { kind: 'album'; album: Album }
   | { kind: 'sclikes' }
   | { kind: 'downloads' }
+  | { kind: 'wave' }
 
 /** Track-count label, language-aware (RU pluralization / EN tracks). */
 function tracksLabel(n: number, lang: string): string {
@@ -47,6 +52,7 @@ function tracksLabel(n: number, lang: string): string {
 export function MobileApp(): JSX.Element {
   const [tab, setTab] = useState<TabId>('home')
   const [npOpen, setNpOpen] = useState(false)
+  const [splashDone, setSplashDone] = useState(false)
   // Detail screens form a back stack so "back" returns to the previous screen
   // (e.g. Liked → artist → back lands on Liked), not always the tab root.
   const [detailStack, setDetailStack] = useState<Detail[]>([])
@@ -97,6 +103,7 @@ export function MobileApp(): JSX.Element {
   const mixes = usePlayer((s) => s.mixes)
   const scLikes = usePlayer((s) => s.scLikes)
   const loadScAuth = usePlayer((s) => s.loadScAuth)
+  const loadYmAuth = usePlayer((s) => s.loadYmAuth)
   const lang = usePlayer((s) => s.lang)
   const t = useT()
   const label = (n: number): string => tracksLabel(n, lang)
@@ -106,10 +113,11 @@ export function MobileApp(): JSX.Element {
     void loadLikes()
     void loadPlaylists()
     void loadScAuth() // restore a saved SoundCloud token → real mixes/likes
+    void loadYmAuth() // restore a saved Yandex token → My Wave / likes import
     void generateMixes()
     installMediaSession()
     installStatusBar()
-  }, [loadLikes, loadPlaylists, loadScAuth, generateMixes])
+  }, [loadLikes, loadPlaylists, loadScAuth, loadYmAuth, generateMixes])
 
   const openTab = (id: TabId): void => {
     setDetailStack([])
@@ -143,9 +151,17 @@ export function MobileApp(): JSX.Element {
       detailView = (
         <ListView title={t('mySCLikes')} subtitle={label(scLikes.length)} tracks={scLikes} onClose={popDetail} onArtist={openArtist} />
       )
+    } else if (detail.kind === 'wave') {
+      detailView = <WaveScreen onClose={popDetail} onArtist={openArtist} />
+    } else if (detail.kind === 'album') {
+      detailView = <AlbumScreen album={detail.album} onClose={popDetail} onArtist={openArtist} />
     } else if (detail.kind === 'artist') {
       detailView = (
-        <ArtistScreen from={{ track: detail.track, artist: detail.artist }} onClose={popDetail} />
+        <ArtistScreen
+          from={{ track: detail.track, artist: detail.artist }}
+          onClose={popDetail}
+          onOpenDetail={pushDetail}
+        />
       )
     } else if (detail.kind === 'mix') {
       const mix = mixes.find((m) => m.id === detail.id)
@@ -192,7 +208,7 @@ export function MobileApp(): JSX.Element {
         ) : (
           <>
             {tab === 'home' && <HomeScreen onOpenDetail={pushDetail} onOpenTab={openTab} />}
-            {tab === 'search' && <SearchScreen onArtist={openArtist} />}
+            {tab === 'search' && <SearchScreen onArtist={openArtist} onOpenDetail={pushDetail} />}
             {tab === 'library' && <LibraryScreen onOpenDetail={pushDetail} onArtist={openArtist} />}
             {tab === 'profile' && <ProfileScreen onOpenDetail={pushDetail} />}
             {tab === 'settings' && (
@@ -217,6 +233,7 @@ export function MobileApp(): JSX.Element {
           }}
         />
       )}
+      {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
     </div>
   )
 }

@@ -53,6 +53,8 @@ export function HomeScreen({
   const mixes = usePlayer((s) => s.mixes)
   const playlists = usePlayer((s) => s.playlists)
   const playQueue = usePlayer((s) => s.playQueue)
+  const ymAuth = usePlayer((s) => s.ymAuth)
+  const playMyWave = usePlayer((s) => s.playMyWave)
   const lang = usePlayer((s) => s.lang)
   const t = useT()
   const jumpBack = recent.slice(0, 10)
@@ -110,6 +112,29 @@ export function HomeScreen({
           </button>
         ))}
       </section>
+
+      {ymAuth && (
+        <button className="home-wave" onClick={() => onOpenDetail({ kind: 'wave' })}>
+          <div className="home-wave-disc">
+            <span className="home-wave-ring" />
+            <span
+              className="home-wave-play"
+              onClick={(e) => {
+                e.stopPropagation()
+                void playMyWave(0)
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M9 6v12l9-6z" />
+              </svg>
+            </span>
+          </div>
+          <div className="home-wave-text">
+            <span className="home-wave-title">{t('myWave')}</span>
+            <span className="home-wave-sub">{t('waveSub')}</span>
+          </div>
+        </button>
+      )}
 
       <section>
         <div className="section-head">

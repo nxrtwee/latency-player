@@ -2,6 +2,7 @@
 // (LRCLIB synced → highlight + autoscroll + click-to-seek; plain text otherwise).
 import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
+import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 
 interface Lyrics {
@@ -23,6 +24,9 @@ export function LyricsPanel({
   onSync?: () => void
 }): JSX.Element {
   const t = useT()
+  const setKaraokeImage = usePlayer((s) => s.setKaraokeImage)
+  const resetKaraokeBg = usePlayer((s) => s.resetKaraokeBg)
+  const karaokeBg = usePlayer((s) => s.karaokeBgs[track.id])
   const [data, setData] = useState<Lyrics | null>(null)
   const [loading, setLoading] = useState(true)
   const viewRef = useRef<HTMLDivElement>(null)
@@ -68,11 +72,19 @@ export function LyricsPanel({
     <div className="lyr">
       <div className="lyr-head">
         <span>{t('lyrics')}</span>
-        {data && (
-          <button className="lyr-sync-btn" onClick={onSync}>
-            {data.manual ? t('editSync') : t('manualSync')}
+        <div className="lyr-head-actions">
+          <button
+            className="lyr-sync-btn"
+            onClick={() => (karaokeBg ? resetKaraokeBg(track.id) : void setKaraokeImage(track.id))}
+          >
+            {karaokeBg ? t('kbgReset') : t('trackBackground')}
           </button>
-        )}
+          {data && (
+            <button className="lyr-sync-btn" onClick={onSync}>
+              {data.manual ? t('editSync') : t('manualSync')}
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (

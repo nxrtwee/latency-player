@@ -8,18 +8,24 @@ import { useT } from '../i18n'
 export function ActivityScreen({ onClose }: { onClose: () => void }): JSX.Element {
   const recent = usePlayer((s) => s.recentlyPlayed)
   const likes = usePlayer((s) => s.likes)
+  // Real accumulated playback time (counts seconds actually played, not the full
+  // length of every track touched). Falls back to summed durations if unset.
+  const listenedSec = usePlayer((s) => s.listenedSec)
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
 
   const stats = useMemo(() => {
-    const totalSec = recent.reduce((s, t) => s + (t.durationSec ?? 0), 0)
+    const summed = recent.reduce((s, t) => s + (t.durationSec ?? 0), 0)
+    const totalSec = listenedSec > 0 ? listenedSec : summed
     const counts = new Map<string, number>()
     let sc = 0
+    let ym = 0
     let local = 0
     for (const t of recent) {
       const a = t.artist || 'Unknown'
       counts.set(a, (counts.get(a) ?? 0) + 1)
       if (t.providerId === 'soundcloud') sc++
+      else if (t.providerId === 'yandex') ym++
       else local++
     }
     let topArtist = '—'
@@ -30,8 +36,8 @@ export function ActivityScreen({ onClose }: { onClose: () => void }): JSX.Elemen
         topArtist = a
       }
     }
-    return { totalSec, topArtist, sc, local }
-  }, [recent])
+    return { totalSec, topArtist, sc, ym, local }
+  }, [recent, listenedSec])
 
   const now = Date.now()
 
@@ -70,7 +76,7 @@ export function ActivityScreen({ onClose }: { onClose: () => void }): JSX.Elemen
 
       <div className="act-split">
         {t('sources')}: <strong>{stats.local}</strong> {t('local')} · <strong>{stats.sc}</strong>{' '}
-        SoundCloud
+        SoundCloud · <strong>{stats.ym}</strong> Я.Музыка
       </div>
 
       <h2 style={{ marginTop: 26 }}>{t('recentActivity')}</h2>

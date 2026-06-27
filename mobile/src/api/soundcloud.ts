@@ -6,7 +6,7 @@
 // stream-resolve). The OAuth-session features (login, personal mixes, my likes)
 // need a native WKWebView token capture and land in a later step.
 
-import type { Artist, Track } from '@shared/types'
+import type { Album, Artist, Track } from '@shared/types'
 
 const API = 'https://api-v2.soundcloud.com'
 const CID_KEY = 'lp.m.sc.clientId'
@@ -208,6 +208,136 @@ export async function relatedTracks(trackId: string, limit = 25): Promise<Track[
   if (!res.ok) throw new Error(`SoundCloud related failed (${res.status})`)
   const data = (await res.json()) as { collection?: ScTrack[] }
   return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
+}
+
+// ---- timed comments -----------------------------------------------------------
+export interface ScComment {
+  timeSec: number
+  body: string
+  user: string
+  avatar?: string
+}
+interface ScRawComment {
+  timestamp?: number | null // ms into the track (null = general comment)
+  body?: string
+  user?: { username?: string; avatar_url?: string | null }
+}
+
+/** Timed comments on a track, sorted by position. */
+export async function getComments(trackId: string, limit = 100): Promise<ScComment[]> {
+  const bare = trackId.replace(/^sc:/, '')
+  const res = await authedFetch(
+    (id) =>
+      `${API}/tracks/${encodeURIComponent(bare)}/comments?threaded=0&filter_replies=1&limit=${limit}&client_id=${id}`
+  )
+  if (!res.ok) return []
+  const data = (await res.json()) as { collection?: ScRawComment[] }
+  return (data.collection || [])
+    .filter((c) => typeof c.timestamp === 'number' && c.timestamp! >= 0 && c.body)
+    .map((c) => ({
+      timeSec: (c.timestamp as number) / 1000,
+      body: (c.body as string).trim(),
+      user: c.user?.username || 'someone',
+      avatar: c.user?.avatar_url ? c.user.avatar_url.replace('-large', '-t50x50') : undefined
+    }))
+    .sort((a, b) => a.timeSec - b.timeSec)
+}
+
+// ---- albums / sets ------------------------------------------------------------
+interface ScPlaylist {
+  id: number
+  title: string
+  artwork_url?: string | null
+  calculated_artwork_url?: string | null
+  track_count?: number
+  release_date?: string | null
+  created_at?: string
+  user?: { username?: string }
+  tracks?: Array<{ id?: number } | number | ScTrack>
+}
+
+function toAlbum(p: ScPlaylist, kind: 'album' | 'playlist' = 'album'): Album {
+  const date = p.release_date || p.created_at
+  const year = date ? Number(date.slice(0, 4)) : NaN
+  const trackArt = (p.tracks || [])
+    .map((t) => (t && typeof t === 'object' ? (t as ScTrack).artwork_url : null))
+    .find((a): a is string => !!a)
+  const raw = p.artwork_url || p.calculated_artwork_url || trackArt || undefined
+  return {
+    id: String(p.id),
+    provider: 'soundcloud',
+    kind,
+    title: p.title,
+    artist: p.user?.username,
+    cover: raw ? raw.replace('-large', '-t500x500') : undefined,
+    year: Number.isFinite(year) ? year : undefined,
+    trackCount: p.track_count
+  }
+}
+
+export async function searchAlbums(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/search/albums?q=${encodeURIComponent(q)}&limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+  } catch {
+    return []
+  }
+}
+
+export async function searchPlaylists(query: string, limit = 20): Promise<Album[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const res = await authedFetch(
+      (id) =>
+        `${API}/search/playlists_without_albums?q=${encodeURIComponent(q)}&limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'playlist'))
+  } catch {
+    return []
+  }
+}
+
+export async function getUserAlbums(userId: string, limit = 30): Promise<Album[]> {
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/users/${encodeURIComponent(userId)}/albums?limit=${limit}&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScPlaylist[] }
+    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+  } catch {
+    return []
+  }
+}
+
+/** Full track list of an album/set (hydrates partial entries the API returns). */
+export async function getAlbumTracks(albumId: string): Promise<Track[]> {
+  const bare = albumId.replace(/^sc:/, '')
+  const res = await authedFetch((id) => `${API}/playlists/${encodeURIComponent(bare)}?client_id=${id}`)
+  if (!res.ok) throw new Error(`SoundCloud album failed (${res.status})`)
+  const data = (await res.json()) as ScPlaylist
+  const ids: number[] = []
+  const fulls: ScTrack[] = []
+  for (const t of data.tracks || []) {
+    if (typeof t === 'number') ids.push(t)
+    else if (t && typeof t === 'object') {
+      const o = t as ScTrack
+      if (o.media?.transcodings?.length) fulls.push(o)
+      else if (typeof o.id === 'number') ids.push(o.id)
+    }
+  }
+  let tracks = fulls.map(toTrack).filter((t): t is Track => t !== null)
+  if (ids.length) tracks = [...tracks, ...(await hydrateTrackIds(ids))]
+  return tracks
 }
 
 /** Resolve a transcoding URL into a real, playable CDN stream URL. */

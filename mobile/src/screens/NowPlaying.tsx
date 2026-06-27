@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { Waveform } from '@renderer/components/Waveform'
+import { useCover } from '@renderer/cover'
 import { useT } from '../i18n'
 import { LyricsPanel } from '../components/LyricsPanel'
 import { SyncEditor } from '../components/SyncEditor'
+import { CommentsSheet } from '../components/CommentsSheet'
 import { downloadTrack, isDownloaded, removeDownload } from '../api/offline'
 
 function fmt(sec: number): string {
@@ -41,11 +43,19 @@ export function NowPlaying({
   const toggleShuffle = usePlayer((s) => s.toggleShuffle)
   const likes = usePlayer((s) => s.likes)
   const toggleLike = usePlayer((s) => s.toggleLike)
+  const setTrackCover = usePlayer((s) => s.setTrackCover)
+  const resetTrackCover = usePlayer((s) => s.resetTrackCover)
+  const customCovers = usePlayer((s) => s.customCovers)
+  const autopilot = usePlayer((s) => s.autopilot)
+  const toggleAutopilot = usePlayer((s) => s.toggleAutopilot)
+  const karaokeBg = usePlayer((s) => (track ? s.karaokeBgs[track.id] : undefined))
+  const cover = useCover(track)
   const tr = useT()
 
   const [closing, setClosing] = useState(false)
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
   const [dl, setDl] = useState<'idle' | 'busy' | 'done'>(() =>
     track && isDownloaded(track.id) ? 'done' : 'idle'
   )
@@ -73,6 +83,9 @@ export function NowPlaying({
 
   const liked = likes.some((t) => t.id === track.id)
   const upNext = queue.slice(currentIndex + 1)
+  // When the lyrics panel is open and the track has a custom karaoke image, it
+  // takes over the backdrop (desktop parity); otherwise the cover blurs behind.
+  const bgImage = lyricsOpen && karaokeBg?.type === 'image' ? karaokeBg.url : cover
 
   const requestClose = (): void => {
     setClosing(true)
@@ -83,7 +96,7 @@ export function NowPlaying({
     <div className={'np' + (closing ? ' closing' : '')}>
       <div
         className="np-bg"
-        style={track.artwork ? { backgroundImage: `url(${track.artwork})` } : undefined}
+        style={bgImage ? { backgroundImage: `url(${bgImage})` } : undefined}
       />
       <div className="np-scrim" />
 
@@ -102,6 +115,15 @@ export function NowPlaying({
         >
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 6h16M4 12h12M4 18h9" />
+          </svg>
+        </button>
+        <button
+          className="np-icon"
+          aria-label={tr('comments')}
+          onClick={() => setCommentsOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.5 8.5 0 0 1-.9-3.8A8.38 8.38 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z" />
           </svg>
         </button>
         <button
@@ -146,7 +168,32 @@ export function NowPlaying({
         />
       ) : (
         <div className="np-art">
-          {track.artwork ? <img src={track.artwork} alt="" /> : <div className="np-art-ph">♪</div>}
+          {cover ? <img src={cover} alt="" /> : <div className="np-art-ph">♪</div>}
+          <div className="cover-edit">
+            <button
+              className="cover-edit-btn"
+              aria-label={tr('changeCover')}
+              onClick={() => void setTrackCover(track.id)}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+            </button>
+            {customCovers[track.id] && (
+              <button
+                className="cover-edit-btn"
+                aria-label={tr('resetCover')}
+                onClick={() => resetTrackCover(track.id)}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                  <path d="M3 4v4h4" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -219,6 +266,16 @@ export function NowPlaying({
         </button>
       </div>
 
+      <button
+        className={'np-autopilot' + (autopilot ? ' on' : '')}
+        onClick={toggleAutopilot}
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8z" />
+        </svg>
+        {tr('autopilot')}
+      </button>
+
       {upNext.length > 0 && (
         <div className="np-queue">
           <div className="np-queue-head">{tr('queue')}</div>
@@ -241,6 +298,9 @@ export function NowPlaying({
       </div>
 
       {syncOpen && <SyncEditor track={track} onClose={() => setSyncOpen(false)} />}
+      {commentsOpen && (
+        <CommentsSheet track={track} onSeek={seek} onClose={() => setCommentsOpen(false)} />
+      )}
     </div>
   )
 }

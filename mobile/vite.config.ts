@@ -31,7 +31,20 @@ function scFetchProxy(): Plugin {
               /* ignore malformed */
             }
           }
-          const upstream = await fetch(target, { headers })
+          // Method/body passthrough — Yandex rotor feedback is POSTed. The caller
+          // signals the upstream method via x-sc-method and streams the body.
+          const method =
+            (typeof req.headers['x-sc-method'] === 'string' && req.headers['x-sc-method']) || 'GET'
+          let body: string | undefined
+          if (method !== 'GET' && method !== 'HEAD') {
+            body = await new Promise<string>((resolveBody) => {
+              const chunks: Buffer[] = []
+              req.on('data', (c) => chunks.push(c as Buffer))
+              req.on('end', () => resolveBody(Buffer.concat(chunks).toString('utf-8')))
+              req.on('error', () => resolveBody(''))
+            })
+          }
+          const upstream = await fetch(target, { method, headers, body })
           const buf = Buffer.from(await upstream.arrayBuffer())
           res.statusCode = upstream.status
           const ct = upstream.headers.get('content-type')

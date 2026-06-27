@@ -180,48 +180,51 @@ export async function fetchLyrics(
   const cached = read(cacheK(k))
   if (cached) return cached
 
-  // 1) exact get
-  try {
-    const params = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
-    if (durationSec) params.set('duration', String(Math.round(durationSec)))
-    const res = await netFetch(`${API}/get?${params}`, { 'User-Agent': UA })
-    if (res.status === 200) {
-      const result = toResult((await res.json()) as LrclibItem)
-      if (result.synced || result.plain) {
-        write(cacheK(k), result)
-        return result
-      }
-    }
-  } catch {
-    /* fall through */
-  }
+  // LRCLIB exact /get and fuzzy /search hit the same host — fire BOTH at once
+  // (they're independent) instead of one-after-the-other. This roughly halves
+  // the LRCLIB wall-time; we then prefer synced (get > search) over plain.
+  const params = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
+  if (durationSec) params.set('duration', String(Math.round(durationSec)))
+  const searchParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
 
-  // 2) fuzzy search — prefer synced, then closest duration
-  try {
-    const params = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
-    const res = await netFetch(`${API}/search?${params}`, { 'User-Agent': UA })
-    if (res.status === 200) {
+  const getP = netFetch(`${API}/get?${params}`, { 'User-Agent': UA })
+    .then(async (res) => (res.status === 200 ? toResult((await res.json()) as LrclibItem) : null))
+    .catch(() => null)
+  const searchP = netFetch(`${API}/search?${searchParams}`, { 'User-Agent': UA })
+    .then(async (res) => {
+      if (res.status !== 200) return null
       const items = (await res.json()) as LrclibItem[]
-      if (Array.isArray(items) && items.length) {
-        const best = items
-          .map((it) => ({
-            it,
-            synced: !!it.syncedLyrics,
-            durDiff: durationSec && it.duration ? Math.abs(it.duration - durationSec) : 999
-          }))
-          .sort((a, b) => Number(b.synced) - Number(a.synced) || a.durDiff - b.durDiff)[0].it
-        const result = toResult(best)
-        if (result.synced || result.plain) {
-          write(cacheK(k), result)
-          return result
-        }
-      }
+      if (!Array.isArray(items) || !items.length) return null
+      const best = items
+        .map((it) => ({
+          it,
+          synced: !!it.syncedLyrics,
+          durDiff: durationSec && it.duration ? Math.abs(it.duration - durationSec) : 999
+        }))
+        .sort((a, b) => Number(b.synced) - Number(a.synced) || a.durDiff - b.durDiff)[0].it
+      return toResult(best)
+    })
+    .catch(() => null)
+
+  const [getRes, searchRes] = await Promise.all([getP, searchP])
+
+  // Priority: get-synced > search-synced > any plain.
+  let plainFallback: LyricsResult | null = null
+  for (const r of [getRes, searchRes]) {
+    if (!r) continue
+    if (r.synced) {
+      write(cacheK(k), r)
+      return r
     }
-  } catch {
-    /* give up on lrclib */
+    if (!plainFallback && r.plain) plainFallback = r
   }
 
-  // 3) Genius (plain only)
+  // Genius (plain only) — try before settling for an LRCLIB plain so a synced
+  // hit elsewhere still wins; but here Genius is plain too, so prefer LRCLIB plain.
+  if (plainFallback) {
+    write(cacheK(k), plainFallback)
+    return plainFallback
+  }
   const genius = useGenius ? await geniusLyrics(cleanTitle, cleanArtist) : null
   if (genius) {
     const result: LyricsResult = { source: 'genius', synced: false, lines: [], plain: genius }
@@ -229,6 +232,81 @@ export async function fetchLyrics(
     return result
   }
   return null
+}
+
+// --- search tracks by a remembered lyric line --------------------------------
+export interface LyricSearchHit {
+  title: string
+  artist: string
+  thumbnail?: string
+  /** the matched lyric line (when Genius matched on lyrics rather than title) */
+  snippet?: string
+  url: string
+}
+
+interface GeniusHit {
+  type?: string
+  result?: {
+    title?: string
+    full_title?: string
+    url?: string
+    song_art_image_thumbnail_url?: string
+    header_image_thumbnail_url?: string
+    primary_artist?: { name?: string }
+  }
+  highlights?: Array<{ property?: string; value?: string }>
+}
+
+function extractHighlight(h: GeniusHit): string | undefined {
+  const hl = h.highlights?.find((x) => x.value && x.value.trim().length > 0)
+  if (!hl?.value) return undefined
+  const clean = decodeEntities(hl.value).replace(/\s*\n\s*/g, ' / ').replace(/\s+/g, ' ').trim()
+  return clean.length > 140 ? `${clean.slice(0, 138)}…` : clean
+}
+
+/**
+ * Find songs by a remembered lyric line. Uses Genius's multi-search, which
+ * matches against lyrics and returns the matching snippet in `highlights`.
+ * Returns title/artist/cover plus the matched line so the caller can resolve it
+ * to a playable track on the active provider.
+ */
+export async function searchByLyrics(query: string, limit = 14): Promise<LyricSearchHit[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+  try {
+    const res = await netFetch(`https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`, {
+      'User-Agent': BROWSER_UA
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as {
+      response?: { sections?: Array<{ type?: string; hits?: GeniusHit[] }> }
+    }
+    const out: LyricSearchHit[] = []
+    const seen = new Set<string>()
+    const sections = data.response?.sections || []
+    const order = (s: { type?: string }): number =>
+      s.type === 'lyric' ? 0 : s.type === 'top_hit' ? 1 : s.type === 'song' ? 2 : 9
+    for (const sec of [...sections].sort((a, b) => order(a) - order(b))) {
+      if (sec.type !== 'lyric' && sec.type !== 'top_hit' && sec.type !== 'song') continue
+      for (const h of sec.hits || []) {
+        if (h.type !== 'song') continue
+        const r = h.result
+        if (!r?.url || seen.has(r.url)) continue
+        if (!r.title && !r.full_title) continue
+        seen.add(r.url)
+        out.push({
+          title: r.title || r.full_title || 'Unknown',
+          artist: r.primary_artist?.name || '',
+          thumbnail: r.song_art_image_thumbnail_url || r.header_image_thumbnail_url,
+          snippet: extractHighlight(h),
+          url: r.url
+        })
+      }
+    }
+    return out.slice(0, limit)
+  } catch {
+    return []
+  }
 }
 
 export function hasManualSync(title: string, artist: string, durationSec?: number): boolean {

@@ -1,11 +1,13 @@
-// Artist page — avatar, name, follower/track stats, their tracks. Driven by the
-// shared store (openArtist / openArtistFromTrack load selectedArtist +
-// artistTracks via SoundCloud). Opened as a detail view.
+// Artist page — avatar, name, stats, their tracks, albums and similar artists.
+// Driven by the shared store (openArtist / openArtistFromTrack load
+// selectedArtist + artistTracks + artistAlbums + artistSimilar). Opened as a
+// detail view; albums/similar push further detail levels.
 import { useEffect } from 'react'
 import type { Artist, Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
+import type { Detail } from '../MobileApp'
 
 function compact(n?: number): string {
   if (n == null) return ''
@@ -16,13 +18,17 @@ function compact(n?: number): string {
 
 export function ArtistScreen({
   from,
-  onClose
+  onClose,
+  onOpenDetail
 }: {
   from: { track?: Track; artist?: Artist }
   onClose: () => void
+  onOpenDetail: (d: Detail) => void
 }): JSX.Element {
   const artist = usePlayer((s) => s.selectedArtist)
   const tracks = usePlayer((s) => s.artistTracks)
+  const albums = usePlayer((s) => s.artistAlbums)
+  const similar = usePlayer((s) => s.artistSimilar)
   const loading = usePlayer((s) => s.artistLoading)
   const playQueue = usePlayer((s) => s.playQueue)
   const openArtist = usePlayer((s) => s.openArtist)
@@ -37,6 +43,7 @@ export function ArtistScreen({
   }, [from.artist?.id, from.track?.id])
 
   const followers = compact(artist?.followers)
+  const listeners = compact(artist?.monthlyListeners)
 
   return (
     <div className="view">
@@ -54,8 +61,10 @@ export function ArtistScreen({
         </div>
         <h1 className="artist-name">{artist?.name ?? from.track?.artist ?? '…'}</h1>
         <div className="artist-meta">
+          {listeners && <span>{listeners} {t('listeners')}</span>}
+          {listeners && followers && <span className="dot">•</span>}
           {followers && <span>{followers} {t('followers')}</span>}
-          {followers && tracks.length > 0 && <span className="dot">•</span>}
+          {(listeners || followers) && tracks.length > 0 && <span className="dot">•</span>}
           {tracks.length > 0 && <span>{tracks.length} {t('tracks')}</span>}
         </div>
         {tracks.length > 0 && (
@@ -76,6 +85,39 @@ export function ArtistScreen({
             <TrackRow key={tr.id + i} track={tr} onPlay={() => playQueue(tracks, i)} />
           ))}
         </ul>
+      )}
+
+      {albums.length > 0 && (
+        <section>
+          <div className="section-head"><h2>{t('albums')}</h2></div>
+          <div className="card-row">
+            {albums.map((al) => (
+              <button key={al.id} className="sq-card" onClick={() => onOpenDetail({ kind: 'album', album: al })}>
+                <div className="sq-cover">
+                  {al.cover ? <img src={al.cover} alt="" loading="lazy" /> : <span>♪</span>}
+                </div>
+                <div className="sq-title">{al.title}</div>
+                {al.year && <div className="sq-sub">{al.year}</div>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {similar.length > 0 && (
+        <section>
+          <div className="section-head"><h2>{t('similarArtists')}</h2></div>
+          <div className="artist-grid">
+            {similar.map((ar) => (
+              <button key={ar.id} className="artist-cell" onClick={() => onOpenDetail({ kind: 'artist', artist: ar })}>
+                <div className="artist-cell-av">
+                  {ar.avatar ? <img src={ar.avatar} alt="" loading="lazy" /> : <span>{ar.name[0]}</span>}
+                </div>
+                <span className="artist-cell-name">{ar.name}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )

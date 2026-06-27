@@ -1,9 +1,13 @@
 // Install the mobile window.api bridge BEFORE anything that might read it
 // (the shared store/providers call window.api.*). Import order matters here.
 import './api/shim'
-// Override the 'local' provider with the mobile blob-based one (must run after
-// the shared registry has registered the desktop default).
+// Override the streaming providers with mobile builds (must run after the shared
+// registry has registered the desktop defaults). The desktop providers route
+// audio through the Electron media:// proxy (for the EQ); that scheme doesn't
+// exist on mobile, so these play the resolved CDN/blob URL directly.
 import './api/localProvider'
+import './api/scProvider'
+import './api/ymProvider'
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'

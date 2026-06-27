@@ -38,6 +38,13 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   recentArtists: { ru: 'Недавние авторы', en: 'Recent artists' },
   results: { ru: 'Результаты', en: 'Results' },
   nothingFound: { ru: 'Ничего не нашлось — попробуй другой запрос.', en: 'Nothing found — try another query.' },
+  searchModeTracks: { ru: 'Треки', en: 'Tracks' },
+  searchModeLyrics: { ru: 'По строчке', en: 'By lyrics' },
+  lyricSearchPh: { ru: 'Введите строчку из песни', en: 'Type a line from the song' },
+  lyricSearchHint: {
+    ru: 'Помните строчку, но не название? Введите её — найдём трек.',
+    en: 'Remember a line but not the title? Type it — we’ll find the track.'
+  },
   // library
   myLibrary: { ru: 'Моя библиотека', en: 'My library' },
   playlists: { ru: 'Плейлисты', en: 'Playlists' },
@@ -99,6 +106,24 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
     en: 'Sign in at soundcloud.com, open DevTools → Network → any api-v2 request → copy the Authorization (OAuth …) header and paste it here. On-device auto sign-in comes later.'
   },
   scTokenBad: { ru: 'Токен не подошёл. Проверь и попробуй снова.', en: 'Token didn’t work. Check it and retry.' },
+  ymAccount: { ru: 'Аккаунт Яндекс Музыки', en: 'Yandex Music account' },
+  ymSub: { ru: 'Моя волна и лайки появятся после входа.', en: 'My Wave and likes appear after sign-in.' },
+  connectYM: { ru: 'Подключить Яндекс Музыку', en: 'Connect Yandex Music' },
+  ymTokenHint: {
+    ru: 'Откройте страницу входа Яндекса, авторизуйтесь, затем скопируйте адрес из строки браузера (он содержит access_token) и вставьте сюда. Можно вставить и сам токен. Авто-вход на устройстве появится позже.',
+    en: 'Open the Yandex sign-in page, log in, then copy the address bar URL (it contains access_token) and paste it here. The bare token works too. On-device auto sign-in comes later.'
+  },
+  ymGetToken: { ru: 'Открыть страницу входа Яндекса', en: 'Open Yandex sign-in page' },
+  ymTokenBad: { ru: 'Токен не подошёл. Проверь и попробуй снова.', en: 'Token didn’t work. Check it and retry.' },
+  importYMLikes: { ru: 'Импортировать лайки', en: 'Import likes' },
+  importing: { ru: 'Импорт…', en: 'Importing…' },
+  importedN: { ru: 'Импортировано', en: 'Imported' },
+  myWave: { ru: 'Моя волна', en: 'My Wave' },
+  waveSub: { ru: 'Персональный поток Яндекс Музыки', en: 'Your personal Yandex Music stream' },
+  playWave: { ru: 'Слушать волну', en: 'Play wave' },
+  similarArtists: { ru: 'Похожие артисты', en: 'Similar artists' },
+  listeners: { ru: 'слушателей/мес', en: 'monthly listeners' },
+  playlistsSec: { ru: 'Плейлисты', en: 'Playlists' },
   data: { ru: 'Данные', en: 'Data' },
   savedQueue: { ru: 'Сохранённая очередь', en: 'Saved queue' },
   clear: { ru: 'Очистить', en: 'Clear' },
@@ -137,7 +162,19 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   changePhoto: { ru: 'Сменить фото', en: 'Change photo' },
   changeName: { ru: 'Сменить имя', en: 'Change name' },
   crop: { ru: 'Кадрировать', en: 'Crop' },
-  done: { ru: 'Готово', en: 'Done' }
+  done: { ru: 'Готово', en: 'Done' },
+  changeCover: { ru: 'Сменить обложку', en: 'Change cover' },
+  resetCover: { ru: 'Вернуть обложку', en: 'Reset cover' },
+  trackBackground: { ru: 'Фон трека', en: 'Track background' },
+  kbgImage: { ru: 'Изображение', en: 'Image' },
+  kbgReset: { ru: 'Убрать фон', en: 'Remove background' },
+  autopilot: { ru: 'Автопилот', en: 'Autopilot' },
+  moreActions: { ru: 'Ещё', en: 'More' },
+  addAllToQueue: { ru: 'Добавить всё в очередь', en: 'Add all to queue' },
+  addAllToPlaylist: { ru: 'Добавить всё в плейлист', en: 'Add all to playlist' },
+  comments: { ru: 'Комментарии', en: 'Comments' },
+  commentsScOnly: { ru: 'Комментарии есть только у треков SoundCloud.', en: 'Comments are only available on SoundCloud tracks.' },
+  noComments: { ru: 'Пока нет комментариев.', en: 'No comments yet.' }
 }
 
 export type TKey = keyof typeof STRINGS

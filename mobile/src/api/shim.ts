@@ -10,8 +10,9 @@
 // Keeping the exact same shape as the desktop preload means the shared store and
 // providers run unchanged.
 
-import type { Artist, LibraryState, Playlist, Track } from '@shared/types'
+import type { Album, Artist, LibraryState, Playlist, Track } from '@shared/types'
 import * as sc from './soundcloud'
+import * as ym from './yandex'
 import * as lyrics from './lyrics'
 import { offlineSrcForUri } from './offline'
 
@@ -48,6 +49,48 @@ function write<T>(key: string, value: T): void {
 const LIKES_KEY = 'lp.m.likes'
 const PLAYLISTS_KEY = 'lp.m.playlists'
 
+/**
+ * Open a native file dialog and resolve to a data: URL for the chosen image
+ * (null if cancelled). data: (not blob:) so the chosen cover/background survives
+ * a reload. Must be triggered from a user gesture (it is — covers/bg are picked
+ * from a tap). Mirrors the desktop dialog:pickImage IPC the shared store calls.
+ */
+function pickImage(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+    let settled = false
+    const finish = (v: string | null): void => {
+      if (settled) return
+      settled = true
+      input.remove()
+      resolve(v)
+    }
+    input.onchange = (): void => {
+      const file = input.files?.[0]
+      if (!file) return finish(null)
+      const reader = new FileReader()
+      reader.onload = () => finish(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => finish(null)
+      reader.readAsDataURL(file)
+    }
+    // If the dialog is dismissed without a pick, there's no reliable cancel event;
+    // a focus-based fallback resolves null so the promise never hangs forever.
+    const onFocus = (): void => {
+      window.removeEventListener('focus', onFocus)
+      setTimeout(() => {
+        if (!input.files?.length) finish(null)
+      }, 500)
+    }
+    window.addEventListener('focus', onFocus)
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
 // --- likes ---------------------------------------------------------------------
 function getLikes(): Track[] {
   return read<Track[]>(LIKES_KEY, [])
@@ -59,6 +102,21 @@ function toggleLike(track: Track): Track[] {
   else likes.unshift(track)
   write(LIKES_KEY, likes)
   return likes
+}
+/** Merge tracks into likes (dedup by id, newest first) — used by likes import. */
+function addManyLikes(tracks: Track[]): Track[] {
+  const likes = getLikes()
+  const have = new Set(likes.map((t) => t.id))
+  const fresh = tracks.filter((t) => !have.has(t.id))
+  const next = [...fresh, ...likes]
+  write(LIKES_KEY, next)
+  return next
+}
+/** Drop every like that came from a given provider — undoes an import. */
+function removeProviderLikes(provider: string): Track[] {
+  const next = getLikes().filter((t) => t.providerId !== provider)
+  write(LIKES_KEY, next)
+  return next
 }
 
 // --- playlists -----------------------------------------------------------------
@@ -87,9 +145,17 @@ const api = {
   // SoundCloud — public endpoints are real (via the dev proxy / CapacitorHttp).
   scSearch: (query: string): Promise<Track[]> => sc.search(query),
   scSearchUsers: (query: string): Promise<Artist[]> => sc.searchUsers(query),
+  scSearchAlbums: (query: string): Promise<Album[]> => sc.searchAlbums(query),
+  scSearchPlaylists: (query: string): Promise<Album[]> => sc.searchPlaylists(query),
   scUser: (userId: string): Promise<Artist | null> => sc.getUser(userId),
   scUserTracks: (userId: string): Promise<Track[]> => sc.getUserTracks(userId),
+  scUserAlbums: (userId: string): Promise<Album[]> => sc.getUserAlbums(userId),
+  scAlbumTracks: (albumId: string): Promise<Track[]> => sc.getAlbumTracks(albumId),
   scRelated: (trackId: string): Promise<Track[]> => sc.relatedTracks(trackId),
+  scComments: (
+    trackId: string
+  ): Promise<{ timeSec: number; body: string; user: string; avatar?: string }[]> =>
+    sc.getComments(trackId),
   scResolveStream: async (transcodingUrl: string): Promise<string> => {
     // Prefer a downloaded copy (offline) over the network stream.
     const local = await offlineSrcForUri(transcodingUrl)
@@ -108,9 +174,45 @@ const api = {
     { title: string; subtitle?: string; cover?: string; tracks: Track[] }[]
   > => sc.getPersonalMixes(),
 
+  // Yandex Music — public endpoints (search / artist / album / playlist) are
+  // real; auth (likes / My Wave) is driven by a user-pasted OAuth token. Stream
+  // resolution signs the CDN URL with a pure-JS MD5 (see yandex.ts / md5.ts).
+  ymSearch: (query: string): Promise<Track[]> => ym.search(query),
+  ymSearchArtists: (query: string): Promise<Artist[]> => ym.searchArtists(query),
+  ymSearchAlbums: (query: string): Promise<Album[]> => ym.searchAlbums(query),
+  ymSearchPlaylists: (query: string): Promise<Album[]> => ym.searchPlaylists(query),
+  ymArtist: (artistId: string): Promise<Artist | null> => ym.getArtist(artistId),
+  ymArtistTracks: (artistId: string): Promise<Track[]> => ym.getArtistTracks(artistId),
+  ymSimilarArtists: (artistId: string): Promise<Artist[]> => ym.getSimilarArtists(artistId),
+  ymArtistAlbums: (artistId: string): Promise<Album[]> => ym.getArtistAlbums(artistId),
+  ymAlbumTracks: (albumId: string): Promise<Track[]> => ym.getAlbumTracks(albumId),
+  ymPlaylistTracks: (playlistId: string): Promise<Track[]> => ym.getPlaylistTracks(playlistId),
+  ymResolveStream: async (trackId: string): Promise<string> => {
+    // Prefer a downloaded copy (offline) over the network stream.
+    const local = await offlineSrcForUri(trackId)
+    return local ?? ym.resolveStream(trackId)
+  },
+  // Auth — driven by a user-pasted OAuth token (or redirect URL). Auto-capture
+  // needs a native WebView; see ios-notes / android-notes.
+  ymSetToken: (token: string): void => ym.setToken(token),
+  ymLogin: async (): Promise<Artist | null> => ym.getMe(),
+  ymLogout: async (): Promise<void> => ym.logout(),
+  ymMe: (): Promise<Artist | null> => ym.getMe(),
+  ymIsAuthed: async (): Promise<boolean> => ym.isAuthed(),
+  ymMyLikes: (): Promise<Track[]> => ym.getMyLikes(),
+  ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
+    ym.getMyWave(queueId),
+  ymWaveFeedback: (
+    type: 'trackStarted' | 'trackFinished',
+    trackId: string,
+    seconds?: number
+  ): Promise<void> => ym.waveTrackFeedback(type, trackId, seconds),
+
   // likes / playlists — real, localStorage-backed.
   getLikes: async (): Promise<Track[]> => getLikes(),
   toggleLike: async (track: Track): Promise<Track[]> => toggleLike(track),
+  addManyLikes: async (tracks: Track[]): Promise<Track[]> => addManyLikes(tracks),
+  removeProviderLikes: async (provider: string): Promise<Track[]> => removeProviderLikes(provider),
   getPlaylists: async (): Promise<Playlist[]> => getPlaylists(),
   createPlaylist: async (name: string): Promise<Playlist[]> =>
     savePlaylists([...getPlaylists(), { id: newId(), name, tracks: [] }]),
@@ -140,13 +242,16 @@ const api = {
   windowIsMaximized: async (): Promise<boolean> => false,
   onWindowMaximized: (_cb: (maximized: boolean) => void): (() => void) => () => undefined,
 
-  // image picker — native picker comes later; null = "no image chosen".
-  pickBackground: async (): Promise<string | null> => null,
+  // image picker — opens a file dialog and returns a data: URL (so it survives
+  // reloads, unlike a blob:). Unlocks the shared cover/background actions
+  // (setTrackCover / setCustomBg / setKaraokeImage). null = "no image chosen".
+  pickBackground: (): Promise<string | null> => pickImage(),
 
   // lyrics — LRCLIB + Genius via the proxy / CapacitorHttp, cached locally.
   getLyrics: (title: string, artist: string, durationSec?: number, useGenius?: boolean) =>
     lyrics.fetchLyrics(title, artist, durationSec, useGenius),
   clearLyricsCache: async (): Promise<void> => lyrics.clearCache(),
+  searchByLyrics: (query: string): Promise<lyrics.LyricSearchHit[]> => lyrics.searchByLyrics(query),
   hasManualSync: async (title: string, artist: string, durationSec?: number): Promise<boolean> =>
     lyrics.hasManualSync(title, artist, durationSec),
   saveManualSync: async (

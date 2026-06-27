@@ -5,6 +5,7 @@ import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
+import { ListMenu } from '../components/ListMenu'
 import { downloadTrack, isDownloaded } from '../api/offline'
 
 export function ListView({
@@ -23,6 +24,7 @@ export function ListView({
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
   const [dlAll, setDlAll] = useState<'idle' | 'busy' | 'done'>('idle')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const downloadAll = async (): Promise<void> => {
     if (dlAll === 'busy') return
@@ -64,10 +66,19 @@ export function ListView({
           <button className="ghost-btn" onClick={downloadAll} disabled={dlAll === 'busy'}>
             {dlAll === 'busy' ? t('downloading') : dlAll === 'done' ? t('downloaded') : t('downloadAll')}
           </button>
+          <button className="ghost-btn icon-only" aria-label={t('moreActions')} onClick={() => setMenuOpen(true)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <circle cx="5" cy="12" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="19" cy="12" r="1.8" />
+            </svg>
+          </button>
         </div>
       ) : (
         <div className="empty">{t('empty')}</div>
       )}
+
+      {menuOpen && <ListMenu tracks={tracks} onClose={() => setMenuOpen(false)} />}
 
       <ul className="track-list">
         {tracks.map((tr, i) => (

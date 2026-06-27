@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { usePlayer } from '@renderer/store'
 import { useT } from '../i18n'
 import { ConnectSC } from '../components/ConnectSC'
+import { ConnectYandex } from '../components/ConnectYandex'
 import { FramingModal, type Framing } from '../components/FramingModal'
 import type { Detail } from '../MobileApp'
 
@@ -18,8 +19,19 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
   const scAuth = usePlayer((s) => s.scAuth)
   const scLikes = usePlayer((s) => s.scLikes)
   const disconnectSC = usePlayer((s) => s.disconnectSoundCloud)
+  const ymAuth = usePlayer((s) => s.ymAuth)
+  const disconnectYandex = usePlayer((s) => s.disconnectYandex)
+  const importYandexLikes = usePlayer((s) => s.importYandexLikes)
   const t = useT()
   const [connectOpen, setConnectOpen] = useState(false)
+  const [ymConnectOpen, setYmConnectOpen] = useState(false)
+  const [importState, setImportState] = useState<'idle' | 'busy' | number>('idle')
+
+  const runImport = async (): Promise<void> => {
+    setImportState('busy')
+    const n = await importYandexLikes()
+    setImportState(n)
+  }
   const [cropAv, setCropAv] = useState(false)
   const avInput = useRef<HTMLInputElement>(null)
   const [avFrame, setAvFrame] = useState<Framing>(() => {
@@ -64,8 +76,8 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
 
   // When connected to SoundCloud, the profile reflects the SC account unless the
   // user has set their own name/avatar (manual override wins, like desktop).
-  const name = profileName || scAuth?.name || t('listener')
-  const avatar = profileAvatar || scAuth?.avatar || null
+  const name = profileName || scAuth?.name || ymAuth?.name || t('listener')
+  const avatar = profileAvatar || scAuth?.avatar || ymAuth?.avatar || null
   const followerCount = scAuth?.followers ?? followers
   const likeCount = new Set([...likes, ...scLikes].map((x) => x.id)).size
 
@@ -171,7 +183,50 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
         )}
       </section>
 
+      <section>
+        <h2>{t('ymAccount')}</h2>
+        {ymAuth ? (
+          <>
+            <div className="sc-account-row">
+              <div className="sc-account-chip">
+                {ymAuth.avatar && <img src={ymAuth.avatar} alt="" />}
+                <span>{ymAuth.name}</span>
+              </div>
+              <button className="ghost-btn" onClick={() => void disconnectYandex()}>
+                {t('disconnect')}
+              </button>
+            </div>
+            <button className="set-row" onClick={() => onOpenDetail({ kind: 'wave' })}>
+              <span className="set-row-title">{t('myWave')}</span>
+              <span className="pl-more">›</span>
+            </button>
+            <button
+              className="set-row"
+              onClick={() => void runImport()}
+              disabled={importState === 'busy'}
+            >
+              <span className="set-row-title">{t('importYMLikes')}</span>
+              <span className="pl-more">
+                {importState === 'busy'
+                  ? t('importing')
+                  : typeof importState === 'number'
+                    ? `+${importState}`
+                    : ''}
+              </span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="sc-connect" onClick={() => setYmConnectOpen(true)}>
+              {t('connectYM')}
+            </button>
+            <div className="profile-hint">{t('ymSub')}</div>
+          </>
+        )}
+      </section>
+
       {connectOpen && <ConnectSC onClose={() => setConnectOpen(false)} />}
+      {ymConnectOpen && <ConnectYandex onClose={() => setYmConnectOpen(false)} />}
       {cropAv && avatar && (
         <FramingModal
           image={avatar}
