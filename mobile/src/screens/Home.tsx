@@ -55,6 +55,7 @@ export function HomeScreen({
   const playQueue = usePlayer((s) => s.playQueue)
   const ymAuth = usePlayer((s) => s.ymAuth)
   const playMyWave = usePlayer((s) => s.playMyWave)
+  const showHomeMixes = usePlayer((s) => s.showHomeMixes)
   const lang = usePlayer((s) => s.lang)
   const t = useT()
   const jumpBack = recent.slice(0, 10)
@@ -136,6 +137,7 @@ export function HomeScreen({
         </button>
       )}
 
+      {showHomeMixes && (
       <section>
         <div className="section-head">
           <h2>{t('yourMixes')}</h2>
@@ -157,6 +159,7 @@ export function HomeScreen({
           <div className="empty">{t('mixesEmpty')}</div>
         )}
       </section>
+      )}
 
       {jumpBack.length > 0 && (
         <section>

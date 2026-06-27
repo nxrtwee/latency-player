@@ -292,6 +292,29 @@
   border-radius: 12px;
   box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.8);
 }
+
+/* Adjustable capsule height (--pb-h is 60..100; 100 == the default look).
+   The bar, cover art and visualizer all scale down together. */
+[data-skin='nextgen'] .playerbar {
+  height: calc(54px + (var(--pb-h, 100) - 60) * 0.75px);
+}
+[data-skin='nextgen'] .pb-art {
+  width: calc(36px + (var(--pb-h, 100) - 60) * 0.4px);
+  height: calc(36px + (var(--pb-h, 100) - 60) * 0.4px);
+}
+[data-skin='nextgen'] .pb-wave {
+  /* 100 → 18px (the default), shrinking gently toward 60. */
+  height: calc(8px + (var(--pb-h, 100) - 60) * 0.25px);
+}
+/* Compact mode: the visualizer is replaced by a slim seek bar (volume-style). */
+[data-skin='nextgen'] .pb-seek.compact {
+  gap: 10px;
+}
+[data-skin='nextgen'] .pb-seek-slider {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+}
 /* The transport play button glows in the accent rather than flat white. */
 [data-skin='nextgen'] .play-btn {
   background: var(--accent);

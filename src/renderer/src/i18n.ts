@@ -147,6 +147,11 @@ const dict: Record<string, { en: string; ru: string }> = {
     en: 'Width of the floating player bar (nextgen).',
     ru: 'Ширина плавающей полосы плеера (nextgen).'
   },
+  playerBarHeight: { en: 'Player bar height', ru: 'Высота плеера' },
+  playerBarHeightSub: {
+    en: 'Shrink the floating bar; the visualizer becomes a slim progress bar when low (nextgen).',
+    ru: 'Уменьшает плавающую полосу; на малой высоте визуализатор становится тонким прогресс-баром (nextgen).'
+  },
   trackBackground: { en: 'Track background', ru: 'Фон трека' },
   kbgImage: { en: 'Image…', ru: 'Изображение…' },
   kbgVideoFile: { en: 'Video file…', ru: 'Видео-файл…' },

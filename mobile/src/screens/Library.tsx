@@ -21,7 +21,9 @@ export function LibraryScreen({
   const scLikes = usePlayer((s) => s.scLikes)
   const playlists = usePlayer((s) => s.playlists)
   const recent = usePlayer((s) => s.recentlyPlayed)
+  const ymAuth = usePlayer((s) => s.ymAuth)
   const createPlaylist = usePlayer((s) => s.createPlaylist)
+  const deletePlaylist = usePlayer((s) => s.deletePlaylist)
   const playQueue = usePlayer((s) => s.playQueue)
   const lang = usePlayer((s) => s.lang)
   const t = useT()
@@ -66,6 +68,11 @@ export function LibraryScreen({
   const create = (): void => {
     const name = window.prompt(t('promptName'))?.trim()
     if (name) void createPlaylist(name)
+  }
+
+  const del = (e: React.MouseEvent, id: string, name: string): void => {
+    e.stopPropagation()
+    if (window.confirm(`${t('deletePlaylist')}: «${name}»?`)) void deletePlaylist(id)
   }
 
   const TABS: { id: Tab; label: string }[] = [
@@ -140,6 +147,21 @@ export function LibraryScreen({
               </div>
               <span className="pl-more">›</span>
             </li>
+            {ymAuth && (
+              <li className="pl-item" onClick={() => onOpenDetail({ kind: 'wave' })}>
+                <div className="pl-cover wave-cover">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round">
+                    <path d="M2 12h2M7 12h2M12 12h0M22 12h-2M17 12h-2" />
+                    <path d="M4 8v8M9 5v14M14 7v10M20 8v8" />
+                  </svg>
+                </div>
+                <div className="pl-meta">
+                  <div className="pl-name">{t('myWave')}</div>
+                  <div className="pl-sub">{t('waveSub')}</div>
+                </div>
+                <span className="pl-more">›</span>
+              </li>
+            )}
             <li className="pl-item" onClick={() => onOpenDetail({ kind: 'downloads' })}>
               <div className="pl-cover dl-cover">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -168,7 +190,11 @@ export function LibraryScreen({
                   <div className="pl-name">{p.name}</div>
                   <div className="pl-sub">{trk(p.tracks.length)}</div>
                 </div>
-                <span className="pl-more">›</span>
+                <button className="pl-del" aria-label={t('deletePlaylist')} onClick={(e) => del(e, p.id, p.name)}>
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                  </svg>
+                </button>
               </li>
             ))}
           </ul>

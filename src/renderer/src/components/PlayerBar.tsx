@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
@@ -51,6 +52,7 @@ export function PlayerBar(): JSX.Element {
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
   const skin = usePlayer((s) => s.skin)
   const playerBarWidth = usePlayer((s) => s.playerBarWidth)
+  const playerBarHeight = usePlayer((s) => s.playerBarHeight)
 
   const t = useT()
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
@@ -59,10 +61,20 @@ export function PlayerBar(): JSX.Element {
     ? likes.some((x) => x.id === track.id) || scLikes.some((x) => x.id === track.id)
     : false
 
-  // The nextgen bar is a floating capsule whose width the user can tune; oldgen
-  // is the full-width docked bar (no override).
-  const barStyle =
-    skin === 'nextgen' ? { width: `${playerBarWidth}%`, maxWidth: 'none' as const } : undefined
+  // The nextgen bar is a floating capsule whose width AND height the user can
+  // tune; oldgen is the full-width docked bar (no override). --pb-h drives the
+  // capsule height / art / visualizer sizing in skin-nextgen.css.
+  const barStyle: CSSProperties | undefined =
+    skin === 'nextgen'
+      ? ({
+          width: `${playerBarWidth}%`,
+          maxWidth: 'none',
+          ['--pb-h' as string]: playerBarHeight
+        } as CSSProperties)
+      : undefined
+  // Below this height the visualizer is too cramped to read — swap it for a slim
+  // progress bar (same look as the volume slider).
+  const compactSeek = skin === 'nextgen' && playerBarHeight <= 72
 
   return (
     <footer className="playerbar" style={barStyle}>
@@ -149,17 +161,28 @@ export function PlayerBar(): JSX.Element {
             {repeat === 'one' ? <RepeatOneIcon size={18} /> : <RepeatIcon size={18} />}
           </button>
         </div>
-        <div className="pb-seek">
+        <div className={`pb-seek${compactSeek ? ' compact' : ''}`}>
           <span className="pb-time">{formatTime(positionSec)}</span>
-          <Waveform
-            className="pb-wave"
-            seed={track?.id ?? 'latency'}
-            positionSec={positionSec}
-            durationSec={durationSec}
-            onSeek={seek}
-            bars={96}
-            reactivity={0.75}
-          />
+          {compactSeek ? (
+            <Slider
+              className="pb-seek-slider"
+              value={positionSec}
+              max={durationSec || 1}
+              step={0.1}
+              onChange={seek}
+              ariaLabel="Seek"
+            />
+          ) : (
+            <Waveform
+              className="pb-wave"
+              seed={track?.id ?? 'latency'}
+              positionSec={positionSec}
+              durationSec={durationSec}
+              onSeek={seek}
+              bars={96}
+              reactivity={0.75}
+            />
+          )}
           <span className="pb-time">{formatTime(durationSec)}</span>
         </div>
       </div>

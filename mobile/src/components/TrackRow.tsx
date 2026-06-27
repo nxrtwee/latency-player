@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
+import { ProviderBadge } from '@renderer/components/ProviderBadge'
+import { useCover } from '@renderer/cover'
 import { useT } from '../i18n'
 import { Portal } from './Portal'
 import { downloadTrack, isDownloaded, removeDownload } from '../api/offline'
@@ -30,6 +32,7 @@ export function TrackRow({
 }): JSX.Element {
   const currentId = usePlayer((s) => s.queue[s.currentIndex]?.id)
   const isPlaying = usePlayer((s) => s.isPlaying)
+  const cover = useCover(track)
   const [sheet, setSheet] = useState(false)
   const [dl, setDl] = useState<'idle' | 'busy' | 'done'>(() =>
     isDownloaded(track.id) ? 'done' : 'idle'
@@ -58,7 +61,8 @@ export function TrackRow({
   return (
     <li className={'track-row' + (current ? ' playing' : '') + (dim ? ' dim' : '')} onClick={onPlay}>
       <div className="track-cover">
-        {track.artwork ? <img src={track.artwork} alt="" loading="lazy" /> : <span>♪</span>}
+        {cover ? <img src={cover} alt="" loading="lazy" /> : <span>♪</span>}
+        <ProviderBadge provider={track.providerId} size={11} className="row-prov" />
         {current && (
           <span className={'track-eq' + (isPlaying ? ' on' : '')} aria-hidden>
             <i />
@@ -69,7 +73,9 @@ export function TrackRow({
       </div>
       <div className="track-meta">
         <div className="track-title">{track.title}</div>
-        <div className="track-artist">{track.artist || 'SoundCloud'}</div>
+        <div className="track-artist">
+          {track.artist || (track.providerId === 'yandex' ? 'Яндекс Музыка' : track.providerId === 'soundcloud' ? 'SoundCloud' : '')}
+        </div>
       </div>
       <div className="track-dur">{fmt(track.durationSec)}</div>
       <button

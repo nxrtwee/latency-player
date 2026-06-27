@@ -70,6 +70,8 @@ export function Settings(): JSX.Element {
   const setSkin = usePlayer((s) => s.setSkin)
   const playerBarWidth = usePlayer((s) => s.playerBarWidth)
   const setPlayerBarWidth = usePlayer((s) => s.setPlayerBarWidth)
+  const playerBarHeight = usePlayer((s) => s.playerBarHeight)
+  const setPlayerBarHeight = usePlayer((s) => s.setPlayerBarHeight)
   const customAccent = usePlayer((s) => s.customAccent)
   const setCustomAccent = usePlayer((s) => s.setCustomAccent)
   const customBg = usePlayer((s) => s.customBg)
@@ -196,6 +198,26 @@ export function Settings(): JSX.Element {
                     onChange={(e) => setPlayerBarWidth(Number(e.target.value))}
                   />
                   <span className="set-slider-val">{playerBarWidth}%</span>
+                </div>
+              </div>
+            )}
+
+            {skin === 'nextgen' && (
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('playerBarHeight')}</span>
+                  <span className="set-row-sub">{t('playerBarHeightSub')}</span>
+                </div>
+                <div className="set-slider">
+                  <input
+                    type="range"
+                    className="slider"
+                    min={60}
+                    max={100}
+                    value={playerBarHeight}
+                    onChange={(e) => setPlayerBarHeight(Number(e.target.value))}
+                  />
+                  <span className="set-slider-val">{playerBarHeight}%</span>
                 </div>
               </div>
             )}

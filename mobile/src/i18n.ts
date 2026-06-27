@@ -116,6 +116,7 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   ymGetToken: { ru: 'Открыть страницу входа Яндекса', en: 'Open Yandex sign-in page' },
   ymTokenBad: { ru: 'Токен не подошёл. Проверь и попробуй снова.', en: 'Token didn’t work. Check it and retry.' },
   importYMLikes: { ru: 'Импортировать лайки', en: 'Import likes' },
+  importLikes: { ru: 'Импортировать лайки', en: 'Import likes' },
   importing: { ru: 'Импорт…', en: 'Importing…' },
   importedN: { ru: 'Импортировано', en: 'Imported' },
   myWave: { ru: 'Моя волна', en: 'My Wave' },
@@ -174,7 +175,14 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   addAllToPlaylist: { ru: 'Добавить всё в плейлист', en: 'Add all to playlist' },
   comments: { ru: 'Комментарии', en: 'Comments' },
   commentsScOnly: { ru: 'Комментарии есть только у треков SoundCloud.', en: 'Comments are only available on SoundCloud tracks.' },
-  noComments: { ru: 'Пока нет комментариев.', en: 'No comments yet.' }
+  noComments: { ru: 'Пока нет комментариев.', en: 'No comments yet.' },
+  artistSc: { ru: 'Артист SoundCloud', en: 'SoundCloud artist' },
+  artistYm: { ru: 'Артист Яндекс Музыки', en: 'Yandex Music artist' },
+  removeImported: { ru: 'Убрать импортированные лайки', en: 'Remove imported likes' },
+  removed: { ru: 'Убрано', en: 'Removed' },
+  deletePlaylist: { ru: 'Удалить плейлист', en: 'Delete playlist' },
+  hideScMixes: { ru: 'Скрыть миксы SoundCloud', en: 'Hide SoundCloud mixes' },
+  hideScMixesSub: { ru: 'Убрать секцию миксов с главной', en: 'Remove the mixes section from Home' }
 }
 
 export type TKey = keyof typeof STRINGS

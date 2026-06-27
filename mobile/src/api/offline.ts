@@ -12,7 +12,15 @@
 // In a desktop browser there is no Filesystem plugin: download just records the
 // entry (so the UI works) and playback keeps streaming. Real offline is on device.
 import type { Track } from '@shared/types'
-import { resolveStream } from './soundcloud'
+import { resolveStream as scResolveStream } from './soundcloud'
+import { resolveStream as ymResolveStream } from './yandex'
+
+/** Resolve a track's direct CDN URL using its provider's resolver. */
+function resolveStream(track: Track): Promise<string> {
+  return track.providerId === 'yandex'
+    ? ymResolveStream(track.uri)
+    : scResolveStream(track.uri)
+}
 
 const KEY = 'lp.m.offline'
 const DIR = 'DATA' // Capacitor Directory.Data
@@ -98,7 +106,7 @@ export async function downloadTrack(track: Track): Promise<void> {
   const transfer = cap()?.Plugins?.FileTransfer
   if (isNative() && plugin && transfer) {
     if (isHlsUri(track.uri)) throw new Error('Offline is available for progressive tracks only')
-    const url = await resolveStream(track.uri) // resolve to a direct CDN mp3
+    const url = await resolveStream(track) // resolve to a direct CDN mp3 (per provider)
     // Ensure the offline/ folder exists, then stream the file straight to disk.
     try {
       await plugin.mkdir({ path: FOLDER, directory: DIR, recursive: true })

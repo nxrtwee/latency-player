@@ -1,8 +1,8 @@
 // Fullscreen "Now Playing" — big artwork, a clean seek bar, transport controls
 // and the queue. Wired to the shared player store; opens by tapping the
 // mini-player, closes with a slide-down animation.
-import { useEffect, useState } from 'react'
-import type { Track } from '@shared/types'
+import { Fragment, useEffect, useState } from 'react'
+import type { Artist, Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
 import { Waveform } from '@renderer/components/Waveform'
 import { useCover } from '@renderer/cover'
@@ -21,10 +21,12 @@ function fmt(sec: number): string {
 
 export function NowPlaying({
   onClose,
-  onArtist
+  onArtist,
+  onOpenArtist
 }: {
   onClose: () => void
   onArtist?: (track: Track) => void
+  onOpenArtist?: (artist: Artist) => void
 }): JSX.Element | null {
   const track = usePlayer((s) => s.queue[s.currentIndex])
   const queue = usePlayer((s) => s.queue)
@@ -199,13 +201,42 @@ export function NowPlaying({
 
       <div className="np-info">
         <h1 className="np-title">{track.title}</h1>
-        {track.artist && onArtist ? (
-          <button className="np-artist np-artist-link" onClick={() => onArtist(track)}>
-            {track.artist}
-          </button>
-        ) : (
-          <div className="np-artist">{track.artist || 'SoundCloud'}</div>
-        )}
+        <div className="np-artist">
+          {(track.artists?.filter((a) => a.name) ?? []).length > 0 ? (
+            track
+              .artists!.filter((a) => a.name)
+              .map((a, i) => (
+                <Fragment key={(a.id ?? a.name) + String(i)}>
+                  {i > 0 && <span>, </span>}
+                  {a.id && onOpenArtist ? (
+                    <button
+                      className="np-artist-link"
+                      onClick={() =>
+                        onOpenArtist({ id: a.id as string, name: a.name, provider: track.providerId })
+                      }
+                    >
+                      {a.name}
+                    </button>
+                  ) : (
+                    <span>{a.name}</span>
+                  )}
+                </Fragment>
+              ))
+          ) : track.artist && onArtist ? (
+            <button className="np-artist-link" onClick={() => onArtist(track)}>
+              {track.artist}
+            </button>
+          ) : (
+            <span>
+              {track.artist ||
+                (track.providerId === 'yandex'
+                  ? 'Яндекс Музыка'
+                  : track.providerId === 'soundcloud'
+                    ? 'SoundCloud'
+                    : '')}
+            </span>
+          )}
+        </div>
       </div>
 
       <Waveform

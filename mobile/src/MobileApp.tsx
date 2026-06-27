@@ -231,6 +231,10 @@ export function MobileApp(): JSX.Element {
             setNpOpen(false)
             openArtist(track)
           }}
+          onOpenArtist={(artist) => {
+            setNpOpen(false)
+            pushDetail({ kind: 'artist', artist })
+          }}
         />
       )}
       {!splashDone && <Splash onDone={() => setSplashDone(true)} />}

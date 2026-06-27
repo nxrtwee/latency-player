@@ -83,14 +83,15 @@ jobs:
         working-directory: mobile/android
         run: |
           set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
           mkdir -p ../../out-apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../../out-apk/Latency-0.1.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "../../out-apk/Latency-${VERSION}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: out-apk/Latency-0.1.0.apk
+          path: out-apk/Latency-*.apk
           if-no-files-found: error
 
   # -------------------------------------------------------------------- iOS ---
@@ -123,6 +124,7 @@ jobs:
         working-directory: mobile/ios/App
         run: |
           set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
           if [ -d App.xcworkspace ]; then
             CONTAINER=(-workspace App.xcworkspace)
           else
@@ -141,14 +143,14 @@ jobs:
             clean build
           APP="build/Build/Products/Release-iphoneos/App.app"
           [ -d "$APP" ] || { echo "ERROR: $APP not found"; exit 1; }
-          rm -rf Payload Latency-0.1.0-unsigned.ipa
+          rm -rf Payload Latency-*-unsigned.ipa
           mkdir Payload
           cp -R "$APP" Payload/
-          zip -qry Latency-0.1.0-unsigned.ipa Payload
+          zip -qry "Latency-${VERSION}-unsigned.ipa" Payload
       - uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: mobile/ios/App/Latency-0.1.0-unsigned.ipa
+          path: mobile/ios/App/Latency-*-unsigned.ipa
           if-no-files-found: error
 
   # ---------------------------------------------------------------- Publish ---
@@ -162,21 +164,20 @@ jobs:
         with:
           path: dist
       - name: Build release notes
-        # Banner + download list (desktop version from the tag, mobile pinned to
-        # 0.1.0) followed by this version's CHANGELOG.md section.
+        # Banner + download list (all platforms share the tag version) followed by
+        # this version's CHANGELOG.md section.
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           {
             echo "## Latency — медиаплеер"
             echo
-            echo "### ⚠️ Обновление только для ПК (Windows) — v${VERSION}"
-            echo "**Мобильные версии (Android/iOS) остаются на 0.1.0 без изменений.**"
+            echo "### v${VERSION} — все платформы"
             echo
             echo "**Скачать:**"
-            echo "- **Windows (v${VERSION})** — \`Latency-${VERSION}-x64.exe\` (установщик) или \`Latency-${VERSION}-portable.exe\`"
-            echo "- **Android (v0.1.0)** — \`Latency-0.1.0.apk\` (включите «установка из неизвестных источников»)"
-            echo "- **iOS (v0.1.0)** — \`Latency-0.1.0-unsigned.ipa\` (подпишите своим Apple ID через AltStore/Sideloadly)"
+            echo "- **Windows** — \`Latency-${VERSION}-x64.exe\` (установщик) или \`Latency-${VERSION}-portable.exe\`"
+            echo "- **Android** — \`Latency-${VERSION}.apk\` (включите «установка из неизвестных источников»)"
+            echo "- **iOS** — \`Latency-${VERSION}-unsigned.ipa\` (подпишите своим Apple ID через AltStore/Sideloadly)"
             echo
             echo "---"
             echo
@@ -185,9 +186,6 @@ jobs:
               f && index($0, "## ") == 1 { exit }
               f { print }
             ' CHANGELOG.md
-            echo
-            echo "> ⚠️ Плеер разрабатывался исключительно для десктопа. Мобильные порты"
-            echo "> (особенно Android) сделаны «для галочки» — рабочие, но местами сырые."
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
       - name: Publish release
@@ -195,7 +193,7 @@ jobs:
         with:
           files: |
             dist/desktop-win/*.exe
-            dist/android-apk/Latency-0.1.0.apk
-            dist/ios-ipa/Latency-0.1.0-unsigned.ipa
+            dist/android-apk/Latency-*.apk
+            dist/ios-ipa/Latency-*-unsigned.ipa
           body_path: RELEASE_NOTES.md
           fail_on_unmatched_files: true

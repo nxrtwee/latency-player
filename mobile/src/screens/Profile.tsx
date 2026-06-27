@@ -22,15 +22,35 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
   const ymAuth = usePlayer((s) => s.ymAuth)
   const disconnectYandex = usePlayer((s) => s.disconnectYandex)
   const importYandexLikes = usePlayer((s) => s.importYandexLikes)
+  const importSoundcloudLikes = usePlayer((s) => s.importSoundcloudLikes)
+  const removeImportedLikes = usePlayer((s) => s.removeImportedLikes)
   const t = useT()
   const [connectOpen, setConnectOpen] = useState(false)
   const [ymConnectOpen, setYmConnectOpen] = useState(false)
   const [importState, setImportState] = useState<'idle' | 'busy' | number>('idle')
+  const [removeState, setRemoveState] = useState<'idle' | 'busy' | number>('idle')
+  const [scImportState, setScImportState] = useState<'idle' | 'busy' | number>('idle')
+  const [scRemoveState, setScRemoveState] = useState<'idle' | 'busy' | number>('idle')
 
   const runImport = async (): Promise<void> => {
     setImportState('busy')
     const n = await importYandexLikes()
     setImportState(n)
+  }
+  const runRemoveImported = async (): Promise<void> => {
+    setRemoveState('busy')
+    const n = await removeImportedLikes('yandex')
+    setRemoveState(n)
+  }
+  const runScImport = async (): Promise<void> => {
+    setScImportState('busy')
+    const n = await importSoundcloudLikes()
+    setScImportState(n)
+  }
+  const runScRemoveImported = async (): Promise<void> => {
+    setScRemoveState('busy')
+    const n = await removeImportedLikes('soundcloud')
+    setScRemoveState(n)
   }
   const [cropAv, setCropAv] = useState(false)
   const avInput = useRef<HTMLInputElement>(null)
@@ -168,6 +188,18 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
               <span className="set-row-title">{t('mySCLikes')}</span>
               <span className="pl-more">{scLikes.length} ›</span>
             </button>
+            <button className="set-row" onClick={() => void runScImport()} disabled={scImportState === 'busy'}>
+              <span className="set-row-title">{t('importLikes')}</span>
+              <span className="pl-more">
+                {scImportState === 'busy' ? t('importing') : typeof scImportState === 'number' ? `+${scImportState}` : ''}
+              </span>
+            </button>
+            <button className="set-row" onClick={() => void runScRemoveImported()} disabled={scRemoveState === 'busy'}>
+              <span className="set-row-title">{t('removeImported')}</span>
+              <span className="pl-more">
+                {scRemoveState === 'busy' ? t('importing') : typeof scRemoveState === 'number' ? `−${scRemoveState}` : ''}
+              </span>
+            </button>
           </>
         ) : (
           <>
@@ -211,6 +243,20 @@ export function ProfileScreen({ onOpenDetail }: { onOpenDetail: (d: Detail) => v
                   ? t('importing')
                   : typeof importState === 'number'
                     ? `+${importState}`
+                    : ''}
+              </span>
+            </button>
+            <button
+              className="set-row"
+              onClick={() => void runRemoveImported()}
+              disabled={removeState === 'busy'}
+            >
+              <span className="set-row-title">{t('removeImported')}</span>
+              <span className="pl-more">
+                {removeState === 'busy'
+                  ? t('importing')
+                  : typeof removeState === 'number'
+                    ? `−${removeState}`
                     : ''}
               </span>
             </button>

@@ -6,6 +6,7 @@ import { usePlayer } from '@renderer/store'
 import { ACCENTS, applyAccent, getSavedAccent, saveAccent } from '../theme'
 import { useT, type TKey } from '../i18n'
 import { ConnectSC } from '../components/ConnectSC'
+import { ConnectYandex } from '../components/ConnectYandex'
 import { FramingModal, type Framing } from '../components/FramingModal'
 import { WALLPAPERS } from '../wallpapers'
 
@@ -30,10 +31,15 @@ export function SettingsScreen({
 }): JSX.Element {
   const resumeSession = usePlayer((s) => s.resumeSession)
   const setResumeSession = usePlayer((s) => s.setResumeSession)
+  const showHomeMixes = usePlayer((s) => s.showHomeMixes)
+  const setShowHomeMixes = usePlayer((s) => s.setShowHomeMixes)
   const lang = usePlayer((s) => s.lang)
   const setLang = usePlayer((s) => s.setLang)
   const scAuth = usePlayer((s) => s.scAuth)
   const disconnectSC = usePlayer((s) => s.disconnectSoundCloud)
+  const ymAuth = usePlayer((s) => s.ymAuth)
+  const disconnectYandex = usePlayer((s) => s.disconnectYandex)
+  const [ymConnectOpen, setYmConnectOpen] = useState(false)
   const t = useT()
 
   const [accentId, setAccentId] = useState(() => getSavedAccent().id)
@@ -153,6 +159,13 @@ export function SettingsScreen({
           </div>
           <Toggle on={resumeSession} onChange={setResumeSession} />
         </div>
+        <div className="set-row">
+          <div>
+            <span className="set-row-title">{t('hideScMixes')}</span>
+            <span className="set-row-sub">{t('hideScMixesSub')}</span>
+          </div>
+          <Toggle on={!showHomeMixes} onChange={(v) => setShowHomeMixes(!v)} />
+        </div>
       </section>
 
       <section className="set-block">
@@ -169,6 +182,24 @@ export function SettingsScreen({
           <>
             <button className="sc-connect" onClick={() => setConnectOpen(true)}>{t('connectSC')}</button>
             <div className="set-hint">{t('scSub')}</div>
+          </>
+        )}
+      </section>
+
+      <section className="set-block">
+        <div className="set-label">{t('ymAccount')}</div>
+        {ymAuth ? (
+          <div className="sc-account-row">
+            <div className="sc-account-chip">
+              {ymAuth.avatar && <img src={ymAuth.avatar} alt="" />}
+              <span>{ymAuth.name}</span>
+            </div>
+            <button className="ghost-btn" onClick={() => void disconnectYandex()}>{t('disconnect')}</button>
+          </div>
+        ) : (
+          <>
+            <button className="sc-connect" onClick={() => setYmConnectOpen(true)}>{t('connectYM')}</button>
+            <div className="set-hint">{t('ymSub')}</div>
           </>
         )}
       </section>
@@ -198,6 +229,7 @@ export function SettingsScreen({
       </section>
 
       {connectOpen && <ConnectSC onClose={() => setConnectOpen(false)} />}
+      {ymConnectOpen && <ConnectYandex onClose={() => setYmConnectOpen(false)} />}
       {cropBg && customBg && (
         <FramingModal
           image={customBg}

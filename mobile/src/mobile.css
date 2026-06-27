@@ -1361,6 +1361,9 @@ h2 {
 .mini-artist {
   font-size: 12px;
   color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mini-btn {
   display: grid;
@@ -2571,4 +2574,55 @@ h2 {
   line-height: 1.4;
   margin-top: 2px;
   overflow-wrap: anywhere;
+}
+
+/* ---- provider badges --------------------------------------------------- */
+.row-prov {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 17px;
+  height: 17px;
+  padding: 2.5px;
+  border-radius: 50%;
+  background: rgba(8, 7, 12, 0.82);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.artist-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* ---- spacing fixes ----------------------------------------------------- */
+.home-wave {
+  margin-top: 20px;
+}
+.search-toggles {
+  margin: 16px 0 10px;
+}
+
+/* delete-playlist button on Library rows */
+.pl-del {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  border-radius: 10px;
+}
+.pl-del:active {
+  color: #ff6b6b;
+  background: var(--surface);
+}
+
+/* My Wave entry cover in Library */
+.pl-cover.wave-cover {
+  background: linear-gradient(150deg, var(--accent), var(--accent-2));
 }

@@ -5,6 +5,7 @@
 import { useEffect } from 'react'
 import type { Artist, Track } from '@shared/types'
 import { usePlayer } from '@renderer/store'
+import { ProviderBadge } from '@renderer/components/ProviderBadge'
 import { useT } from '../i18n'
 import { TrackRow } from '../components/TrackRow'
 import type { Detail } from '../MobileApp'
@@ -60,6 +61,12 @@ export function ArtistScreen({
           {artist?.avatar ? <img src={artist.avatar} alt="" /> : <span>{artist?.name?.[0] ?? '?'}</span>}
         </div>
         <h1 className="artist-name">{artist?.name ?? from.track?.artist ?? '…'}</h1>
+        {artist?.provider && artist.provider !== 'local' && (
+          <div className="artist-provider">
+            <ProviderBadge provider={artist.provider} size={14} />
+            <span>{artist.provider === 'yandex' ? t('artistYm') : t('artistSc')}</span>
+          </div>
+        )}
         <div className="artist-meta">
           {listeners && <span>{listeners} {t('listeners')}</span>}
           {listeners && followers && <span className="dot">•</span>}

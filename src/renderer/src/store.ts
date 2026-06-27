@@ -140,6 +140,7 @@ interface PlayerState {
   karaokeBgs: Record<string, KaraokeBg>
   // nextgen floating player bar width, as a percent of the window (45–95).
   playerBarWidth: number
+  playerBarHeight: number
   // custom-background framing (object-position % + zoom scale)
   bgPosX: number
   bgPosY: number
@@ -270,6 +271,7 @@ interface PlayerState {
   setKaraokeVideoFile: (trackId: string) => Promise<void>
   resetKaraokeBg: (trackId: string) => void
   setPlayerBarWidth: (pct: number) => void
+  setPlayerBarHeight: (pct: number) => void
   setBgFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   setBgScope: (scope: BgScope) => void
   openFraming: () => void
@@ -783,6 +785,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     })(),
     playerBarWidth: Math.min(95, Math.max(45, readNum('lp.playerBarW', 64))),
+    playerBarHeight: Math.min(100, Math.max(60, readNum('lp.playerBarH', 100))),
     bgPosX: readNum('lp.bgPosX', 50),
     bgPosY: readNum('lp.bgPosY', 50),
     bgZoom: readNum('lp.bgZoom', 1),
@@ -1444,6 +1447,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ playerBarWidth: w })
       try {
         localStorage.setItem('lp.playerBarW', String(w))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setPlayerBarHeight(pct) {
+      const h = Math.min(100, Math.max(60, Math.round(pct)))
+      set({ playerBarHeight: h })
+      try {
+        localStorage.setItem('lp.playerBarH', String(h))
       } catch {
         /* ignore */
       }

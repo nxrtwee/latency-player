@@ -42,7 +42,18 @@ export function ConnectYandex({ onClose }: { onClose: () => void }): JSX.Element
           <div className="set-hint" style={{ marginTop: 8 }}>
             {t('ymTokenHint')}
           </div>
-          <a className="se-tap ghost" href={OAUTH_URL} target="_blank" rel="noreferrer" style={{ marginTop: 10, display: 'block', textAlign: 'center' }}>
+          <a
+            className="se-tap"
+            href={OAUTH_URL}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
             {t('ymGetToken')}
           </a>
           <textarea
