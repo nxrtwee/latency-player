@@ -3,6 +3,7 @@ import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
 import { useVirtualRows } from '../useVirtualRows'
+import { useCover, coverOf } from '../cover'
 import { Waveform } from './Waveform'
 import { Slider } from './Slider'
 import { OverlayScrollbar } from './OverlayScrollbar'
@@ -22,10 +23,20 @@ import {
   LyricsIcon,
   SearchIcon,
   CloseIcon,
-  EqualizerIcon
+  EqualizerIcon,
+  ImageIcon,
+  RefreshIcon
 } from './Icons'
 
-export function RightPanel({ width }: { width?: number }): JSX.Element {
+export function RightPanel({
+  width,
+  closing,
+  onClosed
+}: {
+  width?: number
+  closing?: boolean
+  onClosed?: () => void
+}): JSX.Element {
   const queue = usePlayer((s) => s.queue)
   const currentIndex = usePlayer((s) => s.currentIndex)
   const isPlaying = usePlayer((s) => s.isPlaying)
@@ -54,10 +65,16 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
   const eqOpen = usePlayer((s) => s.eqOpen)
   const setEqOpen = usePlayer((s) => s.setEqOpen)
   const setSource = usePlayer((s) => s.setSource)
+  const toggleRightPanel = usePlayer((s) => s.toggleRightPanel)
+  const setTrackCover = usePlayer((s) => s.setTrackCover)
+  const resetTrackCover = usePlayer((s) => s.resetTrackCover)
 
   const t = useT()
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
   const liked = track ? likes.some((t) => t.id === track.id) : false
+  const cover = useCover(track)
+  const hasCustomCover = usePlayer((s) => (track ? !!s.customCovers[track.id] : false))
+  const customCovers = usePlayer((s) => s.customCovers)
 
   const [queueFilter, setQueueFilter] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -97,18 +114,35 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
   }
 
   return (
-    <aside className="rightpanel" style={width ? { width, flex: '0 0 auto' } : undefined}>
+    <aside
+      className={`rightpanel ${closing ? 'closing' : ''}`}
+      style={{
+        ...(width ? { width, flex: '0 0 auto' } : {}),
+        // exposed to the slide-out keyframes so the freed space collapses smoothly
+        ['--rp-w' as string]: width ? `${width}px` : '360px'
+      }}
+      onAnimationEnd={(e) => {
+        // only the panel's own rpOut, not a bubbled child animation
+        if (closing && e.target === e.currentTarget) onClosed?.()
+      }}
+    >
       {/* width controlled by the resizable divider */}
       <div className="rp-card np">
         <div className="rp-head">
           <span>{t('nowPlaying')}</span>
-          <ChevronDownIcon size={16} />
+          <button
+            className="rp-collapse"
+            title={t('collapsePanel')}
+            onClick={() => toggleRightPanel()}
+          >
+            <ChevronDownIcon size={16} />
+          </button>
         </div>
 
         {track ? (
           <>
             <div className="np-art">
-              {track.artwork ? <img src={track.artwork} alt="" /> : <span>♫</span>}
+              {cover ? <img src={cover} alt="" /> : <span>♫</span>}
               <button
                 className={`np-like ${liked ? 'liked' : ''}`}
                 title={liked ? 'Unlike' : 'Like'}
@@ -116,6 +150,24 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               >
                 {liked ? <HeartFilledIcon size={18} /> : <HeartIcon size={18} />}
               </button>
+              <div className="cover-edit">
+                <button
+                  className="cover-edit-btn"
+                  title={t('changeCover')}
+                  onClick={() => setTrackCover(track.id)}
+                >
+                  <ImageIcon size={15} />
+                </button>
+                {hasCustomCover && (
+                  <button
+                    className="cover-edit-btn"
+                    title={t('resetCover')}
+                    onClick={() => resetTrackCover(track.id)}
+                  >
+                    <RefreshIcon size={15} />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div
@@ -272,7 +324,11 @@ export function RightPanel({ width }: { width?: number }): JSX.Element {
               title={`Play ${tr.title}`}
             >
               <div className="q-thumb">
-                {tr.artwork ? <img src={tr.artwork} alt="" /> : <span>♫</span>}
+                {coverOf(tr, customCovers) ? (
+                  <img src={coverOf(tr, customCovers)} alt="" />
+                ) : (
+                  <span>♫</span>
+                )}
               </div>
               <div className="q-meta">
                 <span className="q-title">{tr.title}</span>

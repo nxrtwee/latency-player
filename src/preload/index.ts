@@ -83,6 +83,7 @@ const api = {
   windowClose: (): void => ipcRenderer.send('window:close'),
   windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
   pickBackground: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickImage'),
+  pickVideo: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickVideo'),
   onWindowMaximized: (cb: (maximized: boolean) => void): (() => void) => {
     const listener = (_e: unknown, maximized: boolean): void => cb(maximized)
     ipcRenderer.on('window:maximized', listener)
@@ -154,6 +155,8 @@ const api = {
   removePlaylist: (id: string): Promise<Playlist[]> => ipcRenderer.invoke('playlists:remove', id),
   addToPlaylist: (id: string, track: Track): Promise<Playlist[]> =>
     ipcRenderer.invoke('playlists:addTrack', id, track),
+  addTracksToPlaylist: (id: string, tracks: Track[]): Promise<Playlist[]> =>
+    ipcRenderer.invoke('playlists:addTracks', id, tracks),
   removeFromPlaylist: (id: string, trackId: string): Promise<Playlist[]> =>
     ipcRenderer.invoke('playlists:removeTrack', id, trackId)
 }

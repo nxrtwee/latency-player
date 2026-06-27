@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { usePlayer } from '../store'
 import { formatTotal } from '../util'
-import { PlayIcon, SearchIcon, ShuffleIcon, ClockIcon, DownloadIcon, MoreIcon } from './Icons'
+import { PlayIcon, SearchIcon, ShuffleIcon, ClockIcon, DownloadIcon, CheckIcon } from './Icons'
 import { TrackRow } from './TrackRow'
+import { ListMenu } from './ListMenu'
 import { useT } from '../i18n'
 import { useVirtualRows } from '../useVirtualRows'
 import type { Track } from '@shared/types'
@@ -25,6 +26,9 @@ export function TrackList(): JSX.Element {
   const playQueue = usePlayer((s) => s.playQueue)
   const shuffle = usePlayer((s) => s.shuffle)
   const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  const downloadAll = usePlayer((s) => s.downloadAll)
+  const downloading = usePlayer((s) => s.downloading)
+  const offlineIds = usePlayer((s) => s.offlineIds)
 
   const [textQuery, setTextQuery] = useState('')
 
@@ -72,6 +76,12 @@ export function TrackList(): JSX.Element {
 
   const headerCover = list.find((t) => t.artwork)?.artwork
   const totalSec = list.reduce((sum, t) => sum + (t.durationSec ?? 0), 0)
+
+  // "Download all" state: streaming tracks not yet cached are downloadable; local
+  // files are already on disk. Busy while any list track is in flight.
+  const dlBusy = list.some((t) => downloading.includes(t.id))
+  const dlPending = list.filter((t) => t.providerId !== 'local' && !offlineIds.includes(t.id))
+  const allSaved = list.length > 0 && dlPending.length === 0
 
   const compact = usePlayer((s) => s.compact)
   const ROW_H = compact ? ROW_H_COMPACT : ROW_H_NORMAL
@@ -130,12 +140,21 @@ export function TrackList(): JSX.Element {
             <button className="btn-round" title="Shuffle" onClick={shufflePlay} disabled={!list.length}>
               <ShuffleIcon size={18} />
             </button>
-            <button className="btn-round soon" title="Coming soon">
-              <DownloadIcon size={18} />
+            <button
+              className={`btn-round ${allSaved ? 'done' : ''}`}
+              title={dlBusy ? t('downloadingAll') : allSaved ? t('downloaded') : t('downloadAll')}
+              onClick={() => downloadAll(list)}
+              disabled={!list.length || dlBusy || allSaved}
+            >
+              {dlBusy ? (
+                <span className="btn-spin" />
+              ) : allSaved ? (
+                <CheckIcon size={18} />
+              ) : (
+                <DownloadIcon size={18} />
+              )}
             </button>
-            <button className="btn-round soon" title="Coming soon">
-              <MoreIcon size={18} />
-            </button>
+            <ListMenu tracks={list} />
           </div>
         </div>
       </header>

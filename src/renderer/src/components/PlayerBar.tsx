@@ -1,6 +1,7 @@
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
+import { useCover } from '../cover'
 import { Slider } from './Slider'
 import { Waveform } from './Waveform'
 import {
@@ -16,7 +17,6 @@ import {
   HeartFilledIcon,
   QueueIcon,
   ExpandIcon,
-  LyricsIcon,
   AutopilotIcon,
   CommentIcon
 } from './Icons'
@@ -43,25 +43,34 @@ export function PlayerBar(): JSX.Element {
   const toggleRightPanel = usePlayer((s) => s.toggleRightPanel)
   const rightOpen = usePlayer((s) => s.rightOpen)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
-  const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const autopilot = usePlayer((s) => s.autopilot)
   const autopilotLoading = usePlayer((s) => s.autopilotLoading)
   const toggleAutopilot = usePlayer((s) => s.toggleAutopilot)
   const setSource = usePlayer((s) => s.setSource)
+  const openArtist = usePlayer((s) => s.openArtist)
+  const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const skin = usePlayer((s) => s.skin)
+  const playerBarWidth = usePlayer((s) => s.playerBarWidth)
 
   const t = useT()
   const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+  const cover = useCover(track)
   const liked = track
     ? likes.some((x) => x.id === track.id) || scLikes.some((x) => x.id === track.id)
     : false
 
+  // The nextgen bar is a floating capsule whose width the user can tune; oldgen
+  // is the full-width docked bar (no override).
+  const barStyle =
+    skin === 'nextgen' ? { width: `${playerBarWidth}%`, maxWidth: 'none' as const } : undefined
+
   return (
-    <footer className="playerbar">
+    <footer className="playerbar" style={barStyle}>
       <div className="pb-now">
         {track ? (
           <>
             <div className="pb-art">
-              {track.artwork ? <img src={track.artwork} alt="" /> : <span>♫</span>}
+              {cover ? <img src={cover} alt="" /> : <span>♫</span>}
             </div>
             <div className="pb-meta">
               <span
@@ -71,7 +80,39 @@ export function PlayerBar(): JSX.Element {
               >
                 {track.title}
               </span>
-              <span className="pb-artist">{track.artist || 'Unknown artist'}</span>
+              <span className="pb-artist">
+                {track.artists && track.artists.length > 0 ? (
+                  // Each credited artist is its OWN link — not the whole line as a
+                  // single click target.
+                  track.artists.map((a, idx) => (
+                    <span key={`${a.id ?? a.name}-${idx}`}>
+                      {idx > 0 && <span className="artist-sep">, </span>}
+                      <button
+                        className="artist-link"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (a.id) openArtist({ id: a.id, name: a.name, provider: track.providerId })
+                          else openArtistFromTrack(track)
+                        }}
+                      >
+                        {a.name}
+                      </button>
+                    </span>
+                  ))
+                ) : track.artistId || track.artist ? (
+                  <button
+                    className="artist-link"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openArtistFromTrack(track)
+                    }}
+                  >
+                    {track.artist || 'Unknown artist'}
+                  </button>
+                ) : (
+                  track.artist || 'Unknown artist'
+                )}
+              </span>
             </div>
             <button
               className={`icon-btn pb-like ${liked ? 'liked' : ''}`}
@@ -144,14 +185,6 @@ export function PlayerBar(): JSX.Element {
           disabled={!track}
         >
           <CommentIcon size={18} />
-        </button>
-        <button
-          className={`icon-btn ${lyricsOpen ? 'on' : ''}`}
-          title="Lyrics"
-          onClick={toggleLyrics}
-          disabled={!track}
-        >
-          <LyricsIcon size={18} />
         </button>
         <button
           className={`icon-btn ${rightOpen ? 'on' : ''}`}

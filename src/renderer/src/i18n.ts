@@ -66,6 +66,16 @@ const dict: Record<string, { en: string; ru: string }> = {
   title: { en: 'Title', ru: 'Название' },
   // common
   play: { en: 'Play', ru: 'Слушать' },
+  // tracklist actions
+  downloadAll: { en: 'Download all', ru: 'Скачать всё' },
+  downloadingAll: { en: 'Downloading…', ru: 'Скачивание…' },
+  moreActions: { en: 'More', ru: 'Ещё' },
+  addAllToQueue: { en: 'Add all to queue', ru: 'Добавить всё в очередь' },
+  addAllToPlaylist: { en: 'Add all to playlist', ru: 'Добавить всё в плейлист' },
+  noPlaylistsYet: { en: 'No playlists yet', ru: 'Пока нет плейлистов' },
+  newPlaylistPh: { en: 'New playlist…', ru: 'Новый плейлист…' },
+  add: { en: 'Add', ru: 'Добавить' },
+  back: { en: 'Back', ru: 'Назад' },
   // empty / loading
   emptyLikes: { en: 'No liked tracks yet. Tap the heart on any track.', ru: 'Пока нет лайков. Нажмите сердечко на треке.' },
   emptyRecent: { en: 'Nothing played yet.', ru: 'Пока ничего не играли.' },
@@ -129,6 +139,19 @@ const dict: Record<string, { en: string; ru: string }> = {
   eqLoudness: { en: 'Loudness', ru: 'Громкость' },
   // right panel
   nowPlaying: { en: 'Now Playing', ru: 'Сейчас играет' },
+  collapsePanel: { en: 'Collapse panel', ru: 'Свернуть панель' },
+  changeCover: { en: 'Change cover', ru: 'Сменить обложку' },
+  resetCover: { en: 'Reset to default cover', ru: 'Сбросить обложку' },
+  playerBarWidth: { en: 'Player bar width', ru: 'Ширина плеера' },
+  playerBarWidthSub: {
+    en: 'Width of the floating player bar (nextgen).',
+    ru: 'Ширина плавающей полосы плеера (nextgen).'
+  },
+  trackBackground: { en: 'Track background', ru: 'Фон трека' },
+  kbgImage: { en: 'Image…', ru: 'Изображение…' },
+  kbgVideoFile: { en: 'Video file…', ru: 'Видео-файл…' },
+  kbgLinkPh: { en: 'Video URL or YouTube…', ru: 'Ссылка на видео или YouTube…' },
+  kbgReset: { en: 'Remove track background', ru: 'Убрать фон трека' },
   nextInQueue: { en: 'Next in Queue', ru: 'Очередь' },
   clear: { en: 'Clear', ru: 'Очистить' },
   queueEmpty: { en: 'Queue is empty', ru: 'Очередь пуста' },

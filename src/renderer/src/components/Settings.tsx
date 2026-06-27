@@ -68,6 +68,8 @@ export function Settings(): JSX.Element {
   const setTheme = usePlayer((s) => s.setTheme)
   const skin = usePlayer((s) => s.skin)
   const setSkin = usePlayer((s) => s.setSkin)
+  const playerBarWidth = usePlayer((s) => s.playerBarWidth)
+  const setPlayerBarWidth = usePlayer((s) => s.setPlayerBarWidth)
   const customAccent = usePlayer((s) => s.customAccent)
   const setCustomAccent = usePlayer((s) => s.setCustomAccent)
   const customBg = usePlayer((s) => s.customBg)
@@ -177,6 +179,26 @@ export function Settings(): JSX.Element {
                 </button>
               </div>
             </div>
+
+            {skin === 'nextgen' && (
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('playerBarWidth')}</span>
+                  <span className="set-row-sub">{t('playerBarWidthSub')}</span>
+                </div>
+                <div className="set-slider">
+                  <input
+                    type="range"
+                    className="slider"
+                    min={45}
+                    max={95}
+                    value={playerBarWidth}
+                    onChange={(e) => setPlayerBarWidth(Number(e.target.value))}
+                  />
+                  <span className="set-slider-val">{playerBarWidth}%</span>
+                </div>
+              </div>
+            )}
 
             <div className="set-row">
               <span className="set-row-title">{t('language')}</span>

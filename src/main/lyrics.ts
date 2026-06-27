@@ -176,11 +176,11 @@ function tokenOverlap(need: Set<string>, have: Set<string>): number {
   return hit / need.size
 }
 
-/** LRCLIB fetch with a longer timeout and one retry on network failure/timeout. */
+/** LRCLIB fetch with a sane timeout and one retry on network failure/timeout. */
 async function lrclibFetch(url: string): Promise<Response | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await fetchT(url, 8000, { 'User-Agent': UA })
+      return await fetchT(url, 6000, { 'User-Agent': UA })
     } catch {
       if (attempt === 1) return null
     }
@@ -365,10 +365,20 @@ async function fetchFromNetwork(
   // Best plain-text seen so far. A SYNCED result always wins over this.
   let plainFallback: LyricsResult | null = null
 
-  // 1) exact get (uses duration for accuracy when available)
+  // LRCLIB exact /get and fuzzy /search hit the same host, so fire BOTH at once
+  // instead of one-after-the-other — this roughly halves the LRCLIB wall-time,
+  // which is where the "30+ seconds" came from (each call could time out + retry
+  // sequentially). We still apply the same preference order on the results:
+  // exact-synced > search-synced > any plain.
   const getParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
   if (durationSec) getParams.set('duration', String(Math.round(durationSec)))
-  const getRes = await lrclibFetch(`${API}/get?${getParams}`)
+  const searchParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
+  const [getRes, searchRes] = await Promise.all([
+    lrclibFetch(`${API}/get?${getParams}`),
+    lrclibFetch(`${API}/search?${searchParams}`)
+  ])
+
+  // 1) exact get (uses duration for accuracy when available) — highest priority
   if (getRes && getRes.status === 200) {
     try {
       const result = toResult((await getRes.json()) as LrclibItem)
@@ -380,8 +390,6 @@ async function fetchFromNetwork(
   }
 
   // 2) fuzzy search — pick best by synced availability, then closest duration
-  const searchParams = new URLSearchParams({ track_name: cleanTitle, artist_name: cleanArtist })
-  const searchRes = await lrclibFetch(`${API}/search?${searchParams}`)
   if (searchRes && searchRes.status === 200) {
     try {
       const items = (await searchRes.json()) as LrclibItem[]

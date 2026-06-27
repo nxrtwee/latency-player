@@ -4,14 +4,16 @@ import { formatTime } from '../util'
 import { PlayIcon, HeartIcon, HeartFilledIcon, DownloadIcon, CheckIcon } from './Icons'
 import { PlaylistMenu } from './PlaylistMenu'
 import { ProviderBadge } from './ProviderBadge'
+import { useCover } from '../cover'
 import type { Track } from '@shared/types'
 
 function Thumb({ track }: { track: Track }): JSX.Element {
   const glyph = track.providerId === 'soundcloud' ? '☁' : track.providerId === 'yandex' ? 'Я' : '♫'
+  const cover = useCover(track)
   return (
     <div className="thumb-wrap">
-      {track.artwork ? (
-        <img className="thumb" src={track.artwork} alt="" loading="lazy" />
+      {cover ? (
+        <img className="thumb" src={cover} alt="" loading="lazy" />
       ) : (
         <div className="thumb placeholder">{glyph}</div>
       )}

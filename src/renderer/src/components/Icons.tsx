@@ -328,11 +328,9 @@ export const EqualizerIcon = (p: IconProps): JSX.Element => (
 )
 
 export const AutopilotIcon = (p: IconProps): JSX.Element => (
+  // Infinity — "keep playing, endlessly" reads cleaner than the old crosshair.
   <Svg {...p}>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 3a9 9 0 0 1 0 18" />
-    <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
-    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    <path d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8z" />
   </Svg>
 )
 
@@ -354,5 +352,12 @@ export const EditIcon = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <path d="M12 20h9" />
     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </Svg>
+)
+
+export const FilmIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M7 3v18M17 3v18M3 8h4M17 8h4M3 16h4M17 16h4" />
   </Svg>
 )

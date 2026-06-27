@@ -61,6 +61,17 @@ export async function addTrack(id: string, track: Track): Promise<Playlist[]> {
   return playlists
 }
 
+export async function addTracks(id: string, tracks: Track[]): Promise<Playlist[]> {
+  playlists = playlists.map((p) => {
+    if (p.id !== id) return p
+    const have = new Set(p.tracks.map((t) => t.id))
+    const additions = tracks.filter((t) => !have.has(t.id))
+    return additions.length ? { ...p, tracks: [...p.tracks, ...additions] } : p
+  })
+  await persist()
+  return playlists
+}
+
 export async function removeTrack(id: string, trackId: string): Promise<Playlist[]> {
   playlists = playlists.map((p) =>
     p.id === id ? { ...p, tracks: p.tracks.filter((t) => t.id !== trackId) } : p

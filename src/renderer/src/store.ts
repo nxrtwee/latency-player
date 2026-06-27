@@ -6,6 +6,8 @@ import { getProvider } from './providers/registry'
 export type RepeatMode = 'off' | 'all' | 'one'
 /** Where the custom background image is applied. */
 export type BgScope = 'global' | 'interface' | 'fullscreen'
+/** Per-track karaoke/fullscreen background (local image or video file). */
+export type KaraokeBg = { type: 'image'; url: string } | { type: 'video'; url: string }
 export type Source =
   | 'home'
   | 'explore'
@@ -130,6 +132,14 @@ interface PlayerState {
   skin: string
   customAccent: string
   customBg: string | null
+  // Per-track cover overrides (trackId → media:// url). Falls back to the
+  // provider artwork when absent. Reset removes the override.
+  customCovers: Record<string, string>
+  // Per-track karaoke/fullscreen background (independent of the global bg).
+  // image/video are media:// urls.
+  karaokeBgs: Record<string, KaraokeBg>
+  // nextgen floating player bar width, as a percent of the window (45–95).
+  playerBarWidth: number
   // custom-background framing (object-position % + zoom scale)
   bgPosX: number
   bgPosY: number
@@ -181,6 +191,7 @@ interface PlayerState {
   renamePlaylist: (id: string, name: string) => Promise<void>
   deletePlaylist: (id: string) => Promise<void>
   addToPlaylist: (id: string, track: Track) => Promise<void>
+  addAllToPlaylist: (id: string, tracks: Track[]) => Promise<void>
   removeFromPlaylist: (id: string, trackId: string) => Promise<void>
 
   // queue persistence
@@ -253,6 +264,12 @@ interface PlayerState {
   setCustomAccent: (hex: string) => void
   pickBackground: () => Promise<void>
   clearBackground: () => void
+  setTrackCover: (trackId: string) => Promise<void>
+  resetTrackCover: (trackId: string) => void
+  setKaraokeImage: (trackId: string) => Promise<void>
+  setKaraokeVideoFile: (trackId: string) => Promise<void>
+  resetKaraokeBg: (trackId: string) => void
+  setPlayerBarWidth: (pct: number) => void
   setBgFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   setBgScope: (scope: BgScope) => void
   openFraming: () => void
@@ -282,10 +299,12 @@ interface PlayerState {
   // offline actions
   loadOffline: () => Promise<void>
   downloadTrack: (track: Track) => Promise<void>
+  downloadAll: (tracks: Track[]) => Promise<void>
   removeOffline: (trackId: string) => Promise<void>
 
   // playback actions
   playQueue: (tracks: Track[], startIndex: number) => void
+  enqueue: (tracks: Track[]) => void
   togglePlay: () => void
   next: () => void
   prev: () => void
@@ -364,6 +383,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       localStorage.setItem(QUEUE_KEY, JSON.stringify({ queue, currentIndex }))
     } catch {
       /* storage full / unavailable — non-fatal */
+    }
+  }
+
+  function setKaraokeBg(trackId: string, bg: KaraokeBg): void {
+    const next = { ...get().karaokeBgs, [trackId]: bg }
+    set({ karaokeBgs: next })
+    try {
+      localStorage.setItem('lp.karaokeBgs', JSON.stringify(next))
+    } catch {
+      /* ignore */
     }
   }
 
@@ -735,6 +764,25 @@ export const usePlayer = create<PlayerState>((set, get) => {
     skin: localStorage.getItem('lp.skin') === 'oldgen' ? 'oldgen' : 'nextgen',
     customAccent: localStorage.getItem('lp.customAccent') || '#ff2e54',
     customBg: localStorage.getItem('lp.bg'),
+    customCovers: (() => {
+      try {
+        const raw = localStorage.getItem('lp.customCovers')
+        const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        return obj && typeof obj === 'object' ? obj : {}
+      } catch {
+        return {}
+      }
+    })(),
+    karaokeBgs: (() => {
+      try {
+        const raw = localStorage.getItem('lp.karaokeBgs')
+        const obj = raw ? (JSON.parse(raw) as Record<string, KaraokeBg>) : {}
+        return obj && typeof obj === 'object' ? obj : {}
+      } catch {
+        return {}
+      }
+    })(),
+    playerBarWidth: Math.min(95, Math.max(45, readNum('lp.playerBarW', 64))),
     bgPosX: readNum('lp.bgPosX', 50),
     bgPosY: readNum('lp.bgPosY', 50),
     bgZoom: readNum('lp.bgZoom', 1),
@@ -810,6 +858,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ playlists })
     },
 
+    async addAllToPlaylist(id, tracks) {
+      if (tracks.length === 0) return
+      const playlists = await window.api.addTracksToPlaylist(id, tracks)
+      set({ playlists })
+    },
+
     async removeFromPlaylist(id, trackId) {
       const playlists = await window.api.removeFromPlaylist(id, trackId)
       set({ playlists })
@@ -864,6 +918,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
         }))
       } catch {
         set((s) => ({ downloading: s.downloading.filter((id) => id !== track.id) }))
+      }
+    },
+
+    async downloadAll(tracks) {
+      // Sequential so we don't hammer SoundCloud's CDN with N parallel requests.
+      // downloadTrack already no-ops on already-cached / in-flight ids; local files
+      // are already on disk so there's nothing to cache.
+      for (const track of tracks) {
+        if (track.providerId === 'local') continue
+        if (get().offlineIds.includes(track.id)) continue
+        await get().downloadTrack(track)
       }
     },
 
@@ -1325,6 +1390,65 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    async setTrackCover(trackId) {
+      // Reuse the same image picker as backgrounds/avatars — returns a media://
+      // url pointing at the chosen file (no copy), or null if cancelled.
+      const url = await window.api.pickBackground()
+      if (!url) return
+      const next = { ...get().customCovers, [trackId]: url }
+      set({ customCovers: next })
+      try {
+        localStorage.setItem('lp.customCovers', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    resetTrackCover(trackId) {
+      // Remove the override → the provider (SoundCloud/Yandex/local) artwork shows again.
+      const next = { ...get().customCovers }
+      if (!(trackId in next)) return
+      delete next[trackId]
+      set({ customCovers: next })
+      try {
+        localStorage.setItem('lp.customCovers', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    async setKaraokeImage(trackId) {
+      const url = await window.api.pickBackground()
+      if (url) setKaraokeBg(trackId, { type: 'image', url })
+    },
+
+    async setKaraokeVideoFile(trackId) {
+      const url = await window.api.pickVideo()
+      if (url) setKaraokeBg(trackId, { type: 'video', url })
+    },
+
+    resetKaraokeBg(trackId) {
+      const next = { ...get().karaokeBgs }
+      if (!(trackId in next)) return
+      delete next[trackId]
+      set({ karaokeBgs: next })
+      try {
+        localStorage.setItem('lp.karaokeBgs', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setPlayerBarWidth(pct) {
+      const w = Math.min(95, Math.max(45, Math.round(pct)))
+      set({ playerBarWidth: w })
+      try {
+        localStorage.setItem('lp.playerBarW', String(w))
+      } catch {
+        /* ignore */
+      }
+    },
+
     setBgFraming(f) {
       set((s) => {
         const next = {
@@ -1721,6 +1845,19 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (tracks.length === 0) return
       set({ queue: tracks, waveActive: false })
       loadIndex(startIndex, true)
+      persistQueue()
+    },
+
+    enqueue(tracks) {
+      if (tracks.length === 0) return
+      const { queue, currentIndex } = get()
+      // Nothing playing yet → just start the list (an empty queue can't show
+      // "next up", so appending alone would silently swallow the tracks).
+      if (currentIndex < 0 || queue.length === 0) {
+        get().playQueue(tracks, 0)
+        return
+      }
+      set({ queue: [...queue, ...tracks] })
       persistQueue()
     },
 

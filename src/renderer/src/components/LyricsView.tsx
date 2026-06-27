@@ -6,6 +6,7 @@ import { Waveform } from './Waveform'
 import { OverlayScrollbar } from './OverlayScrollbar'
 import { grabScroll } from '../grabScroll'
 import { extractPalette, type Palette } from '../palette'
+import { useCover } from '../cover'
 import { SyncEditor } from './SyncEditor'
 import {
   PlayIcon,
@@ -14,7 +15,8 @@ import {
   NextIcon,
   ChevronDownIcon,
   ImageIcon,
-  RefreshIcon
+  RefreshIcon,
+  FilmIcon
 } from './Icons'
 
 interface Lyrics {
@@ -55,8 +57,17 @@ export function LyricsView(): JSX.Element {
   const bgPosY = usePlayer((s) => s.bgPosY)
   const bgZoom = usePlayer((s) => s.bgZoom)
   const bgScope = usePlayer((s) => s.bgScope)
-  const pickBackground = usePlayer((s) => s.pickBackground)
-  const openFraming = usePlayer((s) => s.openFraming)
+  const setTrackCover = usePlayer((s) => s.setTrackCover)
+  const resetTrackCover = usePlayer((s) => s.resetTrackCover)
+  const cover = useCover(track)
+  const hasCustomCover = usePlayer((s) => (track ? !!s.customCovers[track.id] : false))
+
+  // Per-track karaoke background (image / video / youtube), independent of the
+  // global interface background. Takes precedence in the fullscreen player.
+  const karaokeBg = usePlayer((s) => (track ? s.karaokeBgs[track.id] : undefined))
+  const setKaraokeImage = usePlayer((s) => s.setKaraokeImage)
+  const setKaraokeVideoFile = usePlayer((s) => s.setKaraokeVideoFile)
+  const resetKaraokeBg = usePlayer((s) => s.resetKaraokeBg)
 
   // The image shows in fullscreen for 'fullscreen' and 'global' scopes.
   const showFsBg = !!customBg && bgScope !== 'interface'
@@ -101,20 +112,54 @@ export function LyricsView(): JSX.Element {
   // Set by the "reset" button so the next fetch bypasses the cache and refetches.
   const forceRef = useRef(false)
 
+  // Karaoke background controls (image / video file menu)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const kbgRef = useRef<HTMLDivElement>(null)
+  const [kbgMenu, setKbgMenu] = useState(false)
+
+  // close the karaoke-bg menu on an outside click
+  useEffect(() => {
+    if (!kbgMenu) return
+    function onDoc(e: MouseEvent): void {
+      if (kbgRef.current && !kbgRef.current.contains(e.target as Node)) setKbgMenu(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [kbgMenu])
+
+  // --- video background sync: play/pause + coarse seek follow the player ---
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || karaokeBg?.type !== 'video') return
+    if (isPlaying) v.play().catch(() => {})
+    else v.pause()
+  }, [isPlaying, karaokeBg])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || karaokeBg?.type !== 'video') return
+    const dur = v.duration
+    // Only map the song position onto the clip when the clip is long enough;
+    // shorter clips/edits just loop. Correct only real drift (user seek / start).
+    if (dur && isFinite(dur) && positionSec < dur && Math.abs(v.currentTime - positionSec) > 1.2) {
+      v.currentTime = positionSec
+    }
+  }, [positionSec, karaokeBg])
+
   const trackKey = track ? `${track.title}|${track.artist}` : ''
 
   // backdrop palette from cover art
   useEffect(() => {
     let cancelled = false
-    if (track?.artwork) {
-      extractPalette(track.artwork).then((p) => !cancelled && setPalette(p))
+    if (cover) {
+      extractPalette(cover).then((p) => !cancelled && setPalette(p))
     } else {
       setPalette(null)
     }
     return () => {
       cancelled = true
     }
-  }, [track?.artwork])
+  }, [cover])
 
   useEffect(() => {
     if (!track) {
@@ -216,8 +261,12 @@ export function LyricsView(): JSX.Element {
     setReloadKey((k) => k + 1)
   }
 
+  // A per-track karaoke background takes precedence over the global one.
+  const hasKaraokeBg = !!karaokeBg
+  const fsHasBg = hasKaraokeBg || showFsBg
+
   return (
-    <div className={`fsplayer ${closing ? 'closing' : ''} ${showFsBg ? 'has-image' : ''}`}>
+    <div className={`fsplayer ${closing ? 'closing' : ''} ${fsHasBg ? 'has-image' : ''}`}>
       {/* Opaque gradient base is ALWAYS present so that while the custom image
           decodes there's a neutral backdrop — never a flash of the UI behind. */}
       <div
@@ -228,7 +277,22 @@ export function LyricsView(): JSX.Element {
             : 'linear-gradient(165deg, #141019, #070509)'
         }}
       />
-      {showFsBg && bgReady && (
+      {/* Per-track karaoke background layer (image / video file). */}
+      {karaokeBg?.type === 'image' && (
+        <img className="fsplayer-bg-img" src={karaokeBg.url} alt="" />
+      )}
+      {karaokeBg?.type === 'video' && (
+        <video
+          ref={videoRef}
+          className="fsplayer-bg-video"
+          src={karaokeBg.url}
+          autoPlay
+          loop
+          muted
+          playsInline
+        />
+      )}
+      {!hasKaraokeBg && showFsBg && bgReady && (
         <img
           className="fsplayer-bg-img"
           src={customBg!}
@@ -236,29 +300,68 @@ export function LyricsView(): JSX.Element {
           style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
         />
       )}
-      <div className={`fsplayer-scrim ${showFsBg ? 'on-image' : ''}`} />
+      <div className={`fsplayer-scrim ${fsHasBg ? 'on-image' : ''}`} />
 
       <button className="fsplayer-close" title="Close" onClick={requestClose}>
         <ChevronDownIcon size={22} />
       </button>
 
-      <button
-        className="fsplayer-bg-btn"
-        title={tr('changeBackground')}
-        onClick={() => (customBg ? openFraming() : pickBackground())}
-        onContextMenu={(e) => {
-          // right-click to replace the image outright when one is already set
-          e.preventDefault()
-          pickBackground()
-        }}
-      >
-        <ImageIcon size={19} />
-      </button>
+      {/* Per-track karaoke background: image / video file. */}
+      {track && (
+        <div className="fsplayer-kbg" ref={kbgRef}>
+          <button
+            className={`fsplayer-bg-btn kbg-toggle ${hasKaraokeBg ? 'on' : ''}`}
+            title={tr('trackBackground')}
+            onClick={() => setKbgMenu((v) => !v)}
+          >
+            <FilmIcon size={19} />
+          </button>
+          {kbgMenu && (
+            <div className="kbg-menu" onClick={(e) => e.stopPropagation()}>
+              <div className="kbg-menu-head">{tr('trackBackground')}</div>
+              <button className="kbg-opt" onClick={() => { setKaraokeImage(track.id); setKbgMenu(false) }}>
+                {tr('kbgImage')}
+              </button>
+              <button className="kbg-opt" onClick={() => { setKaraokeVideoFile(track.id); setKbgMenu(false) }}>
+                {tr('kbgVideoFile')}
+              </button>
+              {hasKaraokeBg && (
+                <button
+                  className="kbg-opt danger"
+                  onClick={() => { resetKaraokeBg(track.id); setKbgMenu(false) }}
+                >
+                  {tr('kbgReset')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="fsplayer-inner">
         <div className="fsplayer-side">
           <div className="fsplayer-art">
-            {track?.artwork ? <img src={track.artwork} alt="" /> : <span>♫</span>}
+            {cover ? <img src={cover} alt="" /> : <span>♫</span>}
+            {track && (
+              <div className="cover-edit">
+                <button
+                  className="cover-edit-btn"
+                  title={tr('changeCover')}
+                  onClick={() => setTrackCover(track.id)}
+                >
+                  <ImageIcon size={16} />
+                </button>
+                {hasCustomCover && (
+                  <button
+                    className="cover-edit-btn"
+                    title={tr('resetCover')}
+                    onClick={() => resetTrackCover(track.id)}
+                  >
+                    <RefreshIcon size={16} />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="fsplayer-title">{track?.title ?? tr('nothingPlaying')}</div>
           {track && (

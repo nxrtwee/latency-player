@@ -234,12 +234,55 @@
 }
 
 /* ---- Player bar (fixed height, not a wheel scroller → real glass) ---- */
+/* The WHOLE player bar (track + author + all buttons) becomes a centered,
+   shortened floating glass capsule — a bit past the midpoint, not edge-to-edge.
+   It's an OVERLAY: position:fixed takes it out of the column flow, so the three
+   panels (sidebar / content / queue) extend all the way down and the bar floats
+   on top of them (glass → content faintly shows through). clamp() keeps it "past
+   the middle" while guaranteeing the dense right cluster (5 icons + volume)
+   never crushes on the 1280 minimum window; the grid is rebalanced to give the
+   side clusters a touch more room. oldgen is untouched. */
 [data-skin='nextgen'] .playerbar {
-  background: rgba(10, 8, 18, 0.55);
+  position: fixed;
+  /* Centre via auto margins, NOT translateX(-50%): a half-pixel transform offset
+     on a backdrop-filtered layer blurs the text at odd widths. Auto margins are
+     pixel-snapped, so the text stays crisp at any width. */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  bottom: 12px;
+  /* above the content/panels, but BELOW the fullscreen player (.fsplayer z40)
+     and modal backdrops (z60) so those still cover it. */
+  z-index: 30;
+  width: clamp(820px, 64%, 1120px);
+  padding: 0 16px;
+  gap: 12px;
+  /* Symmetric side columns so the transport controls + visualizer sit dead-centre
+     in the capsule (asymmetric columns pushed them off to one side). */
+  grid-template-columns: 1.3fr 1.5fr 1.3fr;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 8, 18, 0.72);
   backdrop-filter: var(--ng-glass);
   -webkit-backdrop-filter: var(--ng-glass);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -18px 50px -30px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    0 26px 60px -22px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-skin='nextgen'] .pb-controls {
+  gap: 14px;
+}
+[data-skin='nextgen'] .pb-right {
+  gap: 6px;
+}
+/* The bar overlays the bottom of the scrollers — pad them so the last rows can
+   still be scrolled up clear of the floating bar (~84px bar + 12 gap + slack). */
+[data-skin='nextgen'] .cscroll-view {
+  padding-bottom: 104px;
+}
+[data-skin='nextgen'] .q-list {
+  padding-bottom: 104px;
 }
 [data-skin='nextgen'] .app.has-bg .playerbar {
   background: rgba(10, 8, 18, 0.55);
@@ -386,6 +429,16 @@
 [data-skin='nextgen'] .mix-art img,
 [data-skin='nextgen'] .home-card-art img {
   transition: transform 0.45s var(--ng-ease);
+}
+/* The base skin paints a hover plate (background + box-shadow + lift) on the
+   whole card. In nextgen the cards are box-less (transparent, padding:0) and the
+   hover lift lives on the artwork — so that plate reads as a stray outline with
+   the text jammed against it. Kill it; the cover's accent halo is the hover cue. */
+[data-skin='nextgen'] .mix-card:not(.skeleton):hover,
+[data-skin='nextgen'] .home-card:hover {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
 }
 /* lift the whole card, zoom the cover, add an accent halo on hover */
 [data-skin='nextgen'] .mix-card:not(.skeleton):hover .mix-art,

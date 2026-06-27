@@ -43,7 +43,9 @@ function createWindow(): void {
     minWidth: 1280,
     minHeight: 800,
     title: 'Latency',
-    icon: join(__dirname, '../../build/icon.png'),
+    // Multi-size .ico so Windows picks a crisp 16/24/32 px bitmap for the taskbar
+    // / Alt-Tab instead of badly downscaling the 1030px PNG (see build/make-ico.cjs).
+    icon: join(__dirname, '../../build/icon.ico'),
     backgroundColor: '#080b0a',
     autoHideMenuBar: true,
     frame: false, // custom title bar / window controls in the renderer
@@ -196,6 +198,17 @@ function registerIpc(): void {
     return 'media://local/' + fileUrl.pathname.replace(/^\//, '')
   })
 
+  ipcMain.handle('dialog:pickVideo', async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Choose background video',
+      properties: ['openFile'],
+      filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv', 'm4v'] }]
+    })
+    if (r.canceled || !r.filePaths[0]) return null
+    const fileUrl = pathToFileURL(r.filePaths[0])
+    return 'media://local/' + fileUrl.pathname.replace(/^\//, '')
+  })
+
   ipcMain.handle(
     'lyrics:get',
     (_e, title: string, artist: string, durationSec?: number, useGenius?: boolean, force?: boolean) =>
@@ -239,6 +252,9 @@ function registerIpc(): void {
   ipcMain.handle('playlists:remove', (_e, id: string) => playlists.remove(id))
   ipcMain.handle('playlists:addTrack', (_e, id: string, track: Track) =>
     playlists.addTrack(id, track)
+  )
+  ipcMain.handle('playlists:addTracks', (_e, id: string, tracks: Track[]) =>
+    playlists.addTracks(id, tracks)
   )
   ipcMain.handle('playlists:removeTrack', (_e, id: string, trackId: string) =>
     playlists.removeTrack(id, trackId)

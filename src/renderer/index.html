@@ -8,6 +8,15 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Latency</title>
+    <!-- Paint the dark base immediately so there's no white flash before the
+         bundle CSS / launch splash mount. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #07060c;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

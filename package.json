@@ -1,6 +1,6 @@
 {
   "name": "latency-player",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Desktop media player with pluggable playback sources (local, SoundCloud, ...)",
   "author": "",
   "license": "MIT",
@@ -26,13 +26,14 @@
     "files": [
       "out/**/*",
       "build/icon.png",
+      "build/icon.ico",
       "package.json"
     ],
     "extraMetadata": {
       "description": "Latency"
     },
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"

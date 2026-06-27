@@ -22,6 +22,7 @@ import { BgFraming } from './components/BgFraming'
 import { ProfilePage } from './components/ProfilePage'
 import { Equalizer } from './components/Equalizer'
 import { CommentsPage } from './components/CommentsPage'
+import { Splash } from './components/Splash'
 
 function usePersistentWidth(
   key: string,
@@ -74,6 +75,16 @@ export function App(): JSX.Element {
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
   const loadPrefs = usePlayer((s) => s.loadPrefs)
+
+  // Keep the right panel mounted through its slide-out so the collapse animation
+  // can play; it unmounts only after rpOut finishes (see RightPanel onClosed).
+  const [rightMounted, setRightMounted] = useState(rightOpen)
+  useEffect(() => {
+    if (rightOpen) setRightMounted(true)
+  }, [rightOpen])
+
+  // Launch splash — shown once per app start, removes itself when its exit ends.
+  const [splashDone, setSplashDone] = useState(false)
 
   useEffect(() => {
     const root = document.documentElement
@@ -186,17 +197,21 @@ export function App(): JSX.Element {
           </CustomScroll>
         </main>
         {rightOpen && (
-          <>
-            <Resizer
-              width={rightW}
-              setWidth={setRightW}
-              min={280}
-              max={540}
-              dir={-1}
-              persistKey="lp.rightW"
-            />
-            <RightPanel width={rightW} />
-          </>
+          <Resizer
+            width={rightW}
+            setWidth={setRightW}
+            min={280}
+            max={540}
+            dir={-1}
+            persistKey="lp.rightW"
+          />
+        )}
+        {rightMounted && (
+          <RightPanel
+            width={rightW}
+            closing={!rightOpen}
+            onClosed={() => setRightMounted(false)}
+          />
         )}
       </div>
       <PlayerBar />
@@ -204,6 +219,7 @@ export function App(): JSX.Element {
       {settingsOpen && <Settings />}
       {framingOpen && <BgFraming />}
       {eqOpen && <Equalizer />}
+      {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
     </div>
   )
 }
