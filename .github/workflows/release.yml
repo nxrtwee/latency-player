@@ -202,7 +202,7 @@ jobs:
             echo
             echo "**Скачать:**"
             echo "- **Windows** — \`Latency-${VERSION}-x64.exe\` (установщик) или \`Latency-${VERSION}-portable.exe\`"
-            echo "- **Linux** — \`Latency-${VERSION}-x64.AppImage\` (универсальный, \`chmod +x\` и запуск) или \`Latency-${VERSION}-x64.rpm\` (Fedora/RHEL)"
+            echo "- **Linux** — \`Latency-${VERSION}-x86_64.AppImage\` (универсальный, \`chmod +x\` и запуск) или \`Latency-${VERSION}-x86_64.rpm\` (Fedora/RHEL)"
             echo "- **Android** — \`Latency-${VERSION}.apk\` (включите «установка из неизвестных источников»)"
             echo "- **iOS** — \`Latency-${VERSION}-unsigned.ipa\` (подпишите своим Apple ID через AltStore/Sideloadly)"
             echo
