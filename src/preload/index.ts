@@ -112,6 +112,11 @@ const api = {
   getLaunchAtStartup: (): Promise<boolean> => ipcRenderer.invoke('settings:getLaunchAtStartup'),
   setLaunchAtStartup: (enable: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setLaunchAtStartup', enable),
+  getHardwareAcceleration: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getHardwareAcceleration'),
+  setHardwareAcceleration: (enable: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setHardwareAcceleration', enable),
+  relaunchApp: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
   hasManualSync: (title: string, artist: string, durationSec?: number): Promise<boolean> =>
     ipcRenderer.invoke('lyrics:hasManual', title, artist, durationSec),
   saveManualSync: (

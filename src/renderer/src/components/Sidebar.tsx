@@ -80,6 +80,8 @@ export const Sidebar = forwardRef<
   const avPosY = usePlayer((s) => s.avPosY)
   const avZoom = usePlayer((s) => s.avZoom)
   const mixes = usePlayer((s) => s.mixes)
+  const showSidebarMixes = usePlayer((s) => s.showSidebarMixes)
+  const showSidebarArtists = usePlayer((s) => s.showSidebarArtists)
   const openMix = usePlayer((s) => s.openMix)
   const selectedMixId = usePlayer((s) => s.selectedMix?.id)
   const recentlyPlayed = usePlayer((s) => s.recentlyPlayed)
@@ -249,7 +251,7 @@ export const Sidebar = forwardRef<
         )}
       </div>
 
-      {!collapsed && mixes.length > 0 && (
+      {!collapsed && showSidebarMixes && mixes.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('madeForYou')}</div>
           {mixes.slice(0, 5).map((mix) => (
@@ -268,7 +270,7 @@ export const Sidebar = forwardRef<
         </div>
       )}
 
-      {!collapsed && recentArtists.length > 0 && (
+      {!collapsed && showSidebarArtists && recentArtists.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('recentArtists')}</div>
           {recentArtists.map((a) => (

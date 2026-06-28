@@ -13,9 +13,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const PAD = 4
 
 export function OverlayScrollbar({
-  scrollRef
+  scrollRef,
+  pad = PAD
 }: {
   scrollRef: React.RefObject<HTMLElement>
+  /** Top/bottom inset of the thumb track. Larger values keep the thumb ends
+   * clear of a rounded frame (e.g. the sidebar's radius) so it doesn't poke past
+   * the corners while staying flush to the right edge. Defaults to PAD (4). */
+  pad?: number
 }): JSX.Element | null {
   const [thumb, setThumb] = useState({ top: 0, height: 0, show: false })
   const [box, setBox] = useState({ top: 0, left: 0, height: 0 })
@@ -34,11 +39,11 @@ export function OverlayScrollbar({
       setThumb((t) => (t.show ? { ...t, show: false } : t))
       return
     }
-    const trackH = clientHeight - PAD * 2
+    const trackH = clientHeight - pad * 2
     const h = Math.max(32, (clientHeight / scrollHeight) * trackH)
-    const top = PAD + (scrollTop / (scrollHeight - clientHeight)) * (trackH - h)
+    const top = pad + (scrollTop / (scrollHeight - clientHeight)) * (trackH - h)
     setThumb({ top, height: h, show: true })
-  }, [scrollRef])
+  }, [scrollRef, pad])
 
   const flashActive = useCallback(() => {
     setActive(true)
@@ -81,7 +86,7 @@ export function OverlayScrollbar({
     if (!el) return
     const startY = e.clientY
     const startScroll = el.scrollTop
-    const trackH = el.clientHeight - PAD * 2
+    const trackH = el.clientHeight - pad * 2
     const ratio = (el.scrollHeight - el.clientHeight) / (trackH - thumb.height)
     setDragging(true)
     function move(ev: MouseEvent): void {

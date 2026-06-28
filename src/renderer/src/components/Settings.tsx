@@ -68,6 +68,10 @@ export function Settings(): JSX.Element {
   const setTheme = usePlayer((s) => s.setTheme)
   const skin = usePlayer((s) => s.skin)
   const setSkin = usePlayer((s) => s.setSkin)
+  const graphics = usePlayer((s) => s.graphics)
+  const setGraphics = usePlayer((s) => s.setGraphics)
+  const fpsLimit = usePlayer((s) => s.fpsLimit)
+  const setFpsLimit = usePlayer((s) => s.setFpsLimit)
   const playerBarWidth = usePlayer((s) => s.playerBarWidth)
   const setPlayerBarWidth = usePlayer((s) => s.setPlayerBarWidth)
   const playerBarHeight = usePlayer((s) => s.playerBarHeight)
@@ -88,6 +92,10 @@ export function Settings(): JSX.Element {
   const setShowSearchPlaylists = usePlayer((s) => s.setShowSearchPlaylists)
   const showHomeMixes = usePlayer((s) => s.showHomeMixes)
   const setShowHomeMixes = usePlayer((s) => s.setShowHomeMixes)
+  const showSidebarMixes = usePlayer((s) => s.showSidebarMixes)
+  const setShowSidebarMixes = usePlayer((s) => s.setShowSidebarMixes)
+  const showSidebarArtists = usePlayer((s) => s.showSidebarArtists)
+  const setShowSidebarArtists = usePlayer((s) => s.setShowSidebarArtists)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const setLyricsSize = usePlayer((s) => s.setLyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
@@ -96,6 +104,9 @@ export function Settings(): JSX.Element {
   const setGeniusFallback = usePlayer((s) => s.setGeniusFallback)
   const launchAtStartup = usePlayer((s) => s.launchAtStartup)
   const setLaunchAtStartup = usePlayer((s) => s.setLaunchAtStartup)
+  const hwAccel = usePlayer((s) => s.hwAccel)
+  const setHwAccel = usePlayer((s) => s.setHwAccel)
+  const [hwChanged, setHwChanged] = useState(false)
   const clearLyricsCache = usePlayer((s) => s.clearLyricsCache)
   const clearMixesCache = usePlayer((s) => s.clearMixesCache)
   const lang = usePlayer((s) => s.lang)
@@ -179,6 +190,51 @@ export function Settings(): JSX.Element {
                 >
                   nextgen
                 </button>
+              </div>
+            </div>
+
+            <div className="set-row col">
+              <div>
+                <span className="set-row-title">{t('graphics')}</span>
+                <span className="set-row-sub">{t('graphicsSub')}</span>
+              </div>
+              <div className="gfx-seg">
+                {(['standard', 'balanced', 'optimized', 'performance'] as const).map((g) => (
+                  <button
+                    key={g}
+                    className={graphics === g ? 'active' : ''}
+                    onClick={() => setGraphics(g)}
+                  >
+                    {t(
+                      g === 'standard'
+                        ? 'gfxStandard'
+                        : g === 'balanced'
+                          ? 'gfxBalanced'
+                          : g === 'optimized'
+                            ? 'gfxOptimized'
+                            : 'gfxPerformance'
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('fpsLimit')}</span>
+                <span className="set-row-sub">{t('fpsLimitSub')}</span>
+              </div>
+              <div className="set-slider">
+                <input
+                  type="range"
+                  className="slider"
+                  min={15}
+                  max={120}
+                  step={15}
+                  value={fpsLimit}
+                  onChange={(e) => setFpsLimit(Number(e.target.value))}
+                />
+                <span className="set-slider-val">{fpsLimit >= 120 ? '∞' : fpsLimit}</span>
               </div>
             </div>
 
@@ -291,6 +347,22 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('homeMixesSub')}</span>
               </div>
               <Toggle checked={showHomeMixes} onChange={setShowHomeMixes} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('sidebarMixesTitle')}</span>
+                <span className="set-row-sub">{t('sidebarMixesSub')}</span>
+              </div>
+              <Toggle checked={showSidebarMixes} onChange={setShowSidebarMixes} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('sidebarArtistsTitle')}</span>
+                <span className="set-row-sub">{t('sidebarArtistsSub')}</span>
+              </div>
+              <Toggle checked={showSidebarArtists} onChange={setShowSidebarArtists} />
             </div>
 
             <div className="set-row col">
@@ -528,6 +600,27 @@ export function Settings(): JSX.Element {
               </div>
               <Toggle checked={launchAtStartup} onChange={setLaunchAtStartup} />
             </div>
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('hwAccel')}</span>
+                <span className="set-row-sub">{t('hwAccelSub')}</span>
+              </div>
+              <Toggle
+                checked={hwAccel}
+                onChange={(v) => {
+                  setHwAccel(v)
+                  setHwChanged(true)
+                }}
+              />
+            </div>
+            {hwChanged && (
+              <div className="set-row">
+                <span className="set-row-sub">{t('restartNeeded')}</span>
+                <button className="sync-btn primary" onClick={() => window.api.relaunchApp()}>
+                  {t('restartNow')}
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="set-block">

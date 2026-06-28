@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
+import { readFileSync, writeFileSync } from 'fs'
 import { pathToFileURL } from 'url'
 import * as library from './library'
 import * as soundcloud from './soundcloud'
@@ -19,6 +20,23 @@ app.setName('Latency')
 // Identify the app to Windows so the system media overlay (SMTC) labels playback
 // as "Latency" instead of "unknown application". Must match build.appId.
 app.setAppUserModelId('com.latency.app')
+
+// Small startup prefs file (read synchronously before the app is ready, which
+// some Chromium switches require). Kept separate from the renderer's
+// localStorage because those decisions must be made before any window exists.
+const prefsPath = join(app.getPath('userData'), 'prefs.json')
+function readPrefs(): { hwAccel?: boolean } {
+  try {
+    return JSON.parse(readFileSync(prefsPath, 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+// Hardware acceleration: default on. If the user turned it off (Settings →
+// needs restart), disable Chromium's GPU compositor before ready — this stops
+// the GPU from being driven every frame (cuts load / keeps weak cards from
+// revving to max clocks), at the cost of more CPU for software compositing.
+if (readPrefs().hwAccel === false) app.disableHardwareAcceleration()
 
 // Dev-only: expose a CDP endpoint for screenshot/inspection tooling.
 if (!app.isPackaged && process.env.LP_CDP) {
@@ -183,6 +201,21 @@ function registerIpc(): void {
   ipcMain.handle('settings:getLaunchAtStartup', () => app.getLoginItemSettings().openAtLogin)
   ipcMain.handle('settings:setLaunchAtStartup', (_e, enable: boolean) => {
     app.setLoginItemSettings({ openAtLogin: enable })
+  })
+
+  ipcMain.handle('settings:getHardwareAcceleration', () => readPrefs().hwAccel !== false)
+  ipcMain.handle('settings:setHardwareAcceleration', (_e, enable: boolean) => {
+    const prefs = readPrefs()
+    prefs.hwAccel = enable
+    try {
+      writeFileSync(prefsPath, JSON.stringify(prefs))
+    } catch {
+      /* ignore */
+    }
+  })
+  ipcMain.handle('app:relaunch', () => {
+    app.relaunch()
+    app.exit(0)
   })
   ipcMain.handle('lyrics:clearCache', () => lyrics.clearCache())
   ipcMain.handle('lyrics:search', (_e, query: string) => lyrics.searchByLyrics(query))

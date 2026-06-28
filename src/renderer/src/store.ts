@@ -130,6 +130,12 @@ interface PlayerState {
   // appearance
   theme: string
   skin: string
+  // Graphics quality preset: standard | balanced | optimized | performance.
+  // Higher tiers progressively shed GPU-heavy effects (glass blur, grain,
+  // infinite animations, visualizer rAF). standard = unchanged current look.
+  graphics: string
+  // Frame-rate cap for the in-app visualizer/animations. 15–120; 120 = uncapped.
+  fpsLimit: number
   customAccent: string
   customBg: string | null
   // Per-track cover overrides (trackId → media:// url). Falls back to the
@@ -160,6 +166,9 @@ interface PlayerState {
   showSearchPlaylists: boolean
   // whether the SoundCloud "Your Mixes" section shows on the home page
   showHomeMixes: boolean
+  // left-sidebar sections (each independently hideable)
+  showSidebarMixes: boolean
+  showSidebarArtists: boolean
   lyricsSize: 'sm' | 'md' | 'lg'
   lang: 'en' | 'ru'
 
@@ -167,6 +176,10 @@ interface PlayerState {
   resumeSession: boolean
   geniusFallback: boolean
   launchAtStartup: boolean
+  // Chromium GPU compositing. Default on; turning it off (needs restart) is the
+  // real lever against a weak GPU being driven every frame. Source of truth is
+  // a main-process prefs file; this mirrors it for the toggle UI (loadPrefs).
+  hwAccel: boolean
 
   // playback
   queue: Track[]
@@ -262,6 +275,8 @@ interface PlayerState {
   // appearance
   setTheme: (theme: string) => void
   setSkin: (skin: string) => void
+  setGraphics: (g: string) => void
+  setFpsLimit: (n: number) => void
   setCustomAccent: (hex: string) => void
   pickBackground: () => Promise<void>
   clearBackground: () => void
@@ -283,6 +298,8 @@ interface PlayerState {
   setShowSearchAlbums: (v: boolean) => void
   setShowSearchPlaylists: (v: boolean) => void
   setShowHomeMixes: (v: boolean) => void
+  setShowSidebarMixes: (v: boolean) => void
+  setShowSidebarArtists: (v: boolean) => void
   setLyricsSize: (v: 'sm' | 'md' | 'lg') => void
   setLang: (v: 'en' | 'ru') => void
 
@@ -290,6 +307,7 @@ interface PlayerState {
   setResumeSession: (v: boolean) => void
   setGeniusFallback: (v: boolean) => void
   setLaunchAtStartup: (v: boolean) => Promise<void>
+  setHwAccel: (v: boolean) => Promise<void>
   loadPrefs: () => Promise<void>
   clearLyricsCache: () => Promise<void>
   clearMixesCache: () => Promise<void>
@@ -764,6 +782,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     // nextgen is the flagship skin: default to it unless the user explicitly
     // chose oldgen (i.e. first launch / unset = nextgen).
     skin: localStorage.getItem('lp.skin') === 'oldgen' ? 'oldgen' : 'nextgen',
+    graphics: (() => {
+      const v = localStorage.getItem('lp.graphics') || ''
+      return ['balanced', 'optimized', 'performance'].includes(v) ? v : 'standard'
+    })(),
+    fpsLimit: (() => {
+      const n = parseInt(localStorage.getItem('lp.fpsLimit') || '', 10)
+      return Number.isFinite(n) && n >= 15 && n <= 120 ? n : 60
+    })(),
     customAccent: localStorage.getItem('lp.customAccent') || '#ff2e54',
     customBg: localStorage.getItem('lp.bg'),
     customCovers: (() => {
@@ -800,11 +826,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     showSearchAlbums: localStorage.getItem('lp.searchAlbums') !== '0',
     showSearchPlaylists: localStorage.getItem('lp.searchPlaylists') === '1',
     showHomeMixes: localStorage.getItem('lp.homeMixes') !== '0',
+    showSidebarMixes: localStorage.getItem('lp.sbMixes') !== '0',
+    showSidebarArtists: localStorage.getItem('lp.sbArtists') !== '0',
     lyricsSize: (localStorage.getItem('lp.lyricsSize') as 'sm' | 'md' | 'lg') || 'md',
     lang: (localStorage.getItem('lp.lang') as 'en' | 'ru') || 'en',
     resumeSession: localStorage.getItem('lp.resume') !== '0',
     geniusFallback: localStorage.getItem('lp.genius') !== '0',
     launchAtStartup: false,
+    hwAccel: true,
 
     queue: [],
     currentIndex: -1,
@@ -1357,6 +1386,26 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    setGraphics(g) {
+      const v = ['balanced', 'optimized', 'performance'].includes(g) ? g : 'standard'
+      set({ graphics: v })
+      try {
+        localStorage.setItem('lp.graphics', v)
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setFpsLimit(n) {
+      const v = Math.max(15, Math.min(120, Math.round(n)))
+      set({ fpsLimit: v })
+      try {
+        localStorage.setItem('lp.fpsLimit', String(v))
+      } catch {
+        /* ignore */
+      }
+    },
+
     setCustomAccent(hex) {
       // Choosing a custom color implies switching to the custom theme.
       set({ customAccent: hex, theme: 'custom' })
@@ -1535,6 +1584,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       localStorage.setItem('lp.homeMixes', v ? '1' : '0')
     },
 
+    setShowSidebarMixes(v) {
+      set({ showSidebarMixes: v })
+      localStorage.setItem('lp.sbMixes', v ? '1' : '0')
+    },
+
+    setShowSidebarArtists(v) {
+      set({ showSidebarArtists: v })
+      localStorage.setItem('lp.sbArtists', v ? '1' : '0')
+    },
+
     setCompact(v) {
       set({ compact: v })
       localStorage.setItem('lp.compact', v ? '1' : '0')
@@ -1575,10 +1634,25 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    async setHwAccel(v) {
+      set({ hwAccel: v })
+      try {
+        await window.api.setHardwareAcceleration(v)
+      } catch {
+        /* ignore */
+      }
+    },
+
     async loadPrefs() {
       try {
         const v = await window.api.getLaunchAtStartup()
         set({ launchAtStartup: v })
+      } catch {
+        /* ignore */
+      }
+      try {
+        const h = await window.api.getHardwareAcceleration()
+        set({ hwAccel: h })
       } catch {
         /* ignore */
       }

@@ -3172,6 +3172,36 @@ button:disabled {
   background: var(--accent);
   color: var(--accent-ink);
 }
+/* Graphics-preset segmented control — 2×2 of dark pills (a native <select>
+   popup renders white/unreadable in Electron). */
+.gfx-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  width: 100%;
+}
+.gfx-seg button {
+  flex: 1 1 calc(50% - 3px);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.gfx-seg button:hover {
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.gfx-seg button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
 .sc-chip {
   display: inline-flex;
   align-items: center;

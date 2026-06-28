@@ -72,6 +72,8 @@ export function App(): JSX.Element {
   const compact = usePlayer((s) => s.compact)
   const sidebarCollapsed = usePlayer((s) => s.sidebarCollapsed)
   const skin = usePlayer((s) => s.skin)
+  const graphics = usePlayer((s) => s.graphics)
+  const hwAccel = usePlayer((s) => s.hwAccel)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
   const loadPrefs = usePlayer((s) => s.loadPrefs)
@@ -90,13 +92,18 @@ export function App(): JSX.Element {
     const root = document.documentElement
     root.setAttribute('data-theme', theme)
     root.setAttribute('data-skin', skin)
+    root.setAttribute('data-graphics', graphics)
+    // Software compositing (HW accel off) makes backdrop-filter/blur/grain
+    // brutally expensive — flag it so the CSS sheds those heavy effects (else
+    // nextgen turns into a slideshow). See perf.css.
+    root.setAttribute('data-hwaccel', hwAccel ? '1' : '0')
     root.setAttribute('data-compact', compact ? '1' : '0')
     root.setAttribute('data-lyrics', lyricsSize)
     // For the custom theme the accent comes from the user's color; --accent-2 and
     // --accent-soft are derived in CSS via color-mix. Other themes use their own.
     if (theme === 'custom') root.style.setProperty('--accent', customAccent)
     else root.style.removeProperty('--accent')
-  }, [theme, skin, customAccent, compact, lyricsSize])
+  }, [theme, skin, graphics, hwAccel, customAccent, compact, lyricsSize])
 
   const viewKey =
     source === 'playlist'
@@ -157,7 +164,7 @@ export function App(): JSX.Element {
           width={sidebarCollapsed ? undefined : sidebarW}
           collapsed={sidebarCollapsed}
         />
-        <OverlayScrollbar scrollRef={sidebarRef} />
+        <OverlayScrollbar scrollRef={sidebarRef} pad={16} />
         {!sidebarCollapsed && (
           <Resizer
             width={sidebarW}

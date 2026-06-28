@@ -1,0 +1,110 @@
+/* ============================================================
+   Graphics presets — progressively shed GPU-heavy effects.
+   Driven by html[data-graphics] (App.tsx) / store `graphics`.
+   Loaded AFTER styles.css and skin-nextgen.css so these overrides win by
+   source order. `standard` has no rules here (the look stays byte-for-byte).
+   Tiers are cumulative: balanced ⊂ optimized ⊂ performance.
+
+   The biggest, skin-independent GPU cost — the visualizer's constant rAF — is
+   gated in JS (Waveform.tsx), not here. This file handles the CSS effects:
+   film grain, glass blur, infinite animations, glow.
+   ============================================================ */
+
+/* ---------- balanced + optimized + performance ---------- */
+/* Film grain uses mix-blend-mode (expensive); drop it. */
+html:is([data-graphics='balanced'], [data-graphics='optimized'], [data-graphics='performance'], [data-hwaccel='0'])
+  [data-skin='nextgen']
+  .app::after {
+  display: none;
+}
+/* Freeze never-ending animations (My Wave pulse rings, skeleton shimmer). */
+html:is([data-graphics='balanced'], [data-graphics='optimized'], [data-graphics='performance'], [data-hwaccel='0'])
+  .wave-ring {
+  animation: none;
+}
+html:is([data-graphics='balanced'], [data-graphics='optimized'], [data-graphics='performance'], [data-hwaccel='0'])
+  .skeleton {
+  animation: none;
+}
+/* The playing-row equalizer indicator is a small but constant compositor
+   driver while a track plays — freeze its bars (the cue still reads). */
+html:is([data-graphics='balanced'], [data-graphics='optimized'], [data-graphics='performance'], [data-hwaccel='0'])
+  .eq i {
+  animation: none;
+}
+
+/* ---------- optimized + performance ---------- */
+/* Halve the glass blur radius — cheaper to composite, still frosted. The
+   nextgen panels (content::before, playerbar) both read from --ng-glass. */
+html:is([data-graphics='optimized'], [data-graphics='performance'])[data-skin='nextgen'] {
+  --ng-glass: blur(14px) saturate(1.2);
+}
+html:is([data-graphics='optimized'], [data-graphics='performance']) .app.has-bg .playerbar {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+html:is([data-graphics='optimized'], [data-graphics='performance']) .app.has-bg .sidebar,
+html:is([data-graphics='optimized'], [data-graphics='performance']) .app.has-bg .rp-card,
+html:is([data-graphics='optimized'], [data-graphics='performance']) .app.has-bg .content::before {
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+html:is([data-graphics='optimized'], [data-graphics='performance'])
+  .fsplayer.has-image
+  .fsplayer-lyrics::before {
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+/* Drop heavy text-glow on big nextgen headings. */
+html:is([data-graphics='optimized'], [data-graphics='performance'])
+  [data-skin='nextgen']
+  :is(.home-eyebrow, .home-greet .accent, .ph-label, .kary-line.active) {
+  text-shadow: none;
+}
+
+/* ---------- performance, OR hardware acceleration off ---------- */
+/* Software compositing (HW accel off) makes backdrop-filter unusably slow — so
+   these full-flatten rules also fire on [data-hwaccel='0'] regardless of the
+   graphics preset, otherwise nextgen becomes a slideshow on the CPU.
+   Kill glass blur entirely (no backdrop-filter) and drop accent glow shadows.
+   Both nextgen tokens resolve to `none`, flattening every panel and glow that
+   reads from them in one shot. */
+html:is([data-graphics='performance'], [data-hwaccel='0'])[data-skin='nextgen'] {
+  --ng-glass: none;
+  --ng-accent-glow: none;
+}
+/* Bump panel fills so text stays readable without the frosting. */
+html:is([data-graphics='performance'], [data-hwaccel='0'])[data-skin='nextgen'] .content::before {
+  background: linear-gradient(180deg, rgba(20, 16, 34, 0.72), rgba(10, 8, 18, 0.84));
+}
+html:is([data-graphics='performance'], [data-hwaccel='0'])[data-skin='nextgen'] .playerbar {
+  background: rgba(10, 8, 18, 0.9);
+}
+/* Flatten the ambient gradient backdrop to a solid — cheap to composite. */
+html:is([data-graphics='performance'], [data-hwaccel='0'])[data-skin='nextgen'] .app::before {
+  background: #060409;
+}
+/* oldgen / custom-bg glass: remove blur, raise fills (use shorthand so any
+   gradient image layer is cleared too). */
+html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .playerbar {
+  background: rgba(8, 11, 10, 0.92);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .sidebar,
+html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .rp-card,
+html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .content::before {
+  background: rgba(11, 14, 13, 0.9);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html:is([data-graphics='performance'], [data-hwaccel='0']) .fsplayer.has-image .fsplayer-lyrics::before {
+  background: rgba(8, 11, 10, 0.7);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The visualizer is frozen at this tier (Waveform.tsx) — drop the per-bar
+   compositor layers it no longer needs. */
+html:is([data-graphics='performance'], [data-hwaccel='0']) .wave-bar {
+  will-change: auto;
+}

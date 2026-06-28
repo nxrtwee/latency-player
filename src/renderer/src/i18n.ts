@@ -223,6 +223,20 @@ const dict: Record<string, { en: string; ru: string }> = {
   collapseSidebar: { en: 'Collapse sidebar', ru: 'Свернуть панель' },
   expandSidebar: { en: 'Expand sidebar', ru: 'Развернуть панель' },
   skinSub: { en: 'oldgen — classic · nextgen — cinematic', ru: 'oldgen — классика · nextgen — кино' },
+  graphics: { en: 'Graphics preset', ru: 'Пресет графики' },
+  graphicsSub: {
+    en: 'Lower GPU load — Standard keeps the current look',
+    ru: 'Снизить нагрузку на GPU — Стандартный сохраняет текущий вид'
+  },
+  gfxStandard: { en: 'Standard', ru: 'Стандартный' },
+  gfxBalanced: { en: 'Balanced', ru: 'Сбалансированный' },
+  gfxOptimized: { en: 'Optimized', ru: 'Оптимизированный' },
+  gfxPerformance: { en: 'Performance', ru: 'Производительный' },
+  fpsLimit: { en: 'Animation FPS limit', ru: 'Ограничение FPS анимаций' },
+  fpsLimitSub: {
+    en: 'Caps the visualizer frame rate — lower eases GPU/CPU (∞ = uncapped)',
+    ru: 'Ограничивает частоту кадров визуализатора — ниже = меньше нагрузка (∞ = без лимита)'
+  },
   theme: { en: 'Theme', ru: 'Тема' },
   customColor: { en: 'Custom', ru: 'Свой цвет' },
   language: { en: 'Language', ru: 'Язык' },
@@ -277,6 +291,13 @@ const dict: Record<string, { en: string; ru: string }> = {
   },
   launchStartup: { en: 'Launch at startup', ru: 'Запуск при старте системы' },
   launchSub: { en: 'Open Latency when you sign in to Windows', ru: 'Открывать Latency при входе в Windows' },
+  hwAccel: { en: 'Hardware acceleration (GPU)', ru: 'Аппаратное ускорение (GPU)' },
+  hwAccelSub: {
+    en: 'Turn off if your GPU runs hot or loud — moves rendering to the CPU. Needs a restart.',
+    ru: 'Выключите, если видеокарта греется или шумит — рендеринг уйдёт на CPU. Нужен перезапуск.'
+  },
+  restartNeeded: { en: 'Restart to apply the change.', ru: 'Перезапустите, чтобы применить.' },
+  restartNow: { en: 'Restart now', ru: 'Перезапустить' },
   about: { en: 'About', ru: 'О приложении' },
   aboutText: {
     en: 'Latency is an advanced media player with visuals on par with the popular ones — written in pure vibecoding, so keep that in mind if you hit bugs or rough edges.',
@@ -312,6 +333,16 @@ const dict: Record<string, { en: string; ru: string }> = {
   homeMixesSub: {
     en: 'Show the "Your Mixes" section on the home page',
     ru: 'Показывать секцию «Ваши миксы» на домашней'
+  },
+  sidebarMixesTitle: { en: '"Made for you" in sidebar', ru: '«Для вас» в боковой панели' },
+  sidebarMixesSub: {
+    en: 'Show the mixes section in the left sidebar',
+    ru: 'Показывать секцию миксов в левом сайдбаре'
+  },
+  sidebarArtistsTitle: { en: '"Recent artists" in sidebar', ru: '«Недавние артисты» в боковой панели' },
+  sidebarArtistsSub: {
+    en: 'Show the recent-artists section in the left sidebar',
+    ru: 'Показывать секцию недавних артистов в левом сайдбаре'
   },
   myWaveBannerSub: {
     en: 'Endless personal radio from Yandex',
