@@ -5,6 +5,7 @@ name: Release
 # or run manually from the Actions tab.
 #
 #   • Windows  -> NSIS installer + portable .exe (electron-builder, unsigned)
+#   • Linux    -> AppImage (universal) + rpm (Fedora/RHEL), electron-builder
 #   • Android  -> debug .apk (Capacitor + Gradle, installs directly)
 #   • iOS      -> unsigned .ipa (Capacitor + xcodebuild; sign at sideload time)
 
@@ -40,6 +41,31 @@ jobs:
           name: desktop-win
           path: |
             release/*.exe
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ Linux ---
+  desktop-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install rpm tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Install deps
+        run: npm ci
+      - name: Build AppImage + rpm (unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            release/*.AppImage
+            release/*.rpm
           if-no-files-found: error
 
   # ---------------------------------------------------------------- Android ---
@@ -155,7 +181,7 @@ jobs:
 
   # ---------------------------------------------------------------- Publish ---
   publish:
-    needs: [desktop-win, android-apk, ios-ipa]
+    needs: [desktop-win, desktop-linux, android-apk, ios-ipa]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # needed to read CHANGELOG.md for the notes
@@ -176,6 +202,7 @@ jobs:
             echo
             echo "**Скачать:**"
             echo "- **Windows** — \`Latency-${VERSION}-x64.exe\` (установщик) или \`Latency-${VERSION}-portable.exe\`"
+            echo "- **Linux** — \`Latency-${VERSION}-x64.AppImage\` (универсальный, \`chmod +x\` и запуск) или \`Latency-${VERSION}-x64.rpm\` (Fedora/RHEL)"
             echo "- **Android** — \`Latency-${VERSION}.apk\` (включите «установка из неизвестных источников»)"
             echo "- **iOS** — \`Latency-${VERSION}-unsigned.ipa\` (подпишите своим Apple ID через AltStore/Sideloadly)"
             echo
@@ -193,6 +220,8 @@ jobs:
         with:
           files: |
             dist/desktop-win/*.exe
+            dist/desktop-linux/*.AppImage
+            dist/desktop-linux/*.rpm
             dist/android-apk/Latency-*.apk
             dist/ios-ipa/Latency-*-unsigned.ipa
           body_path: RELEASE_NOTES.md

@@ -61,9 +61,11 @@ function createWindow(): void {
     minWidth: 1280,
     minHeight: 800,
     title: 'Latency',
-    // Multi-size .ico so Windows picks a crisp 16/24/32 px bitmap for the taskbar
-    // / Alt-Tab instead of badly downscaling the 1030px PNG (see build/make-ico.cjs).
-    icon: join(__dirname, '../../build/icon.ico'),
+    // Windows: multi-size .ico so the taskbar / Alt-Tab gets a crisp 16/24/32 px
+    // bitmap instead of badly downscaling the 1030px PNG (see build/make-ico.cjs).
+    // Linux: .ico isn't a valid window icon — feed the PNG directly. (macOS ignores
+    // this and uses the bundle's .icns.)
+    icon: join(__dirname, process.platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico'),
     backgroundColor: '#080b0a',
     autoHideMenuBar: true,
     frame: false, // custom title bar / window controls in the renderer
