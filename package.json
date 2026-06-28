@@ -58,7 +58,11 @@
       "category": "AudioVideo",
       "maintainer": "icountedtheblink",
       "synopsis": "Cross-platform media player",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "executableName": "latency",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "desktop": {
+        "StartupWMClass": "latency"
+      }
     }
   },
   "dependencies": {

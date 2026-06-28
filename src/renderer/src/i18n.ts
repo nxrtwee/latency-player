@@ -88,7 +88,7 @@ const dict: Record<string, { en: string; ru: string }> = {
   explorePlaceholder: { en: 'What do you want to listen to?', ru: 'Что хотите послушать?' },
   search: { en: 'Search', ru: 'Искать' },
   profiles: { en: 'Profiles', ru: 'Профили' },
-  searching: { en: 'Searching SoundCloud…', ru: 'Поиск в SoundCloud…' },
+  searching: { en: 'Searching {p}…', ru: 'Поиск в {p}…' },
   // search modes (Explore tab)
   searchModeTracks: { en: 'Tracks', ru: 'Треки' },
   searchModeLyrics: { en: 'By lyrics', ru: 'По строчке' },
@@ -98,7 +98,7 @@ const dict: Record<string, { en: string; ru: string }> = {
     ru: 'Помните строчку? Введите её — и мы найдём трек.'
   },
   nothingFound: { en: 'Nothing found', ru: 'Ничего не найдено' },
-  openingTrack: { en: 'Finding on SoundCloud…', ru: 'Ищем на SoundCloud…' },
+  openingTrack: { en: 'Finding on {p}…', ru: 'Ищем на {p}…' },
   // autopilot
   autopilot: { en: 'Autopilot', ru: 'Автоплей' },
   autopilotOn: { en: 'Autopilot: on — related tracks keep playing', ru: 'Автоплей включён — похожие треки продолжат играть' },

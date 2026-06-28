@@ -61,6 +61,8 @@ export function ExplorePage(): JSX.Element {
   const openAlbum = usePlayer((s) => s.openAlbum)
   const playQueue = usePlayer((s) => s.playQueue)
   const t = useT()
+  // Status strings ("Searching {p}…") name the active provider.
+  const providerName = searchSource === 'yandex' ? 'Yandex Music' : 'SoundCloud'
 
   const [mode, setMode] = useState<Mode>('tracks')
 
@@ -256,7 +258,7 @@ export function ExplorePage(): JSX.Element {
       {/* ---------- Tracks mode results ---------- */}
       {mode === 'tracks' && (
         <>
-          {searchLoading && <div className="empty">{t('searching')}</div>}
+          {searchLoading && <div className="empty">{t('searching').replace('{p}', providerName)}</div>}
 
           {!searchLoading &&
             searchQuery &&
@@ -343,7 +345,7 @@ export function ExplorePage(): JSX.Element {
       {/* ---------- Lyrics mode results ---------- */}
       {mode === 'lyrics' && (
         <>
-          {lyricLoading && <div className="empty">{t('openingTrack')}</div>}
+          {lyricLoading && <div className="empty">{t('openingTrack').replace('{p}', providerName)}</div>}
           {!lyricLoading && lyricQuery.length >= 2 && resolved.length === 0 && (
             <div className="empty">{t('nothingFound')}</div>
           )}

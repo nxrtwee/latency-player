@@ -120,6 +120,17 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* background-clip:text clips a glyph to its line box, so tight line-heights cut
+   off descenders (g, p, q, y). Give every gradient-clipped headline room below
+   the baseline. oldgen uses solid color (no clip) so it's unaffected. */
+[data-skin='nextgen'] .brand-name,
+[data-skin='nextgen'] .home-greet,
+[data-skin='nextgen'] .ph-title,
+[data-skin='nextgen'] .ex-title {
+  line-height: 1.18;
+  padding-bottom: 0.08em;
+}
 [data-skin='nextgen'] .nav-label {
   letter-spacing: 1.1px;
   font-size: 10px;
