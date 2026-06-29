@@ -1,6 +1,6 @@
 {
   "name": "latency-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop media player with pluggable playback sources (local, SoundCloud, ...)",
   "author": "",
   "license": "MIT",
@@ -28,6 +28,7 @@
       "out/**/*",
       "build/icon.png",
       "build/icon.ico",
+      "build/icons/**/*",
       "package.json"
     ],
     "extraMetadata": {
@@ -50,7 +51,7 @@
       "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "target": [
         "AppImage",
         "rpm"
