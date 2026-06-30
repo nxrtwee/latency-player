@@ -81,10 +81,12 @@ export function PlayerBar(): JSX.Element {
       <div className="pb-now">
         {track ? (
           <>
-            <div className="pb-art">
+            {/* key by track id → remounts on track change so the CSS entrance
+                animation replays (theme-specific: oldgen simple, nextgen fancy). */}
+            <div className="pb-art" key={track.id}>
               {cover ? <img src={cover} alt="" /> : <span>♫</span>}
             </div>
-            <div className="pb-meta">
+            <div className="pb-meta" key={`${track.id}-meta`}>
               <span
                 className="pb-title clickable"
                 onClick={() => setSource('comments')}

@@ -19,10 +19,18 @@ const localProvider: PlaybackProvider = {
     const url = getBlobUrl(track.id) || track.uri
     if (!url) {
       cb.onError('Файл недоступен — переимпортируйте его в Библиотеке.')
-      return { play: () => {}, pause: () => {}, seek: () => {}, setVolume: () => {}, destroy: () => {} }
+      return {
+        play: () => {},
+        pause: () => {},
+        seek: () => {},
+        setVolume: () => {},
+        setNormalization: () => {},
+        setFade: () => {},
+        destroy: () => {}
+      }
     }
     audio.src = url
-    const disconnect = connectElement(audio)
+    const audioCtl = connectElement(audio)
 
     audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
     audio.addEventListener('durationchange', () => {
@@ -47,8 +55,10 @@ const localProvider: PlaybackProvider = {
       setVolume: (v) => {
         audio.volume = Math.min(1, Math.max(0, v))
       },
+      setNormalization: (db) => audioCtl.setNormalization(db),
+      setFade: (value, rampSec) => audioCtl.setFade(value, rampSec),
       destroy: () => {
-        disconnect()
+        audioCtl.disconnect()
         audio.pause()
         audio.removeAttribute('src')
         audio.load()

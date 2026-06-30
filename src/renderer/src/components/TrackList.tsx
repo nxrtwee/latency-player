@@ -1,7 +1,16 @@
 import { useCallback, useMemo, useState } from 'react'
 import { usePlayer } from '../store'
 import { formatTotal } from '../util'
-import { PlayIcon, SearchIcon, ShuffleIcon, ClockIcon, DownloadIcon, CheckIcon } from './Icons'
+import {
+  PlayIcon,
+  SearchIcon,
+  ShuffleIcon,
+  ClockIcon,
+  DownloadIcon,
+  CheckIcon,
+  ImageIcon,
+  RefreshIcon
+} from './Icons'
 import { TrackRow } from './TrackRow'
 import { ListMenu } from './ListMenu'
 import { useT } from '../i18n'
@@ -29,6 +38,9 @@ export function TrackList(): JSX.Element {
   const downloadAll = usePlayer((s) => s.downloadAll)
   const downloading = usePlayer((s) => s.downloading)
   const offlineIds = usePlayer((s) => s.offlineIds)
+  const customTabCovers = usePlayer((s) => s.customTabCovers)
+  const setTabCover = usePlayer((s) => s.setTabCover)
+  const resetTabCover = usePlayer((s) => s.resetTabCover)
 
   const [textQuery, setTextQuery] = useState('')
 
@@ -74,7 +86,13 @@ export function TrackList(): JSX.Element {
     )
   }, [baseList, textQuery])
 
-  const headerCover = list.find((t) => t.artwork)?.artwork
+  // A user can pin a custom header image per tab/playlist; else fall back to the
+  // first track's artwork. Keyed by source name (system tabs) or playlist id.
+  const tabKey = source === 'playlist' ? selectedPlaylistId ?? '' : source
+  const canCustomizeCover =
+    !!tabKey && ['likes', 'recent', 'local', 'offline', 'playlist'].includes(source)
+  const customTabCover = customTabCovers[tabKey]
+  const headerCover = customTabCover ?? list.find((t) => t.artwork)?.artwork
   const totalSec = list.reduce((sum, t) => sum + (t.durationSec ?? 0), 0)
 
   // "Download all" state: streaming tracks not yet cached are downloadable; local
@@ -115,6 +133,26 @@ export function TrackList(): JSX.Element {
       <header className="ph">
         <div className="ph-cover">
           {headerCover ? <img src={headerCover} alt="" /> : <span className="ph-cover-glyph">♪</span>}
+          {canCustomizeCover && (
+            <div className="ph-cover-edit">
+              <button
+                className="ph-cover-btn"
+                title={t('changeCover')}
+                onClick={() => setTabCover(tabKey)}
+              >
+                <ImageIcon size={14} />
+              </button>
+              {customTabCover && (
+                <button
+                  className="ph-cover-btn"
+                  title={t('resetCover')}
+                  onClick={() => resetTabCover(tabKey)}
+                >
+                  <RefreshIcon size={14} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="ph-info">
           {meta.label && <span className="ph-label">{meta.label}</span>}

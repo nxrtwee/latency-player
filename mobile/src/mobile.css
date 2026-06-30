@@ -1492,6 +1492,40 @@ h2 {
   font-size: 13px;
   color: var(--text-dim);
 }
+.lv-cover-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.lv-cover {
+  width: 92px;
+  height: 92px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--art-ph, rgba(255, 255, 255, 0.06));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+.lv-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lv-cover-glyph {
+  font-size: 34px;
+  color: var(--accent);
+  opacity: 0.7;
+}
+.lv-cover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
 .lv-play {
   display: inline-flex;
   align-items: center;
@@ -2625,4 +2659,49 @@ h2 {
 /* My Wave entry cover in Library */
 .pl-cover.wave-cover {
   background: linear-gradient(150deg, var(--accent), var(--accent-2));
+}
+
+/* ---- Track-change entrance (mobile) ----
+   Keyed by track id in React so it replays on every switch. Mobile has a single
+   theme — a soft slide-up + fade for the now-playing art/info and the mini-player,
+   matching the app's springy mobile motion. */
+@keyframes m-track-art {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes m-track-text {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.np-art {
+  animation: m-track-art 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.np-info {
+  animation: m-track-text 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.04s both;
+}
+.mini-art {
+  animation: m-track-art 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mini-meta {
+  animation: m-track-text 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .np-art,
+  .np-info,
+  .mini-art,
+  .mini-meta {
+    animation: none;
+  }
 }

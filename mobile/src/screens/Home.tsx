@@ -54,8 +54,12 @@ export function HomeScreen({
   const playlists = usePlayer((s) => s.playlists)
   const playQueue = usePlayer((s) => s.playQueue)
   const ymAuth = usePlayer((s) => s.ymAuth)
+  const scAuth = usePlayer((s) => s.scAuth)
   const playMyWave = usePlayer((s) => s.playMyWave)
   const showHomeMixes = usePlayer((s) => s.showHomeMixes)
+  // Mixes are SoundCloud-oriented — hide for signed-out users by default, unless
+  // they explicitly pinned the section on (lp.homeMixes === '1').
+  const mixesVisible = showHomeMixes && (scAuth != null || localStorage.getItem('lp.homeMixes') === '1')
   const lang = usePlayer((s) => s.lang)
   const t = useT()
   const jumpBack = recent.slice(0, 10)
@@ -137,7 +141,7 @@ export function HomeScreen({
         </button>
       )}
 
-      {showHomeMixes && (
+      {mixesVisible && (
       <section>
         <div className="section-head">
           <h2>{t('yourMixes')}</h2>

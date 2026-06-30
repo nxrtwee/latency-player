@@ -31,6 +31,10 @@ export function SettingsScreen({
 }): JSX.Element {
   const resumeSession = usePlayer((s) => s.resumeSession)
   const setResumeSession = usePlayer((s) => s.setResumeSession)
+  const normalizeVolume = usePlayer((s) => s.normalizeVolume)
+  const setNormalizeVolume = usePlayer((s) => s.setNormalizeVolume)
+  const crossfadeSec = usePlayer((s) => s.crossfadeSec)
+  const setCrossfadeSec = usePlayer((s) => s.setCrossfadeSec)
   const showHomeMixes = usePlayer((s) => s.showHomeMixes)
   const setShowHomeMixes = usePlayer((s) => s.setShowHomeMixes)
   const lang = usePlayer((s) => s.lang)
@@ -165,6 +169,36 @@ export function SettingsScreen({
             <span className="set-row-sub">{t('hideScMixesSub')}</span>
           </div>
           <Toggle on={!showHomeMixes} onChange={(v) => setShowHomeMixes(!v)} />
+        </div>
+      </section>
+
+      <section className="set-block">
+        <div className="set-label">{t('soundSection')}</div>
+        <div className="set-row">
+          <div>
+            <span className="set-row-title">{t('normalizeVolume')}</span>
+            <span className="set-row-sub">{t('normalizeVolumeHint')}</span>
+          </div>
+          <Toggle on={normalizeVolume} onChange={setNormalizeVolume} />
+        </div>
+        <div className="set-row col">
+          <div>
+            <span className="set-row-title">{t('crossfade')}</span>
+            <span className="set-row-sub">{t('crossfadeHint')}</span>
+          </div>
+          <div className="set-slider">
+            <input
+              type="range"
+              min={0}
+              max={12}
+              step={1}
+              value={crossfadeSec}
+              onChange={(e) => setCrossfadeSec(Number(e.target.value))}
+            />
+            <span className="set-slider-val">
+              {crossfadeSec === 0 ? t('off') : `${crossfadeSec} ${t('seconds')}`}
+            </span>
+          </div>
         </div>
       </section>
 

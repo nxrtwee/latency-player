@@ -170,6 +170,23 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   kbgImage: { ru: 'Изображение', en: 'Image' },
   kbgReset: { ru: 'Убрать фон', en: 'Remove background' },
   autopilot: { ru: 'Автопилот', en: 'Autopilot' },
+  waveByTrack: { ru: 'Моя волна по треку', en: 'My Wave from this track' },
+  waveByArtist: { ru: 'Моя волна по артисту', en: 'My Wave from this artist' },
+  stationFromTrack: { ru: 'Станция от трека', en: 'Station from this track' },
+  stationFromArtist: { ru: 'Станция от артиста', en: 'Station from this artist' },
+  soundSection: { ru: 'Звук', en: 'Sound' },
+  normalizeVolume: { ru: 'Выравнивание громкости', en: 'Volume leveling' },
+  normalizeVolumeHint: {
+    ru: 'Выравнивает громкость между треками (Яндекс + локальные; не SoundCloud; на телефоне стримы не обрабатываются).',
+    en: 'Evens out loudness across tracks (Yandex + local; not SoundCloud; streams unaffected on phones).'
+  },
+  crossfade: { ru: 'Кроссфейд', en: 'Crossfade' },
+  crossfadeHint: {
+    ru: 'Плавно перетекает из трека в трек.',
+    en: 'Smoothly blends one track into the next.'
+  },
+  seconds: { ru: 'сек', en: 'sec' },
+  off: { ru: 'Выкл', en: 'Off' },
   moreActions: { ru: 'Ещё', en: 'More' },
   addAllToQueue: { ru: 'Добавить всё в очередь', en: 'Add all to queue' },
   addAllToPlaylist: { ru: 'Добавить всё в плейлист', en: 'Add all to playlist' },

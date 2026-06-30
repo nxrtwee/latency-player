@@ -19,6 +19,17 @@ export interface PlaybackHandle {
   pause: () => void
   seek: (sec: number) => void
   setVolume: (volume: number) => void
+  /**
+   * Per-track loudness makeup gain in dB (0 = untouched). On desktop and for
+   * local files this rides a Web Audio gain node; on mobile cross-origin streams
+   * it's a no-op (Web Audio can't tap them).
+   */
+  setNormalization: (db: number) => void
+  /**
+   * Crossfade gain 0..1, optionally ramped over `rampSec` seconds. Composed with
+   * the user volume. Drives smooth track-to-track transitions.
+   */
+  setFade: (value: number, rampSec?: number) => void
   /** Tear down resources (detach elements, stop network, etc.). */
   destroy: () => void
 }

@@ -3,8 +3,11 @@
  * <audio>, SoundCloud <audio>) routes its output through a single AnalyserNode
  * so the visualizers can read live frequency energy.
  *
- * Only one track plays at a time — providers connect their element on create and
- * disconnect on destroy, so there is never more than one live source.
+ * Each element gets its own two-node pre-chain before the shared EQ:
+ *   source → fadeGain → normGain → EQ → analyser → destination
+ * `fadeGain` drives crossfades (two elements can be live at once during a
+ * transition); `normGain` applies the per-track loudness makeup gain. Usually
+ * one track plays at a time; during a crossfade exactly two do.
  *
  * Note on cross-origin: routing an element through createMediaElementSource still
  * plays its audio, but if the media is cross-origin without CORS the browser feeds
@@ -13,6 +16,8 @@
  * with HLS fed through MSE (same-origin). The synthetic-motion fallback remains for
  * any frame that still reports no signal.
  */
+
+import { dbToLinear } from '@shared/loudness'
 
 let ctx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
@@ -115,30 +120,83 @@ export function setEqEnabled(enabled: boolean): void {
   }
 }
 
+/** Per-element audio controls returned by {@link connectElement}. */
+export interface ElementAudio {
+  /** Detach this element's nodes from the graph (teardown). */
+  disconnect: () => void
+  /** Crossfade gain 0..1, optionally ramped over `rampSec` seconds. */
+  setFade: (value: number, rampSec?: number) => void
+  /** Per-track loudness makeup gain, in dB (0 = untouched). */
+  setNormalization: (db: number) => void
+}
+
+const noopElementAudio: ElementAudio = {
+  disconnect: () => {},
+  setFade: () => {},
+  setNormalization: () => {}
+}
+
 /**
- * Route an element through the analyser. Returns a disconnect fn for teardown.
- * If Web Audio setup fails for any reason, we degrade to a no-op so the element
- * keeps playing on its own direct output — never silence the player.
+ * Route an element through the graph: source → fadeGain → normGain → EQ → analyser.
+ * Returns per-element controls (fade + normalization) and a disconnect fn. If Web
+ * Audio setup fails for any reason, we degrade to no-ops so the element keeps
+ * playing on its own direct output — never silence the player.
  */
-export function connectElement(el: HTMLMediaElement): () => void {
+export function connectElement(el: HTMLMediaElement): ElementAudio {
   try {
-    const head = ensure()
+    const context = ctx ?? (ensure(), ctx!)
+    const head = chainHead as AudioNode
     let src = sources.get(el)
     if (!src) {
-      src = ctx!.createMediaElementSource(el)
+      src = context.createMediaElementSource(el)
       sources.set(el, src)
     }
-    src.connect(head)
+    const fadeGain = context.createGain()
+    fadeGain.gain.value = 1
+    const normGain = context.createGain()
+    normGain.gain.value = 1
+    src.connect(fadeGain)
+    fadeGain.connect(normGain)
+    normGain.connect(head)
     resumeAudio()
-    return () => {
-      try {
-        src!.disconnect(head)
-      } catch {
-        /* already gone */
+    // Track the intended fade level ourselves — reading AudioParam.value right
+    // after scheduling is unreliable, and cancelScheduledValues() would wipe a
+    // just-set start point, so we anchor each ramp at this known value instead.
+    let currentFade = 1
+    return {
+      disconnect: () => {
+        try {
+          src!.disconnect(fadeGain)
+        } catch {
+          /* already gone */
+        }
+        try {
+          fadeGain.disconnect()
+        } catch {
+          /* already gone */
+        }
+        try {
+          normGain.disconnect()
+        } catch {
+          /* already gone */
+        }
+      },
+      setFade: (value, rampSec = 0) => {
+        const v = Math.max(0, Math.min(1, value))
+        const p = fadeGain.gain
+        const now = context.currentTime
+        p.cancelScheduledValues(now)
+        p.setValueAtTime(currentFade, now)
+        if (rampSec > 0) p.linearRampToValueAtTime(v, now + rampSec)
+        else p.setValueAtTime(v, now)
+        currentFade = v
+      },
+      setNormalization: (db) => {
+        normGain.gain.value = dbToLinear(Number.isFinite(db) ? db : 0)
       }
     }
   } catch {
-    return () => {}
+    return noopElementAudio
   }
 }
 

@@ -232,6 +232,14 @@
   -webkit-backdrop-filter: var(--ng-glass);
 }
 
+/* ---- Row "⋯" popovers (add-to-playlist / list menu / radio) ----
+   nextgen makes --panel/--panel-2 translucent for the glass look, but these
+   popovers have no backdrop-filter of their own, so a translucent fill lets the
+   UI show straight through. Force a SOLID opaque surface here. */
+[data-skin='nextgen'] .pl-popover {
+  background: #17131f;
+}
+
 /* ---- Right panel cards (queue card has an inner scroller → no blur) ---- */
 [data-skin='nextgen'] .rp-card {
   background: linear-gradient(180deg, rgba(22, 18, 38, 0.5), rgba(12, 10, 22, 0.52));
@@ -1079,3 +1087,53 @@
 /* ============================================================
    PHASE 6 — visualizers
    ============================================================ */
+
+/* ---- Track-change entrance (nextgen — richer than oldgen's base) ----
+   A blurred, lifted scale-in for the art and a slide-in for the text, matching
+   the skin's glassy, motion-forward feel. Keyed in React → replays per track. */
+@keyframes ng-track-art {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+    filter: blur(10px);
+  }
+  55% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes ng-track-text {
+  0% {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-skin='nextgen'] .pb-art,
+[data-skin='nextgen'] .np-art {
+  animation: ng-track-art 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+[data-skin='nextgen'] .pb-meta,
+[data-skin='nextgen'] .np-title {
+  animation: ng-track-text 0.46s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* slight stagger so the artist line trails the title */
+[data-skin='nextgen'] .np-artist {
+  animation: ng-track-text 0.46s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-skin='nextgen'] .pb-art,
+  [data-skin='nextgen'] .np-art,
+  [data-skin='nextgen'] .pb-meta,
+  [data-skin='nextgen'] .np-title,
+  [data-skin='nextgen'] .np-artist {
+    animation: none;
+  }
+}

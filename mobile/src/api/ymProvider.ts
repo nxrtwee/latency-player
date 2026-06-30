@@ -9,6 +9,7 @@
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
+import { makeVolumeFader } from './volumeFade'
 
 const ymProvider: PlaybackProvider = {
   id: 'yandex',
@@ -17,6 +18,7 @@ const ymProvider: PlaybackProvider = {
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     const audio = new Audio()
     audio.preload = 'auto'
+    const fader = makeVolumeFader(audio)
 
     audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
     audio.addEventListener('durationchange', () => {
@@ -59,11 +61,13 @@ const ymProvider: PlaybackProvider = {
       seek: (sec) => {
         if (ready) audio.currentTime = sec
       },
-      setVolume: (v) => {
-        audio.volume = Math.min(1, Math.max(0, v))
-      },
+      setVolume: (v) => fader.setVolume(v),
+      // Cross-origin stream: no Web Audio, so no loudness boost on mobile.
+      setNormalization: () => {},
+      setFade: (value, rampSec) => fader.setFade(value, rampSec),
       destroy: () => {
         destroyed = true
+        fader.destroy()
         audio.pause()
         audio.removeAttribute('src')
         audio.load()

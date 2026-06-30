@@ -100,6 +100,10 @@ export function Settings(): JSX.Element {
   const setLyricsSize = usePlayer((s) => s.setLyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
   const setResumeSession = usePlayer((s) => s.setResumeSession)
+  const normalizeVolume = usePlayer((s) => s.normalizeVolume)
+  const setNormalizeVolume = usePlayer((s) => s.setNormalizeVolume)
+  const crossfadeSec = usePlayer((s) => s.crossfadeSec)
+  const setCrossfadeSec = usePlayer((s) => s.setCrossfadeSec)
   const geniusFallback = usePlayer((s) => s.geniusFallback)
   const setGeniusFallback = usePlayer((s) => s.setGeniusFallback)
   const launchAtStartup = usePlayer((s) => s.launchAtStartup)
@@ -419,6 +423,38 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('resumeSub')}</span>
               </div>
               <Toggle checked={resumeSession} onChange={setResumeSession} />
+            </div>
+          </section>
+
+          {/* Sound */}
+          <section className="set-block">
+            <div className="set-label">{t('soundSection')}</div>
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('normalizeVolume')}</span>
+                <span className="set-row-sub">{t('normalizeVolumeHint')}</span>
+              </div>
+              <Toggle checked={normalizeVolume} onChange={setNormalizeVolume} />
+            </div>
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('crossfade')}</span>
+                <span className="set-row-sub">{t('crossfadeHint')}</span>
+              </div>
+              <div className="set-slider">
+                <input
+                  type="range"
+                  className="slider"
+                  min={0}
+                  max={12}
+                  step={1}
+                  value={crossfadeSec}
+                  onChange={(e) => setCrossfadeSec(Number(e.target.value))}
+                />
+                <span className="set-slider-val">
+                  {crossfadeSec === 0 ? t('off') : `${crossfadeSec} ${t('seconds')}`}
+                </span>
+              </div>
             </div>
           </section>
 

@@ -135,11 +135,11 @@ export function MobileApp(): JSX.Element {
         (tr, i, a) => a.findIndex((x) => x.id === tr.id) === i
       )
       detailView = (
-        <ListView title={t('liked')} subtitle={label(merged.length)} tracks={merged} onClose={popDetail} onArtist={openArtist} />
+        <ListView title={t('liked')} subtitle={label(merged.length)} tracks={merged} onClose={popDetail} onArtist={openArtist} coverKey="likes" />
       )
     } else if (detail.kind === 'recent') {
       detailView = (
-        <ListView title={t('recent')} subtitle={label(recent.length)} tracks={recent} onClose={popDetail} onArtist={openArtist} />
+        <ListView title={t('recent')} subtitle={label(recent.length)} tracks={recent} onClose={popDetail} onArtist={openArtist} coverKey="recent" />
       )
     } else if (detail.kind === 'activity') {
       detailView = <ActivityScreen onClose={popDetail} />
@@ -182,6 +182,7 @@ export function MobileApp(): JSX.Element {
           subtitle={label(pl?.tracks.length ?? 0)}
           tracks={pl?.tracks ?? []}
           onClose={popDetail}
+          coverKey={detail.id}
         />
       )
     }

@@ -194,6 +194,24 @@ const dict: Record<string, { en: string; ru: string }> = {
     ru: 'Моя волна — персональный поток из Яндекс Музыки, который не заканчивается: он подстраивается под то, что вы слушаете, и сам продолжает играть, подбирая следующий трек. Нажмите «Слушать» и просто слушайте — волна пополняется на ходу.'
   },
   playWave: { en: 'Listen', ru: 'Слушать' },
+  waveByTrack: { en: 'My Wave from this track', ru: 'Моя волна по треку' },
+  waveByArtist: { en: 'My Wave from this artist', ru: 'Моя волна по артисту' },
+  stationFromTrack: { en: 'Station from this track', ru: 'Станция от трека' },
+  stationFromArtist: { en: 'Station from this artist', ru: 'Станция от артиста' },
+  // settings — sound
+  soundSection: { en: 'Sound', ru: 'Звук' },
+  normalizeVolume: { en: 'Volume leveling', ru: 'Выравнивание громкости' },
+  normalizeVolumeHint: {
+    en: 'Even out loudness across tracks (Yandex + local files; not SoundCloud, and on phones only for local files).',
+    ru: 'Выравнивает громкость между треками (Яндекс + локальные файлы; не работает для SoundCloud, а на телефоне — только для локальных файлов).'
+  },
+  crossfade: { en: 'Crossfade', ru: 'Кроссфейд' },
+  crossfadeHint: {
+    en: 'Smoothly blend the end of one track into the next.',
+    ru: 'Плавно перетекает из одного трека в следующий.'
+  },
+  seconds: { en: 'sec', ru: 'сек' },
+  off: { en: 'Off', ru: 'Выкл' },
   waveTagMood: { en: 'By mood', ru: 'По настроению' },
   waveTagCharacter: { en: 'By character', ru: 'По характеру' },
   waveTagLanguage: { en: 'By language', ru: 'По языку' },

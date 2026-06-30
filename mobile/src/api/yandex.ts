@@ -143,6 +143,8 @@ interface YmTrack {
   available?: boolean
   artists?: YmArtistRef[]
   albums?: { coverUri?: string }[]
+  // EBU R128 loudness (i = integrated LUFS, tp = true peak dBTP) for normalization.
+  r128?: { i?: number; tp?: number }
 }
 interface YmArtist {
   id?: number | string
@@ -173,7 +175,10 @@ function toTrack(t: YmTrack): Track | null {
       ? refs.map((a) => ({ id: a.id != null ? String(a.id) : undefined, name: a.name as string }))
       : undefined,
     durationSec: t.durationMs ? t.durationMs / 1000 : undefined,
-    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '400x400')
+    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '400x400'),
+    // R128 loudness for volume normalization (tp is dBTP → linear peak).
+    loudnessLufs: typeof t.r128?.i === 'number' ? t.r128.i : undefined,
+    peak: typeof t.r128?.tp === 'number' ? Math.pow(10, t.r128.tp / 20) : undefined
   }
 }
 
@@ -452,18 +457,27 @@ export interface YmWave {
   tracks: Track[]
 }
 
-let lastWaveBatchId: string | null = null
+/** The personal "My Wave" station. Other stations: `artist:<id>`, `track:<id>`. */
+export const MY_WAVE_STATION = 'user:onyourwave'
 
-async function waveFeedback(type: string, extra: Record<string, unknown> = {}): Promise<void> {
+// Most-recent batch id PER station (feedback must reference the right batch).
+const stationBatchId = new Map<string, string>()
+
+async function stationFeedback(
+  stationId: string,
+  type: string,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
   if (!oauthToken) return
   try {
-    await ymFetch(`${API}/rotor/station/user:onyourwave/feedback`, {
+    const batchId = stationBatchId.get(stationId)
+    await ymFetch(`${API}/rotor/station/${encodeURIComponent(stationId)}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type,
         timestamp: new Date().toISOString(),
-        ...(lastWaveBatchId ? { batchId: lastWaveBatchId } : {}),
+        ...(batchId ? { batchId } : {}),
         ...extra
       })
     })
@@ -473,6 +487,7 @@ async function waveFeedback(type: string, extra: Record<string, unknown> = {}): 
 }
 
 export async function waveTrackFeedback(
+  stationId: string,
   type: 'trackStarted' | 'trackFinished',
   trackId: string,
   totalPlayedSeconds = 0
@@ -482,23 +497,28 @@ export async function waveTrackFeedback(
     from: 'mobile-latency'
   }
   if (type === 'trackFinished') extra.totalPlayedSeconds = totalPlayedSeconds
-  await waveFeedback(type, extra)
+  await stationFeedback(stationId, type, extra)
 }
 
-export async function getMyWave(queueId?: string, limit = 40): Promise<YmWave> {
+export async function getStationTracks(
+  stationId: string,
+  queueId?: string,
+  limit = 40
+): Promise<YmWave> {
   if (!oauthToken) return { tracks: [] }
   try {
-    if (!queueId) await waveFeedback('radioStarted', { from: 'mobile-latency' })
+    if (!queueId) await stationFeedback(stationId, 'radioStarted', { from: 'mobile-latency' })
     const bare = queueId ? queueId.replace(/^ym:/, '') : ''
     const url =
-      `${API}/rotor/station/user:onyourwave/tracks?settings2=true` +
+      `${API}/rotor/station/${encodeURIComponent(stationId)}/tracks?settings2=true` +
       (bare ? `&queue=${encodeURIComponent(bare)}` : '')
     const res = await ymFetch(url)
     if (!res.ok) return { tracks: [] }
     const data = (await res.json()) as {
       result?: { batchId?: string; sequence?: { track?: YmTrack }[] }
     }
-    lastWaveBatchId = data.result?.batchId ?? lastWaveBatchId
+    const batchId = data.result?.batchId
+    if (batchId) stationBatchId.set(stationId, batchId)
     const tracks = (data.result?.sequence || [])
       .map((s) => (s.track ? toTrack(s.track) : null))
       .filter((t): t is Track => t !== null)
@@ -508,6 +528,18 @@ export async function getMyWave(queueId?: string, limit = 40): Promise<YmWave> {
     return { tracks: [] }
   }
 }
+
+/** Personal "My Wave" radio. */
+export const getMyWave = (queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(MY_WAVE_STATION, queueId, limit)
+
+/** Radio seeded from an artist (`artist:<id>`). */
+export const getArtistWave = (artistId: string, queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(`artist:${String(artistId).replace(/^.*:/, '')}`, queueId, limit)
+
+/** Radio seeded from a single track (`track:<id>`). */
+export const getTrackWave = (trackId: string, queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(`track:${String(trackId).replace(/^ym:/, '')}`, queueId, limit)
 
 // ---------------- Stream resolution ----------------
 

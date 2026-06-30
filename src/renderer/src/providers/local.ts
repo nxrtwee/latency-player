@@ -14,7 +14,7 @@ export const localProvider: PlaybackProvider = {
     // so Web Audio doesn't silence the output when we tap it for the visualizer.
     audio.crossOrigin = 'anonymous'
     audio.src = track.uri
-    const disconnect = connectElement(audio)
+    const audioCtl = connectElement(audio)
 
     audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
     audio.addEventListener('durationchange', () => {
@@ -39,8 +39,10 @@ export const localProvider: PlaybackProvider = {
       setVolume: (v) => {
         audio.volume = Math.min(1, Math.max(0, v))
       },
+      setNormalization: (db) => audioCtl.setNormalization(db),
+      setFade: (value, rampSec) => audioCtl.setFade(value, rampSec),
       destroy: () => {
-        disconnect()
+        audioCtl.disconnect()
         audio.pause()
         audio.removeAttribute('src')
         audio.load()
