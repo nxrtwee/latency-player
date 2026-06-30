@@ -78,6 +78,9 @@ interface YmTrack {
   available?: boolean
   artists?: YmArtistRef[]
   albums?: { coverUri?: string }[]
+  // EBU R128 loudness, when Yandex provides it: `i` = integrated loudness (LUFS),
+  // `tp` = true peak (dBTP). Drives volume normalization.
+  r128?: { i?: number; tp?: number }
 }
 interface YmArtist {
   id?: number | string
@@ -110,7 +113,10 @@ function toTrack(t: YmTrack): Track | null {
       : undefined,
     durationSec: t.durationMs ? t.durationMs / 1000 : undefined,
     // Tracks carry the cover on the track itself or on their album — try both.
-    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '400x400')
+    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '400x400'),
+    // R128 loudness for volume normalization (tp is dBTP → linear peak).
+    loudnessLufs: typeof t.r128?.i === 'number' ? t.r128.i : undefined,
+    peak: typeof t.r128?.tp === 'number' ? Math.pow(10, t.r128.tp / 20) : undefined
   }
 }
 
@@ -475,22 +481,30 @@ export interface YmWave {
   tracks: Track[]
 }
 
-// Batch id of the most recent wave fetch — trackStarted/trackFinished feedback
-// must reference it so the rotor attributes the signal to the right batch.
-let lastWaveBatchId: string | null = null
+/** The personal "My Wave" station. Other stations: `artist:<id>`, `track:<id>`. */
+export const MY_WAVE_STATION = 'user:onyourwave'
 
-/** Best-effort rotor feedback (radioStarted/trackFinished/…). Fire-and-forget:
- *  the station uses it to vary recommendations, but playback must not depend on it. */
-async function waveFeedback(type: string, extra: Record<string, unknown> = {}): Promise<void> {
+// Most-recent batch id PER station — trackStarted/trackFinished feedback must
+// reference the right batch so the rotor attributes the signal correctly.
+const stationBatchId = new Map<string, string>()
+
+/** Best-effort rotor feedback (radioStarted/trackFinished/…) for a station.
+ *  Fire-and-forget: it varies recommendations, but playback must not depend on it. */
+async function stationFeedback(
+  stationId: string,
+  type: string,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
   if (!oauthToken) return
   try {
-    await fetch(`${API}/rotor/station/user:onyourwave/feedback`, {
+    const batchId = stationBatchId.get(stationId)
+    await fetch(`${API}/rotor/station/${encodeURIComponent(stationId)}/feedback`, {
       method: 'POST',
       headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type,
         timestamp: new Date().toISOString(),
-        ...(lastWaveBatchId ? { batchId: lastWaveBatchId } : {}),
+        ...(batchId ? { batchId } : {}),
         ...extra
       })
     })
@@ -500,43 +514,51 @@ async function waveFeedback(type: string, extra: Record<string, unknown> = {}): 
 }
 
 /**
- * Per-track rotor feedback from the renderer. `trackStarted` when a wave track
+ * Per-track rotor feedback from the renderer. `trackStarted` when a station track
  * begins, `trackFinished` (with seconds played) when it ends or is skipped — this
- * is what teaches the station and keeps each run varied.
+ * is what teaches the station and keeps each run varied. `stationId` selects which
+ * radio (My Wave / artist / track) the signal belongs to.
  */
 export async function waveTrackFeedback(
+  stationId: string,
   type: 'trackStarted' | 'trackFinished',
   trackId: string,
   totalPlayedSeconds = 0
 ): Promise<void> {
   const extra: Record<string, unknown> = { trackId: trackId.replace(/^ym:/, ''), from: 'desktop-latency' }
   if (type === 'trackFinished') extra.totalPlayedSeconds = totalPlayedSeconds
-  await waveFeedback(type, extra)
+  await stationFeedback(stationId, type, extra)
 }
 
 /**
- * Yandex's personal radio ("Моя волна" / My Wave) as a batch of tracks.
+ * Tracks from any rotor station as a batch. Works for the personal wave
+ * (`user:onyourwave`) and seeded stations (`artist:<id>`, `track:<id>`) — they
+ * all share the same `/rotor/station/{id}/tracks` endpoint.
  *
  * `queueId` is the id of the last track already queued. Passing it makes the
- * rotor return the NEXT, non-repeating tracks — this is what keeps the wave
+ * rotor return the NEXT, non-repeating tracks — this is what keeps a station
  * endless (without it the endpoint keeps returning the same opening batch). On a
- * fresh start (no queueId) we send `radioStarted` feedback so each new run of
- * the wave is rotated instead of replaying the identical set.
+ * fresh start (no queueId) we send `radioStarted` feedback so each run is rotated.
  */
-export async function getMyWave(queueId?: string, limit = 40): Promise<YmWave> {
+export async function getStationTracks(
+  stationId: string,
+  queueId?: string,
+  limit = 40
+): Promise<YmWave> {
   if (!oauthToken) return { tracks: [] }
   try {
-    if (!queueId) await waveFeedback('radioStarted', { from: 'desktop-latency' })
+    if (!queueId) await stationFeedback(stationId, 'radioStarted', { from: 'desktop-latency' })
     const bare = queueId ? queueId.replace(/^ym:/, '') : ''
     const url =
-      `${API}/rotor/station/user:onyourwave/tracks?settings2=true` +
+      `${API}/rotor/station/${encodeURIComponent(stationId)}/tracks?settings2=true` +
       (bare ? `&queue=${encodeURIComponent(bare)}` : '')
     const res = await fetch(url, { headers: apiHeaders() })
     if (!res.ok) return { tracks: [] }
     const data = (await res.json()) as {
       result?: { batchId?: string; sequence?: { track?: YmTrack }[] }
     }
-    lastWaveBatchId = data.result?.batchId ?? lastWaveBatchId
+    const batchId = data.result?.batchId
+    if (batchId) stationBatchId.set(stationId, batchId)
     const tracks = (data.result?.sequence || [])
       .map((s) => (s.track ? toTrack(s.track) : null))
       .filter((t): t is Track => t !== null)
@@ -546,6 +568,18 @@ export async function getMyWave(queueId?: string, limit = 40): Promise<YmWave> {
     return { tracks: [] }
   }
 }
+
+/** Personal "My Wave" radio. */
+export const getMyWave = (queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(MY_WAVE_STATION, queueId, limit)
+
+/** Radio seeded from an artist (`artist:<id>`). */
+export const getArtistWave = (artistId: string, queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(`artist:${String(artistId).replace(/^.*:/, '')}`, queueId, limit)
+
+/** Radio seeded from a single track (`track:<id>`). */
+export const getTrackWave = (trackId: string, queueId?: string, limit = 40): Promise<YmWave> =>
+  getStationTracks(`track:${String(trackId).replace(/^ym:/, '')}`, queueId, limit)
 
 // ---------------- Stream resolution ----------------
 

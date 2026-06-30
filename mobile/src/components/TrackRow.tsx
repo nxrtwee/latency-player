@@ -119,8 +119,18 @@ function AddToPlaylistSheet({ track, onClose }: { track: Track; onClose: () => v
   const addToPlaylist = usePlayer((s) => s.addToPlaylist)
   const removeFromPlaylist = usePlayer((s) => s.removeFromPlaylist)
   const createPlaylist = usePlayer((s) => s.createPlaylist)
+  const startTrackRadio = usePlayer((s) => s.startTrackRadio)
+  const startArtistRadio = usePlayer((s) => s.startArtistRadio)
+  const ymAuth = usePlayer((s) => s.ymAuth)
   const t = useT()
   const [name, setName] = useState('')
+
+  const canTrackRadio =
+    (track.providerId === 'yandex' && !!ymAuth) || track.providerId === 'soundcloud'
+  const canArtistRadio =
+    (track.providerId === 'yandex' && !!ymAuth && !!track.artistId) ||
+    track.providerId === 'soundcloud'
+  const isYm = track.providerId === 'yandex'
 
   const toggle = (id: string, has: boolean): void => {
     if (has) void removeFromPlaylist(id, track.id)
@@ -140,6 +150,34 @@ function AddToPlaylistSheet({ track, onClose }: { track: Track; onClose: () => v
     <div className="sheet-backdrop" onClick={(e) => { e.stopPropagation(); onClose() }}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
+        {(canTrackRadio || canArtistRadio) && (
+          <ul className="sheet-list sheet-radio">
+            {canTrackRadio && (
+              <li
+                className="sheet-item"
+                onClick={() => {
+                  void startTrackRadio(track)
+                  onClose()
+                }}
+              >
+                <span className="sheet-check">📻</span>
+                <span className="sheet-name">{isYm ? t('waveByTrack') : t('stationFromTrack')}</span>
+              </li>
+            )}
+            {canArtistRadio && (
+              <li
+                className="sheet-item"
+                onClick={() => {
+                  void startArtistRadio(track)
+                  onClose()
+                }}
+              >
+                <span className="sheet-check">📻</span>
+                <span className="sheet-name">{isYm ? t('waveByArtist') : t('stationFromArtist')}</span>
+              </li>
+            )}
+          </ul>
+        )}
         <div className="sheet-title">{t('addToPlaylist')}</div>
         <div className="sheet-track">{track.title}</div>
         <ul className="sheet-list">

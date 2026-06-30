@@ -57,6 +57,13 @@ export function HomePage(): JSX.Element {
   const mixSource = usePlayer((s) => s.mixSource)
   const setMixSource = usePlayer((s) => s.setMixSource)
   const showHomeMixes = usePlayer((s) => s.showHomeMixes)
+  // "Your Mixes" is a SoundCloud-oriented section: signed-out users only ever get
+  // generated filler + a connect promo, so hide it for them by default. Still
+  // overridable — an explicit "on" in Settings (lp.homeMixes === '1') pins it
+  // visible for everyone. Re-reads on every render (cheap), and toggling/connecting
+  // both trigger a re-render via store state, so it stays in sync.
+  const mixesPinnedOn = localStorage.getItem('lp.homeMixes') === '1'
+  const mixesVisible = showHomeMixes && (scAuth != null || mixesPinnedOn)
   const myWave = usePlayer((s) => s.myWave)
   const playMyWave = usePlayer((s) => s.playMyWave)
   const offlineCount = usePlayer((s) => s.offlineIds.length)
@@ -163,7 +170,7 @@ export function HomePage(): JSX.Element {
         </div>
       )}
 
-      {showHomeMixes && (
+      {mixesVisible && (
       <div className="home-section">
         <div className="home-h2-row">
           <h2 className="home-h2">{t('yourMixes')}</h2>

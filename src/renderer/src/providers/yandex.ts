@@ -1,6 +1,6 @@
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from './types'
-import { connectElement, resumeAudio } from '../audio/analyser'
+import { connectElement, resumeAudio, type ElementAudio } from '../audio/analyser'
 
 /** Wrap a remote URL in our CORS-clean media:// proxy so Web Audio can tap it. */
 function proxied(url: string): string {
@@ -22,7 +22,12 @@ export const yandexProvider: PlaybackProvider = {
     const audio = new Audio()
     audio.preload = 'auto'
     audio.crossOrigin = 'anonymous'
-    let disconnect: (() => void) | null = null
+    let audioCtl: ElementAudio | null = null
+    // The stream resolves async, so fade/normalization can be requested before the
+    // element joins the Web Audio graph — buffer them (fades in order, so an initial
+    // setFade(0) followed by a ramp to 1 replays as a real fade-in) and apply on connect.
+    let pendingNormDb = 0
+    const pendingFades: { value: number; rampSec: number }[] = []
 
     audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
     audio.addEventListener('durationchange', () => {
@@ -50,7 +55,10 @@ export const yandexProvider: PlaybackProvider = {
         // Route progressive MP3 through our CORS-clean proxy so the EQ/analyser
         // can tap the element without the browser silencing cross-origin audio.
         audio.src = proxied(url)
-        disconnect = connectElement(audio)
+        audioCtl = connectElement(audio)
+        audioCtl.setNormalization(pendingNormDb)
+        for (const f of pendingFades) audioCtl.setFade(f.value, f.rampSec)
+        pendingFades.length = 0
         ready = true
         tryPlay()
       })
@@ -72,9 +80,17 @@ export const yandexProvider: PlaybackProvider = {
       setVolume: (v) => {
         audio.volume = Math.min(1, Math.max(0, v))
       },
+      setNormalization: (db) => {
+        pendingNormDb = db
+        audioCtl?.setNormalization(db)
+      },
+      setFade: (value, rampSec = 0) => {
+        if (audioCtl) audioCtl.setFade(value, rampSec)
+        else pendingFades.push({ value, rampSec })
+      },
       destroy: () => {
         destroyed = true
-        disconnect?.()
+        audioCtl?.disconnect()
         audio.pause()
         audio.removeAttribute('src')
         audio.load()

@@ -175,10 +175,19 @@ function registerIpc(): void {
   ipcMain.handle('ym:resolveStream', (_e, trackId: string) => yandex.resolveStream(trackId))
   ipcMain.handle('ym:myLikes', () => yandex.getMyLikes())
   ipcMain.handle('ym:myWave', (_e, queueId?: string) => yandex.getMyWave(queueId))
+  ipcMain.handle('ym:stationWave', (_e, stationId: string, queueId?: string) =>
+    yandex.getStationTracks(stationId, queueId)
+  )
+  ipcMain.handle('ym:artistWave', (_e, artistId: string, queueId?: string) =>
+    yandex.getArtistWave(artistId, queueId)
+  )
+  ipcMain.handle('ym:trackWave', (_e, trackId: string, queueId?: string) =>
+    yandex.getTrackWave(trackId, queueId)
+  )
   ipcMain.handle(
     'ym:waveFeedback',
-    (_e, type: 'trackStarted' | 'trackFinished', trackId: string, seconds?: number) =>
-      yandex.waveTrackFeedback(type, trackId, seconds)
+    (_e, stationId: string, type: 'trackStarted' | 'trackFinished', trackId: string, seconds?: number) =>
+      yandex.waveTrackFeedback(stationId, type, trackId, seconds)
   )
 
   ipcMain.handle('likes:get', () => likes.getLikes())

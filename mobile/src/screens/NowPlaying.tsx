@@ -169,7 +169,7 @@ export function NowPlaying({
           onSync={() => setSyncOpen(true)}
         />
       ) : (
-        <div className="np-art">
+        <div className="np-art" key={track.id}>
           {cover ? <img src={cover} alt="" /> : <div className="np-art-ph">♪</div>}
           <div className="cover-edit">
             <button
@@ -199,7 +199,7 @@ export function NowPlaying({
         </div>
       )}
 
-      <div className="np-info">
+      <div className="np-info" key={`${track.id}-info`}>
         <h1 className="np-title">{track.title}</h1>
         <div className="np-artist">
           {(track.artists?.filter((a) => a.name) ?? []).length > 0 ? (

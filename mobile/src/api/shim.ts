@@ -202,11 +202,24 @@ const api = {
   ymMyLikes: (): Promise<Track[]> => ym.getMyLikes(),
   ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
     ym.getMyWave(queueId),
+  ymStationWave: (
+    stationId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> => ym.getStationTracks(stationId, queueId),
+  ymArtistWave: (
+    artistId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> => ym.getArtistWave(artistId, queueId),
+  ymTrackWave: (
+    trackId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> => ym.getTrackWave(trackId, queueId),
   ymWaveFeedback: (
+    stationId: string,
     type: 'trackStarted' | 'trackFinished',
     trackId: string,
     seconds?: number
-  ): Promise<void> => ym.waveTrackFeedback(type, trackId, seconds),
+  ): Promise<void> => ym.waveTrackFeedback(stationId, type, trackId, seconds),
 
   // likes / playlists — real, localStorage-backed.
   getLikes: async (): Promise<Track[]> => getLikes(),

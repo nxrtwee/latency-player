@@ -64,11 +64,27 @@ const api = {
   ymMyLikes: (): Promise<Track[]> => ipcRenderer.invoke('ym:myLikes'),
   ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
     ipcRenderer.invoke('ym:myWave', queueId),
+  ymStationWave: (
+    stationId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> =>
+    ipcRenderer.invoke('ym:stationWave', stationId, queueId),
+  ymArtistWave: (
+    artistId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> =>
+    ipcRenderer.invoke('ym:artistWave', artistId, queueId),
+  ymTrackWave: (
+    trackId: string,
+    queueId?: string
+  ): Promise<{ cover?: string; tracks: Track[] }> =>
+    ipcRenderer.invoke('ym:trackWave', trackId, queueId),
   ymWaveFeedback: (
+    stationId: string,
     type: 'trackStarted' | 'trackFinished',
     trackId: string,
     seconds?: number
-  ): Promise<void> => ipcRenderer.invoke('ym:waveFeedback', type, trackId, seconds),
+  ): Promise<void> => ipcRenderer.invoke('ym:waveFeedback', stationId, type, trackId, seconds),
 
   getLikes: (): Promise<Track[]> => ipcRenderer.invoke('likes:get'),
   toggleLike: (track: Track): Promise<Track[]> => ipcRenderer.invoke('likes:toggle', track),

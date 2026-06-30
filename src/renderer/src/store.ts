@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { Album, Artist, Playlist, Track } from '@shared/types'
-import type { PlaybackHandle } from './providers/types'
+import type { PlaybackCallbacks, PlaybackHandle } from './providers/types'
 import { getProvider } from './providers/registry'
+import { makeupGainDb, DEFAULT_TARGET_LUFS } from '@shared/loudness'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 /** Where the custom background image is applied. */
@@ -92,8 +93,11 @@ interface PlayerState {
   mixSource: 'sc' | 'generated'
   selectedMix: Mix | null
   myWave: Mix | null
-  /** true while the queue is the endless My Wave radio (keeps fetching more). */
+  /** true while the queue is an endless rotor radio (keeps fetching more). */
   waveActive: boolean
+  /** rotor station id backing the active wave (`user:onyourwave`, `artist:<id>`,
+   *  `track:<id>`) — drives top-up + feedback. null when not on a Yandex station. */
+  waveStationId: string | null
 
   // soundcloud account
   scAuth: Artist | null
@@ -141,6 +145,10 @@ interface PlayerState {
   // Per-track cover overrides (trackId → media:// url). Falls back to the
   // provider artwork when absent. Reset removes the override.
   customCovers: Record<string, string>
+  // Per-tab/playlist header-art overrides (tabKey → media:// url). Falls back to
+  // the first track's artwork when absent. Key = source name for system tabs
+  // ('likes'|'recent'|'local'|'offline'), or the playlist id for user playlists.
+  customTabCovers: Record<string, string>
   // Per-track karaoke/fullscreen background (independent of the global bg).
   // image/video are media:// urls.
   karaokeBgs: Record<string, KaraokeBg>
@@ -193,6 +201,12 @@ interface PlayerState {
   // when the queue runs out, keep playing by appending related tracks
   autopilot: boolean
   autopilotLoading: boolean
+  // volume normalization: even out perceived loudness across tracks using
+  // per-track metadata (Yandex R128 / local ReplayGain). Target in LUFS.
+  normalizeVolume: boolean
+  normalizeTargetLufs: number
+  // crossfade duration in seconds between adjacent queued tracks (0 = off).
+  crossfadeSec: number
 
   // navigation actions
   setSource: (source: Source) => void
@@ -257,6 +271,11 @@ interface PlayerState {
   // Play a SPECIFIC already-shown wave track (no fresh fetch) — for the orbit
   // covers, where the user expects the cover they clicked to actually play.
   playWaveTrack: (index: number) => void
+  // Seeded radio ("Моя волна по треку/артисту"): Yandex rotor stations, or a
+  // SoundCloud autopilot station seeded from the track. No-op for local tracks.
+  startTrackRadio: (track: Track) => Promise<void>
+  startArtistRadio: (track: Track) => Promise<void>
+  startArtistRadioById: (artistId: string, provider: Track['providerId'], name: string) => Promise<void>
 
   // profile
   setProfileName: (name: string) => void
@@ -282,6 +301,8 @@ interface PlayerState {
   clearBackground: () => void
   setTrackCover: (trackId: string) => Promise<void>
   resetTrackCover: (trackId: string) => void
+  setTabCover: (tabKey: string) => Promise<void>
+  resetTabCover: (tabKey: string) => void
   setKaraokeImage: (trackId: string) => Promise<void>
   setKaraokeVideoFile: (trackId: string) => Promise<void>
   resetKaraokeBg: (trackId: string) => void
@@ -337,11 +358,25 @@ interface PlayerState {
   cycleRepeat: () => void
   toggleShuffle: () => void
   toggleAutopilot: () => void
+  setNormalizeVolume: (v: boolean) => void
+  setNormalizeTargetLufs: (n: number) => void
+  setCrossfadeSec: (n: number) => void
 }
 
 // The live playback handle lives outside React state — it's an imperative
 // resource, not render data.
 let handle: PlaybackHandle | null = null
+
+// Crossfade plumbing. During a transition two handles are live: `handle` (the
+// outgoing, still "active") and `incoming` (fading in). Each handle is tagged
+// with a token; only the one whose token equals `activeToken` drives shared
+// state, so the incoming handle's callbacks stay inert until it's promoted.
+let incoming: PlaybackHandle | null = null
+let tokenSeq = 0
+let activeToken = 0
+let incomingToken = 0
+let crossfading = false
+let crossfadeTimer: ReturnType<typeof setTimeout> | null = null
 
 // Real-listening-time accounting. `lastTickPos` is the previous reported play
 // position for the current track; positive deltas under 2s are summed into the
@@ -564,7 +599,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
     try {
       const q = get().queue
       const lastId = q.length ? q[q.length - 1].id : undefined
-      const wave = await window.api.ymMyWave(lastId)
+      const stationId = get().waveStationId ?? 'user:onyourwave'
+      const wave = await window.api.ymStationWave(stationId, lastId)
       const have = new Set(q.map((t) => t.id))
       const fresh = wave.tracks.filter((t) => !have.has(t.id))
       if (fresh.length === 0) return false
@@ -575,6 +611,38 @@ export const usePlayer = create<PlayerState>((set, get) => {
       return true
     } catch {
       return false
+    }
+  }
+
+  /**
+   * Start a SoundCloud "station" seeded from a track: build a queue of the track
+   * plus its related tracks and turn on autopilot, so it keeps extending from the
+   * newest SoundCloud track as it plays. SoundCloud exposes no first-class radio,
+   * so this related-seeded autopilot is the closest equivalent.
+   */
+  async function startScStation(track: Track): Promise<void> {
+    if (!track.id.startsWith('sc:')) return
+    try {
+      const related = await window.api.scRelated(track.id.slice(3))
+      const seen = new Set<string>()
+      const queue: Track[] = []
+      for (const t of [track, ...related]) {
+        if (!seen.has(t.id)) {
+          seen.add(t.id)
+          queue.push(t)
+        }
+      }
+      if (queue.length === 0) return
+      set({ queue, waveActive: false, waveStationId: null, autopilot: true })
+      try {
+        localStorage.setItem('lp.autopilot', '1')
+      } catch {
+        /* ignore */
+      }
+      loadIndex(0, true)
+      persistQueue()
+    } catch {
+      /* best-effort */
     }
   }
 
@@ -600,20 +668,180 @@ export const usePlayer = create<PlayerState>((set, get) => {
   // Rotor feedback drives My Wave's recommendations — without trackStarted/Finished
   // the station keeps replaying the same opening batch. Best-effort, Yandex-only.
   function reportWaveFinished(): void {
-    const { waveActive, currentIndex, queue, positionSec } = get()
+    const { waveActive, currentIndex, queue, positionSec, waveStationId } = get()
     if (!waveActive || currentIndex < 0) return
     const cur = queue[currentIndex]
     if (cur?.providerId === 'yandex') {
-      window.api.ymWaveFeedback('trackFinished', cur.id, Math.max(0, Math.round(positionSec)))
+      const station = waveStationId ?? 'user:onyourwave'
+      window.api.ymWaveFeedback(station, 'trackFinished', cur.id, Math.max(0, Math.round(positionSec)))
     }
   }
   function reportWaveStarted(track: Track): void {
-    if (get().waveActive && track.providerId === 'yandex') {
-      window.api.ymWaveFeedback('trackStarted', track.id, 0)
+    const { waveActive, waveStationId } = get()
+    if (waveActive && track.providerId === 'yandex') {
+      window.api.ymWaveFeedback(waveStationId ?? 'user:onyourwave', 'trackStarted', track.id, 0)
     }
   }
 
+  /** Per-track loudness makeup gain (dB), honoring the normalization setting. */
+  function normDbFor(track: Track): number {
+    const { normalizeVolume, normalizeTargetLufs } = get()
+    if (!normalizeVolume) return 0
+    return makeupGainDb(track.loudnessLufs, track.peak, normalizeTargetLufs)
+  }
+
+  /**
+   * Build the playback callbacks for a handle tagged with `token`. Only the
+   * handle whose token equals `activeToken` mutates shared state — so a still-
+   * fading-in incoming handle stays inert until it's promoted.
+   */
+  function makeCallbacks(token: number): PlaybackCallbacks {
+    const active = (): boolean => token === activeToken
+    return {
+      onTime: (sec) => {
+        if (!active()) return
+        // Accumulate REAL listened time: only positive sub-2s deltas while playing
+        // count (ignores the jump from a seek or the reset on a new track).
+        const d = sec - lastTickPos
+        lastTickPos = sec
+        if (d > 0 && d < 2 && get().isPlaying) {
+          const listenedSec = get().listenedSec + d
+          set({ positionSec: sec, listenedSec })
+          const now = Date.now()
+          if (now - lastListenPersist > 5000) {
+            lastListenPersist = now
+            try {
+              localStorage.setItem('lp.listenedSec', String(Math.round(listenedSec)))
+            } catch {
+              /* non-fatal */
+            }
+          }
+        } else {
+          set({ positionSec: sec })
+        }
+        maybeStartCrossfade(sec)
+      },
+      onDuration: (sec) => {
+        if (!active()) return
+        set({ durationSec: sec })
+        updateMediaSession()
+      },
+      onPlayingChange: (playing) => {
+        if (!active()) return
+        set({ isPlaying: playing })
+        updatePresence()
+        updateMediaSession()
+      },
+      onError: (message) => {
+        // A failure on the incoming (inactive) handle aborts the crossfade.
+        if (!active()) {
+          if (incoming) cancelCrossfade()
+          return
+        }
+        set({ error: message })
+      },
+      onEnded: () => {
+        if (!active()) return
+        // During a crossfade the promotion timer advances us — don't double-skip.
+        if (crossfading) return
+        const { repeat } = get()
+        if (repeat === 'one') {
+          handle?.seek(0)
+          handle?.play()
+        } else {
+          get().next()
+        }
+      }
+    }
+  }
+
+  /** Abort an in-progress crossfade, restoring the outgoing track to full level. */
+  function cancelCrossfade(): void {
+    if (crossfadeTimer) {
+      clearTimeout(crossfadeTimer)
+      crossfadeTimer = null
+    }
+    if (incoming) {
+      incoming.destroy()
+      incoming = null
+    }
+    if (crossfading) handle?.setFade(1)
+    crossfading = false
+  }
+
+  /** When the active track nears its end, begin fading into the next queued one. */
+  function maybeStartCrossfade(sec: number): void {
+    const { crossfadeSec, durationSec, repeat, shuffle, currentIndex, queue, isPlaying } = get()
+    if (!isPlaying || crossfading) return
+    // Shuffle picks the next track at random (unknown ahead of time) and repeat-one
+    // loops the same track — neither supports a deterministic crossfade target.
+    if (crossfadeSec <= 0 || repeat === 'one' || shuffle) return
+    if (!Number.isFinite(durationSec) || durationSec <= 0) return
+    const nextIndex = currentIndex + 1
+    if (nextIndex >= queue.length) return // queue end → wave/autopilot handles it
+    const remaining = durationSec - sec
+    if (remaining > crossfadeSec || remaining <= 0.2) return
+    startCrossfade(nextIndex, Math.min(crossfadeSec, remaining))
+  }
+
+  /** Start playing `nextIndex` behind the current track and cross-fade over `dur`. */
+  function startCrossfade(nextIndex: number, dur: number): void {
+    const { queue, volume } = get()
+    const track = queue[nextIndex]
+    if (!track) return
+    const cachedUrl = offlineUrls.get(track.id)
+    const playTrack: Track =
+      cachedUrl && (track.providerId === 'soundcloud' || track.providerId === 'yandex')
+        ? { ...track, providerId: 'local', uri: cachedUrl }
+        : track
+    const provider = getProvider(playTrack.providerId)
+    if (!provider) return
+
+    crossfading = true
+    const token = ++tokenSeq
+    incomingToken = token
+    const inc = provider.createPlayback(playTrack, makeCallbacks(token))
+    incoming = inc
+    inc.setVolume(volume)
+    inc.setNormalization(normDbFor(track))
+    inc.setFade(0)
+    inc.play()
+    inc.setFade(1, dur)
+
+    // Tell the rotor the outgoing wave track finished, fade it out, and attribute
+    // the incoming track as the one now started/recorded (it's what plays next).
+    reportWaveFinished()
+    handle?.setFade(0, dur)
+    recordRecent(track)
+    reportWaveStarted(track)
+
+    crossfadeTimer = setTimeout(() => finishCrossfade(nextIndex), Math.round(dur * 1000))
+  }
+
+  /** Promote the incoming handle to be the active track once the fade completes. */
+  function finishCrossfade(nextIndex: number): void {
+    crossfadeTimer = null
+    if (!incoming) {
+      crossfading = false
+      return
+    }
+    const newHandle = incoming
+    incoming = null
+    handle?.destroy()
+    handle = newHandle
+    activeToken = incomingToken
+    crossfading = false
+    lastTickPos = 0
+    const track = get().queue[nextIndex]
+    set({ currentIndex: nextIndex, positionSec: 0, durationSec: track?.durationSec ?? 0 })
+    updateMediaSession()
+    updatePresence()
+    persistQueue()
+    void maybePrefetchWave()
+  }
+
   function loadIndex(index: number, autoplay: boolean): void {
+    cancelCrossfade()
     const { queue, volume } = get()
     // Tell the rotor the outgoing wave track finished before we switch.
     reportWaveFinished()
@@ -643,53 +871,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     handle?.destroy()
     lastTickPos = 0
+    const token = ++tokenSeq
+    activeToken = token
     set({ currentIndex: index, positionSec: 0, durationSec: track.durationSec ?? 0, error: null })
     // Surface the new track to the OS media overlay immediately (before it plays).
     updateMediaSession()
 
-    handle = provider.createPlayback(playTrack, {
-      onTime: (sec) => {
-        // Accumulate REAL listened time: only positive sub-2s deltas while playing
-        // count (ignores the jump from a seek or the reset on a new track).
-        const d = sec - lastTickPos
-        lastTickPos = sec
-        if (d > 0 && d < 2 && get().isPlaying) {
-          const listenedSec = get().listenedSec + d
-          set({ positionSec: sec, listenedSec })
-          const now = Date.now()
-          if (now - lastListenPersist > 5000) {
-            lastListenPersist = now
-            try {
-              localStorage.setItem('lp.listenedSec', String(Math.round(listenedSec)))
-            } catch {
-              /* non-fatal */
-            }
-          }
-        } else {
-          set({ positionSec: sec })
-        }
-      },
-      onDuration: (sec) => {
-        set({ durationSec: sec })
-        updateMediaSession()
-      },
-      onPlayingChange: (playing) => {
-        set({ isPlaying: playing })
-        updatePresence()
-        updateMediaSession()
-      },
-      onError: (message) => set({ error: message }),
-      onEnded: () => {
-        const { repeat } = get()
-        if (repeat === 'one') {
-          handle?.seek(0)
-          handle?.play()
-        } else {
-          get().next()
-        }
-      }
-    })
+    handle = provider.createPlayback(playTrack, makeCallbacks(token))
     handle.setVolume(volume)
+    handle.setNormalization(normDbFor(track))
     if (autoplay) {
       handle.play()
       recordRecent(track)
@@ -754,6 +944,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     selectedMix: null,
     myWave: null,
     waveActive: false,
+    waveStationId: null,
 
     scAuth: null,
     scConnecting: false,
@@ -795,6 +986,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
     customCovers: (() => {
       try {
         const raw = localStorage.getItem('lp.customCovers')
+        const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        return obj && typeof obj === 'object' ? obj : {}
+      } catch {
+        return {}
+      }
+    })(),
+    customTabCovers: (() => {
+      try {
+        const raw = localStorage.getItem('lp.customTabCovers')
         const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
         return obj && typeof obj === 'object' ? obj : {}
       } catch {
@@ -845,6 +1045,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
     shuffle: false,
     autopilot: localStorage.getItem('lp.autopilot') === '1',
     autopilotLoading: false,
+    normalizeVolume: localStorage.getItem('lp.normalizeVolume') === '1',
+    normalizeTargetLufs: (() => {
+      const n = Number(localStorage.getItem('lp.normalizeTargetLufs'))
+      return Number.isFinite(n) && n >= -30 && n <= -5 ? n : DEFAULT_TARGET_LUFS
+    })(),
+    crossfadeSec: Math.min(12, Math.max(0, readNum('lp.crossfadeSec', 0))),
 
     setSource(source) {
       set({ source })
@@ -1469,6 +1675,33 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    async setTabCover(tabKey) {
+      if (!tabKey) return
+      // Same image picker as track covers/backgrounds (media:// on desktop, data:
+      // on mobile), so the chosen image survives reloads via localStorage.
+      const url = await window.api.pickBackground()
+      if (!url) return
+      const next = { ...get().customTabCovers, [tabKey]: url }
+      set({ customTabCovers: next })
+      try {
+        localStorage.setItem('lp.customTabCovers', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    resetTabCover(tabKey) {
+      const next = { ...get().customTabCovers }
+      if (!(tabKey in next)) return
+      delete next[tabKey]
+      set({ customTabCovers: next })
+      try {
+        localStorage.setItem('lp.customTabCovers', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
     async setKaraokeImage(trackId) {
       const url = await window.api.pickBackground()
       if (url) setKaraokeBg(trackId, { type: 'image', url })
@@ -1930,7 +2163,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     playQueue(tracks, startIndex) {
       if (tracks.length === 0) return
-      set({ queue: tracks, waveActive: false })
+      set({ queue: tracks, waveActive: false, waveStationId: null })
       loadIndex(startIndex, true)
       persistQueue()
     },
@@ -1955,7 +2188,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       await get().loadMyWave()
       const wave = get().myWave
       if (!wave || wave.tracks.length === 0) return
-      set({ queue: wave.tracks, waveActive: true })
+      set({ queue: wave.tracks, waveActive: true, waveStationId: 'user:onyourwave' })
       // The fresh batch may differ in length from what the caller saw — clamp the
       // start index so a stale random/shuffle index can't fall off the end.
       loadIndex(Math.min(Math.max(0, startIndex), wave.tracks.length - 1), true)
@@ -1968,8 +2201,40 @@ export const usePlayer = create<PlayerState>((set, get) => {
       // refilling near the end via the normal feedback path.
       const wave = get().myWave
       if (!wave || wave.tracks.length === 0) return
-      set({ queue: wave.tracks, waveActive: true })
+      set({ queue: wave.tracks, waveActive: true, waveStationId: 'user:onyourwave' })
       loadIndex(Math.min(Math.max(0, index), wave.tracks.length - 1), true)
+      persistQueue()
+    },
+
+    async startTrackRadio(track) {
+      if (track.providerId === 'yandex') {
+        if (!get().ymAuth) return
+        const bare = String(track.uri).replace(/^ym:/, '')
+        const wave = await window.api.ymTrackWave(bare)
+        if (!wave.tracks.length) return
+        set({ queue: wave.tracks, waveActive: true, waveStationId: `track:${bare}`, source: 'wave' })
+        loadIndex(0, true)
+        persistQueue()
+      } else if (track.providerId === 'soundcloud') {
+        await startScStation(track)
+      }
+    },
+
+    async startArtistRadio(track) {
+      if (track.providerId === 'yandex') {
+        await get().startArtistRadioById(track.artistId ?? '', 'yandex', track.artist ?? '')
+      } else if (track.providerId === 'soundcloud') {
+        // SoundCloud has no artist-radio API — seed an autopilot station from the track.
+        await startScStation(track)
+      }
+    },
+
+    async startArtistRadioById(artistId, provider, _name) {
+      if (provider !== 'yandex' || !artistId || !get().ymAuth) return
+      const wave = await window.api.ymArtistWave(artistId)
+      if (!wave.tracks.length) return
+      set({ queue: wave.tracks, waveActive: true, waveStationId: `artist:${artistId}`, source: 'wave' })
+      loadIndex(0, true)
       persistQueue()
     },
 
@@ -1995,6 +2260,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
         return
       }
       if (!handle) return
+      // A pause/resume mid-crossfade would leave the incoming handle running on its
+      // own — collapse the transition first so only one track is live.
+      if (crossfading) cancelCrossfade()
       if (isPlaying) handle.pause()
       else handle.play()
     },
@@ -2032,6 +2300,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     prev() {
+      cancelCrossfade()
       const { currentIndex, positionSec } = get()
       // Standard behavior: restart current track if >3s in, else go back.
       if (positionSec > 3) {
@@ -2096,6 +2365,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     seek(sec) {
+      cancelCrossfade()
       handle?.seek(sec)
       set({ positionSec: sec })
       updatePresence()
@@ -2133,6 +2403,46 @@ export const usePlayer = create<PlayerState>((set, get) => {
         if (queue.length > 0 && currentIndex === queue.length - 1 && !isPlaying) {
           void extendQueueWithRelated()
         }
+      }
+    },
+
+    setNormalizeVolume(v) {
+      set({ normalizeVolume: v })
+      try {
+        localStorage.setItem('lp.normalizeVolume', v ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      // Apply to the currently playing track right away.
+      const { queue, currentIndex, normalizeTargetLufs } = get()
+      const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+      if (track) {
+        handle?.setNormalization(v ? makeupGainDb(track.loudnessLufs, track.peak, normalizeTargetLufs) : 0)
+      }
+    },
+
+    setNormalizeTargetLufs(n) {
+      const t = Math.max(-30, Math.min(-5, Math.round(n)))
+      set({ normalizeTargetLufs: t })
+      try {
+        localStorage.setItem('lp.normalizeTargetLufs', String(t))
+      } catch {
+        /* ignore */
+      }
+      const { queue, currentIndex, normalizeVolume } = get()
+      const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+      if (track && normalizeVolume) {
+        handle?.setNormalization(makeupGainDb(track.loudnessLufs, track.peak, t))
+      }
+    },
+
+    setCrossfadeSec(n) {
+      const s = Math.max(0, Math.min(12, Math.round(n)))
+      set({ crossfadeSec: s })
+      try {
+        localStorage.setItem('lp.crossfadeSec', String(s))
+      } catch {
+        /* ignore */
       }
     }
   }

@@ -28,6 +28,14 @@ export interface Track {
   artwork?: string
   /** total play count, when the source exposes it (SoundCloud `playback_count`) */
   playCount?: number
+  /**
+   * Integrated loudness in LUFS, when the source provides it (Yandex `r128.i`,
+   * local ReplayGain/R128 tags). Used to compute a per-track makeup gain so
+   * tracks play at a perceptually even volume. Absent → no normalization.
+   */
+  loudnessLufs?: number
+  /** True peak (linear, 1.0 = 0 dBFS) for headroom-limiting the makeup gain. */
+  peak?: number
 }
 
 /** A navigable artist/creator profile. */

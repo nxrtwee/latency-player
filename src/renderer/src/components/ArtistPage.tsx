@@ -1,7 +1,7 @@
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTotal } from '../util'
-import { PlayIcon, ShuffleIcon, ClockIcon } from './Icons'
+import { PlayIcon, ShuffleIcon, ClockIcon, RadioIcon } from './Icons'
 import { TrackRow } from './TrackRow'
 import { ProviderBadge } from './ProviderBadge'
 
@@ -24,6 +24,8 @@ export function ArtistPage(): JSX.Element {
   const openAlbum = usePlayer((s) => s.openAlbum)
   const shuffle = usePlayer((s) => s.shuffle)
   const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  const startArtistRadioById = usePlayer((s) => s.startArtistRadioById)
+  const ymAuth = usePlayer((s) => s.ymAuth)
 
   if (!artist) return <section className="tracklist" />
 
@@ -90,6 +92,15 @@ export function ArtistPage(): JSX.Element {
             >
               <ShuffleIcon size={18} />
             </button>
+            {isYm && ymAuth && (
+              <button
+                className="btn-round"
+                title={t('waveByArtist')}
+                onClick={() => void startArtistRadioById(artist.id, 'yandex', artist.name)}
+              >
+                <RadioIcon size={18} />
+              </button>
+            )}
           </div>
         </div>
       </header>

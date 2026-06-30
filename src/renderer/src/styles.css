@@ -1081,6 +1081,7 @@ aside.sidebar.collapsed {
   margin-bottom: 22px;
 }
 .ph-cover {
+  position: relative;
   width: 196px;
   height: 196px;
   border-radius: 14px;
@@ -1101,6 +1102,43 @@ aside.sidebar.collapsed {
   font-size: 54px;
   color: var(--accent);
   opacity: 0.7;
+}
+.ph-cover-edit {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.ph-cover:hover .ph-cover-edit {
+  opacity: 1;
+  transform: none;
+}
+.ph-cover-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.ph-cover-btn:hover {
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--accent);
 }
 .ph-info {
   display: flex;
@@ -2572,12 +2610,39 @@ button:disabled {
   right: 0;
   z-index: 30;
   width: 230px;
-  background: var(--tile-hover);
+  /* Solid, fully opaque surface — not the accent color-mix (which can fail to
+     resolve and fall back to transparent, letting the UI show through). */
+  background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   padding: 8px;
   cursor: default;
+}
+.pl-radio {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.pl-radio-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 7px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.pl-radio-btn:hover {
+  background: var(--row-hover);
+  color: var(--accent);
 }
 .pl-popover-head {
   font-size: 11px;
@@ -5373,6 +5438,37 @@ button:disabled {
   .splash-word,
   .splash-word::before,
   .splash-word::after {
+    animation: none;
+  }
+}
+
+/* ---- Track-change entrance (player bar + right panel now-playing) ----
+   Keyed by track id in React, so these replay on every track switch. Base =
+   oldgen's simple, restrained motion; nextgen overrides with a richer entrance
+   in skin-nextgen.css. */
+@keyframes track-pop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes track-rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+.pb-art,
+.np-art {
+  animation: track-pop 0.26s ease both;
+}
+.pb-meta,
+.np-title,
+.np-artist {
+  animation: track-rise 0.28s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-art,
+  .np-art,
+  .pb-meta,
+  .np-title,
+  .np-artist {
     animation: none;
   }
 }

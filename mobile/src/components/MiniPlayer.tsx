@@ -22,10 +22,11 @@ export function MiniPlayer({ onExpand }: { onExpand: () => void }): JSX.Element 
     <div className="miniplayer">
       <div className="mini-progress" style={{ width: `${pct}%` }} />
       <div className="mini-tap" onClick={onExpand}>
-        <div className="mini-art">
+        {/* keyed by track id → remounts on track change so the entrance animation replays */}
+        <div className="mini-art" key={track.id}>
           {track.artwork ? <img src={track.artwork} alt="" /> : null}
         </div>
-        <div className="mini-meta">
+        <div className="mini-meta" key={`${track.id}-meta`}>
           <div className="mini-title">{track.title}</div>
           <div className="mini-artist">{track.artist || 'SoundCloud'}</div>
         </div>

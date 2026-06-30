@@ -141,7 +141,8 @@ export function RightPanel({
 
         {track ? (
           <>
-            <div className="np-art">
+            {/* keyed by track id so the entrance animation replays on track change */}
+            <div className="np-art" key={track.id}>
               {cover ? <img src={cover} alt="" /> : <span>♫</span>}
               <button
                 className={`np-like ${liked ? 'liked' : ''}`}
@@ -172,12 +173,13 @@ export function RightPanel({
 
             <div
               className="np-title clickable"
+              key={`${track.id}-title`}
               onClick={() => setSource('comments')}
               title={t('comments')}
             >
               {track.title}
             </div>
-            <div className="np-artist">
+            <div className="np-artist" key={`${track.id}-artist`}>
               {track.artists && track.artists.length > 0 ? (
                 track.artists.map((a, idx) => (
                   <span key={`${a.id ?? a.name}-${idx}`}>

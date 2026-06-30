@@ -13,18 +13,28 @@ export function ListView({
   subtitle,
   tracks,
   onClose,
-  onArtist
+  onArtist,
+  coverKey
 }: {
   title: string
   subtitle?: string
   tracks: Track[]
   onClose: () => void
   onArtist?: (track: Track) => void
+  // When set, the header shows a custom cover image (user-pickable), falling back
+  // to the first track's artwork. Key = source name / playlist id.
+  coverKey?: string
 }): JSX.Element {
   const playQueue = usePlayer((s) => s.playQueue)
+  const customTabCovers = usePlayer((s) => s.customTabCovers)
+  const setTabCover = usePlayer((s) => s.setTabCover)
+  const resetTabCover = usePlayer((s) => s.resetTabCover)
   const t = useT()
   const [dlAll, setDlAll] = useState<'idle' | 'busy' | 'done'>('idle')
   const [menuOpen, setMenuOpen] = useState(false)
+
+  const customCover = coverKey ? customTabCovers[coverKey] : undefined
+  const headerCover = customCover ?? tracks.find((tr) => tr.artwork)?.artwork
 
   const downloadAll = async (): Promise<void> => {
     if (dlAll === 'busy') return
@@ -54,6 +64,24 @@ export function ListView({
           {subtitle && <div className="lv-sub">{subtitle}</div>}
         </div>
       </header>
+
+      {coverKey && (
+        <div className="lv-cover-row">
+          <div className="lv-cover">
+            {headerCover ? <img src={headerCover} alt="" /> : <span className="lv-cover-glyph">♪</span>}
+          </div>
+          <div className="lv-cover-actions">
+            <button className="ghost-btn" onClick={() => setTabCover(coverKey)}>
+              {t('changeCover')}
+            </button>
+            {customCover && (
+              <button className="ghost-btn" onClick={() => resetTabCover(coverKey)}>
+                {t('resetCover')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {tracks.length > 0 ? (
         <div className="lv-actions">

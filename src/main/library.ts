@@ -98,6 +98,12 @@ async function parseTrack(filePath: string): Promise<Track> {
     const common = meta.common
     const picture = common.picture?.[0]
     const artwork = picture ? await cacheCover(picture) : undefined
+    // ReplayGain track gain is "apply this dB to reach reference loudness". Convert
+    // to an effective integrated loudness (ReplayGain 2.0 reference = -18 LUFS) so
+    // it feeds the same makeupGainDb() path as Yandex's R128 data.
+    const rgGainDb = common.replaygain_track_gain?.dB
+    const rgPeak = common.replaygain_track_peak?.ratio
+    const loudnessLufs = typeof rgGainDb === 'number' ? -18 - rgGainDb : undefined
     return {
       id,
       providerId: 'local',
@@ -106,7 +112,9 @@ async function parseTrack(filePath: string): Promise<Track> {
       artist: common.artist,
       album: common.album,
       durationSec: meta.format.duration,
-      artwork
+      artwork,
+      loudnessLufs,
+      peak: typeof rgPeak === 'number' ? rgPeak : undefined
     }
   } catch {
     return {

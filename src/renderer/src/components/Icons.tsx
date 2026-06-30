@@ -29,6 +29,16 @@ export const PlayIcon = (p: IconProps): JSX.Element => (
   </Svg>
 )
 
+export const RadioIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path d="M16.5 4.5 7 8" />
+    <rect x="3" y="8" width="18" height="12" rx="2" />
+    <circle cx="8" cy="14" r="3" />
+    <line x1="16" y1="12" x2="17" y2="12" />
+    <line x1="16" y1="16" x2="17" y2="16" />
+  </Svg>
+)
+
 export const PauseIcon = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
