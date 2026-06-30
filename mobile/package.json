@@ -1,6 +1,6 @@
 {
   "name": "latency-mobile",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "description": "iOS + Android scaffolding manifest for the Latency mobile target. Kept separate from the root (desktop/Electron) package.json so Capacitor deps never touch the Electron toolchain. The web bundle is built by the root `build:mobile` script (Vite/React/zustand come from the root node_modules); these deps are only used by the Capacitor CLI to scaffold/sync the native iOS/Android projects in CI.",
   "scripts": {
