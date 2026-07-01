@@ -108,9 +108,19 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 
     // MARK: - Audio Loading
 
+    // A desktop-browser User-Agent. SoundCloud / Yandex CDNs reject AVPlayer's
+    // default "AppleCoreMedia" UA (→ 403 → "Cannot Open"); the same URL plays in a
+    // web <audio> element because it sends a browser UA. Pass it via AVURLAsset.
+    private static let browserUA =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+
     private func loadURL(_ url: URL) {
         teardownPlayer()
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": Self.browserUA]
+        ])
+        let item = AVPlayerItem(asset: asset)
         let av = AVPlayer(playerItem: item)
         av.allowsExternalPlayback = true
         self.player = av
@@ -121,7 +131,9 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     private func loadBase64(_ b64: String) {
         guard let data = Data(base64Encoded: b64) else { return }
         // Write to a temp file — AVPlayer needs a file or network URL
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).m4a")
+        // SoundCloud / Yandex progressive downloads are MP3 — name the temp file
+        // .mp3 so AVPlayer's container sniffing doesn't choke on a wrong extension.
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).mp3")
         do {
             try data.write(to: tmp)
         } catch {
@@ -154,7 +166,9 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             // wrong extension, expired signed URL, …) to JS instead of failing mute.
             statusObserver = item.observe(\.status, options: [.new]) { [weak self] it, _ in
                 if it.status == .failed {
-                    let msg = it.error?.localizedDescription ?? "AVPlayerItem failed"
+                    let e = it.error as NSError?
+                    let base = e?.localizedDescription ?? "AVPlayerItem failed"
+                    let msg = "\(base) [\(e?.domain ?? "?"):\(e?.code ?? 0)]"
                     self?.reportError(msg)
                 }
             }
