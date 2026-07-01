@@ -91,6 +91,20 @@ for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ip
 done
 echo "==> locked to portrait (iPhone + iPad)"
 
+# ---------------------------------------------------------------------------
+# 6. LatencyAudio plugin — copy Swift sources into the Xcode project so they
+#    compile alongside AppDelegate. The plugin provides native AVPlayer
+#    playback + MPRemoteCommandCenter (prev/next track on lock screen).
+# ---------------------------------------------------------------------------
+PLUGIN_SRC="$MOBILE_DIR/ios-plugin"
+PLUGIN_DST="$APP_DIR"
+if [ -d "$PLUGIN_SRC" ]; then
+  cp "$PLUGIN_SRC"/*.swift "$PLUGIN_DST/"
+  echo "==> LatencyAudio plugin copied to $PLUGIN_DST"
+else
+  echo "WARNING: ios-plugin directory missing — lock screen prev/next will not work" >&2
+fi
+
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"
 cat "$APPDELEGATE"

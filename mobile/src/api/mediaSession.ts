@@ -1,8 +1,10 @@
 // Lock-screen / OS media controls.
 //
-//   • iOS + browser: the W3C Media Session API (navigator.mediaSession). iOS
-//     WKWebView surfaces it to the lock screen / Control Center; Chrome shows its
-//     OS media overlay.
+//   • iOS: the native LatencyAudio plugin (AVPlayer) owns the
+//     MPRemoteCommandCenter. When the lock screen shows prev/next-track buttons
+//     and the user taps them, the plugin fires `nextTrack`/`previousTrack` events
+//     which we forward to the store here. The web navigator.mediaSession is NOT
+//     used on iOS (it would conflict with the native plugin).
 //   • Android: the embedded System WebView (unlike Chrome-the-app) does NOT
 //     publish navigator.mediaSession to the system, so the lock screen and
 //     notification shade stay empty even though audio keeps playing. We bridge to
@@ -10,12 +12,15 @@
 //     @jofr/capacitor-media-session plugin (added in mobile/package.json,
 //     registered by `cap sync`, called through the global Capacitor bridge so the
 //     web bundle needs no import — same pattern as offline.ts / statusBar.ts).
+//   • Browser (dev): the W3C Media Session API (navigator.mediaSession) works
+//     in Chrome for OS media overlay.
 //
 // True background playback (audio continuing while locked / backgrounded) needs
 // the native AVAudioSession on iOS (AppDelegate) and the plugin's foreground
 // service on Android (manifest permissions added by scripts/patch-android.sh).
 import { usePlayer } from '@renderer/store'
 import { offlineArtForUri } from './offline'
+import { getNativeAudio } from './nativeAudio'
 
 // ---- native Android plugin (@jofr/capacitor-media-session) bridge types -------
 interface MediaImage {
@@ -45,15 +50,31 @@ export function installMediaSession(): void {
     installAndroid(native)
     return
   }
+  // On iOS, the native LatencyAudio plugin owns the lock screen — just listen
+  // for its prev/next events and forward to the store. No web MediaSession.
+  if (getNativeAudio()) {
+    installNativeIOS()
+    return
+  }
   installWeb()
+}
+
+// ---- iOS: native LatencyAudio plugin → store --------------------------------
+function installNativeIOS(): void {
+  const native = getNativeAudio()
+  if (!native) return
+  const get = usePlayer.getState
+
+  // The plugin fires nextTrack/previousTrack when the user taps prev/next on
+  // the lock screen. Forward to the store.
+  native.on('nextTrack', () => get().next())
+  native.on('previousTrack', () => get().prev())
 }
 
 // ---- Android: native MediaSession + media notification ------------------------
 function installAndroid(ms: NativeMediaSession): void {
   const get = usePlayer.getState
 
-  // The plugin requires play/pause handlers to be set explicitly for the
-  // notification controls to appear and work.
   void ms.setActionHandler({ action: 'play' }, () => {
     if (!get().isPlaying) get().togglePlay()
   })
@@ -62,8 +83,6 @@ function installAndroid(ms: NativeMediaSession): void {
   })
   void ms.setActionHandler({ action: 'previoustrack' }, () => get().prev())
   void ms.setActionHandler({ action: 'nexttrack' }, () => get().next())
-  // Android happily shows a scrubber alongside the track buttons (no iOS ±10s
-  // problem), so wire seeking too.
   void ms.setActionHandler({ action: 'seekto' }, (d) => {
     if (typeof d?.seekTime === 'number') get().seek(d.seekTime)
   })
@@ -78,8 +97,6 @@ function installAndroid(ms: NativeMediaSession): void {
     }
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
-      // Prefer a locally-cached cover for downloaded tracks — the native media
-      // notification can't fetch the remote artwork offline (it crashes).
       const art = offlineArtForUri(track.uri) || track.artwork
       void ms.setMetadata({
         title: track.title,
@@ -88,7 +105,6 @@ function installAndroid(ms: NativeMediaSession): void {
         artwork: art ? [{ src: art, sizes: '512x512', type: 'image/jpeg' }] : []
       })
     }
-    // Must be set to 'playing' for the notification to show.
     void ms.setPlaybackState({ playbackState: s.isPlaying ? 'playing' : 'paused' })
     if (s.durationSec > 0) {
       void ms.setPositionState({
@@ -100,7 +116,7 @@ function installAndroid(ms: NativeMediaSession): void {
   })
 }
 
-// ---- iOS + browser: navigator.mediaSession -----------------------------------
+// ---- Browser (dev): navigator.mediaSession -----------------------------------
 function installWeb(): void {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
   const ms = navigator.mediaSession
@@ -114,11 +130,6 @@ function installWeb(): void {
   })
   ms.setActionHandler('previoustrack', () => get().prev())
   ms.setActionHandler('nexttrack', () => get().next())
-  // Register NO seek handlers at all (no seekto / seekbackward / seekforward).
-  // On iOS, any seek handler makes WKWebView treat the media as scrubbable and
-  // surface the ±10s skip buttons on the lock screen instead of prev/next-track.
-  // With only play/pause/prev/next registered, iOS shows the track buttons.
-  // (The native AppDelegate additionally disables the skip commands as a backstop.)
 
   let lastTrackId = ''
   usePlayer.subscribe((s) => {
@@ -129,7 +140,6 @@ function installWeb(): void {
       lastTrackId = ''
       return
     }
-    // Rebuild metadata only when the track actually changes.
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
       ms.metadata = new MediaMetadata({
@@ -145,10 +155,5 @@ function installWeb(): void {
       })
     }
     ms.playbackState = s.isPlaying ? 'playing' : 'paused'
-    // NB: we intentionally do NOT call setPositionState. On the iOS lock screen,
-    // providing a position state makes iOS render the ±10s skip buttons (long-form
-    // scrubbing) instead of the previous/next-track buttons. Dropping it gives the
-    // track-change buttons the user expects (at the cost of the lock-screen
-    // scrubber, which web audio can't pair with track buttons on iOS).
   })
 }

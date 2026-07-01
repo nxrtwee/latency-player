@@ -3,13 +3,8 @@
 //
 // Native pieces the web layer can't do:
 //   1. AVAudioSession .playback  → audio keeps playing when locked/backgrounded.
-//   2. Disable the ±10s skip / scrub commands. WKWebView enables them for media
-//      and re-asserts on every (re)start of playback, which makes the lock screen
-//      show skip buttons instead of the previous/next-track buttons that the web
-//      Media Session (navigator.mediaSession) provides. A light repeating
-//      re-assert keeps them off while the app is foregrounded; the state then
-//      persists once the screen is locked. prev/next themselves stay owned by the
-//      web Media Session handlers.
+//   2. LatencyAudio plugin → native AVPlayer for lock-screen prev/next-track
+//      buttons (replaces WKWebView <audio> which forces ±10s skip).
 import UIKit
 import Capacitor
 import AVFoundation
@@ -19,7 +14,6 @@ import MediaPlayer
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
-    private var commandTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
@@ -28,23 +22,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("AVAudioSession error: \(error)")
         }
-        disableSkip()
-        commandTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.disableSkip()
-        }
+        registerLocalPlugins()
         return true
     }
 
-    private func disableSkip() {
-        let cc = MPRemoteCommandCenter.shared()
-        cc.skipForwardCommand.isEnabled = false
-        cc.skipBackwardCommand.isEnabled = false
-        cc.changePlaybackPositionCommand.isEnabled = false
+    /// Register local Capacitor plugins that aren't installed via npm.
+    /// Called once at launch, before the web layer loads.
+    private func registerLocalPlugins() {
+        guard let bridge = CAPInstancePlugin.bridge() else { return }
+        bridge.registerPluginInstance(LatencyAudioPlugin())
     }
 
-    func applicationDidBecomeActive(_ application: UIApplication) {
-        disableSkip()
-    }
+    func applicationDidBecomeActive(_ application: UIApplication) {}
 
     func applicationWillResignActive(_ application: UIApplication) {}
 
