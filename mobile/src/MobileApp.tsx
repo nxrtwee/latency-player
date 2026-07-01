@@ -105,6 +105,7 @@ export function MobileApp(): JSX.Element {
   const scLikes = usePlayer((s) => s.scLikes)
   const loadScAuth = usePlayer((s) => s.loadScAuth)
   const loadYmAuth = usePlayer((s) => s.loadYmAuth)
+  const playbackError = usePlayer((s) => s.error)
   const lang = usePlayer((s) => s.lang)
   const t = useT()
   const label = (n: number): string => tracksLabel(n, lang)
@@ -192,6 +193,14 @@ export function MobileApp(): JSX.Element {
 
   return (
     <div className={'app' + (customBg ? ' has-bg' : '')}>
+      {playbackError && (
+        <div
+          className="global-error-banner"
+          onClick={() => usePlayer.setState({ error: null })}
+        >
+          {playbackError}
+        </div>
+      )}
       {customBg && (
         <div className="app-bg">
           <img

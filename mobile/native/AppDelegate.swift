@@ -22,6 +22,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     private weak var webView: WKWebView?
     private var player: AVPlayer?
     private var timeObserver: Any?
+    private var statusObserver: NSKeyValueObservation?
     private var didEndObserver: NSObjectProtocol?
     private var nextHandler: NSObjectProtocol?
     private var prevHandler: NSObjectProtocol?
@@ -49,6 +50,11 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             guard let b64 = body["base64"] as? String else { return }
             loadBase64(b64)
         case "play":
+            // Re-assert the playback session right before playing. If the session
+            // isn't active / in the .playback category at this moment, a native
+            // AVPlayer produces NO audio (and obeys the ring/silent switch). This
+            // is the usual cause of "it switches tracks but there's no sound".
+            Self.activatePlaybackSession()
             player?.play()
             sendEvent("playingChange", data: ["playing": true])
         case "pause":
@@ -75,6 +81,29 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         default:
             break
         }
+    }
+
+    // MARK: - Audio session
+
+    /// Force the app's audio session into .playback and activate it. Safe to call
+    /// repeatedly. Reports failures to JS so they surface in-app instead of being
+    /// silent. `.playback` is what makes audio ignore the ring/silent switch and
+    /// keep going when the screen locks.
+    @discardableResult
+    static func activatePlaybackSession() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            return true
+        } catch {
+            NativeAudioBridge.shared.reportError("audio session: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func reportError(_ message: String) {
+        sendEvent("nativeError", data: ["message": message])
     }
 
     // MARK: - Audio Loading
@@ -121,6 +150,14 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             ) { [weak self] _ in
                 self?.sendEvent("ended", data: [:])
             }
+            // Surface load failures (bad URL, unsupported codec, offline file with
+            // wrong extension, expired signed URL, …) to JS instead of failing mute.
+            statusObserver = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+                if it.status == .failed {
+                    let msg = it.error?.localizedDescription ?? "AVPlayerItem failed"
+                    self?.reportError(msg)
+                }
+            }
         }
     }
 
@@ -129,6 +166,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         timeObserver = nil
         if let obs = didEndObserver { NotificationCenter.default.removeObserver(obs) }
         didEndObserver = nil
+        statusObserver?.invalidate(); statusObserver = nil
         player?.pause(); player = nil
     }
 
@@ -212,12 +250,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private var bridgeInstalled = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("AVAudioSession error: \(error)")
-        }
+        NativeAudioBridge.activatePlaybackSession()
         return true
     }
 

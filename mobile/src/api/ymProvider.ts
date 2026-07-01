@@ -41,6 +41,9 @@ function createNativeYM(
   unsubs.push(native.on('playingChange', (d) => {
     if (!destroyed) cb.onPlayingChange(d?.playing === true)
   }))
+  unsubs.push(native.on('nativeError', (d) => {
+    if (!destroyed) cb.onError(`iOS audio: ${d?.message ?? 'playback failed'}`)
+  }))
 
   native.setMetadata({ title: track.title, artist: track.artist || 'Yandex Music', artwork: track.artwork || undefined })
 
