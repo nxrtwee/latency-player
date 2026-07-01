@@ -91,20 +91,7 @@ for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ip
 done
 echo "==> locked to portrait (iPhone + iPad)"
 
-# ---------------------------------------------------------------------------
-# 6. NativeAudioBridge — copy the Swift bridge file into the Xcode project.
-#    This provides native AVPlayer + MPRemoteCommandCenter (prev/next track on
-#    lock screen) via WKScriptMessageHandler, bypassing Capacitor's plugin
-#    registration (which requires modifying the Xcode project file).
-# ---------------------------------------------------------------------------
-BRIDGE_SRC="$MOBILE_DIR/ios-plugin/NativeAudioBridge.swift"
-BRIDGE_DST="$APP_DIR/NativeAudioBridge.swift"
-if [ -f "$BRIDGE_SRC" ]; then
-  cp "$BRIDGE_SRC" "$BRIDGE_DST"
-  echo "==> NativeAudioBridge.swift copied to $APP_DIR"
-else
-  echo "WARNING: NativeAudioBridge.swift missing — lock screen prev/next will not work" >&2
-fi
+# NativeAudioBridge is embedded in AppDelegate.swift (no separate file needed).
 
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"
