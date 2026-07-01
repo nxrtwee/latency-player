@@ -1,10 +1,11 @@
 // Full AppDelegate copied over the Capacitor-generated one during the iOS build
 // (see scripts/patch-ios.sh). Pinned to the Capacitor 8 template structure.
 //
-// Native pieces the web layer can't do:
-//   1. AVAudioSession .playback  → audio keeps playing when locked/backgrounded.
-//   2. LatencyAudio plugin → native AVPlayer for lock-screen prev/next-track
-//      buttons (replaces WKWebView <audio> which forces ±10s skip).
+// Native pieces:
+//   1. AVAudioSession .playback → audio when locked/backgrounded.
+//   2. NativeAudioBridge → WKScriptMessageHandler for lock-screen prev/next-track.
+//      The bridge is installed on the WKWebView when it becomes available, giving
+//      JS direct access to native AVPlayer and MPRemoteCommandCenter.
 import UIKit
 import Capacitor
 import AVFoundation
@@ -14,6 +15,7 @@ import MediaPlayer
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var bridgeInstalled = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
@@ -22,25 +24,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("AVAudioSession error: \(error)")
         }
-        registerLocalPlugins()
         return true
     }
 
-    /// Register local Capacitor plugins that aren't installed via npm.
-    /// Called once at launch, before the web layer loads.
-    private func registerLocalPlugins() {
-        guard let bridge = CAPInstancePlugin.bridge() else { return }
-        bridge.registerPluginInstance(LatencyAudioPlugin())
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        installBridgeIfNeeded()
     }
 
-    func applicationDidBecomeActive(_ application: UIApplication) {}
+    /// Lazily install the NativeAudioBridge on the WKWebView once it exists.
+    /// The Capacitor bridge creates the web view during viewDidLoad of its
+    /// CAPBridgeViewController, which runs before the first becomeActive.
+    private func installBridgeIfNeeded() {
+        guard !bridgeInstalled else { return }
+        guard let webView = findWebView(in: window?.rootViewController?.view) else { return }
+        bridgeInstalled = true
+        NativeAudioBridge.shared.install(on: webView)
+    }
+
+    /// Recursively search the view hierarchy for a WKWebView.
+    private func findWebView(in view: UIView?) -> WKWebView? {
+        guard let view = view else { return nil }
+        if let wv = view as? WKWebView { return wv }
+        for sub in view.subviews {
+            if let found = findWebView(in: sub) { return found }
+        }
+        return nil
+    }
 
     func applicationWillResignActive(_ application: UIApplication) {}
-
     func applicationDidEnterBackground(_ application: UIApplication) {}
-
     func applicationWillEnterForeground(_ application: UIApplication) {}
-
     func applicationWillTerminate(_ application: UIApplication) {}
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {

@@ -1,10 +1,10 @@
-// nativeAudio.ts — Bridge to the LatencyAudio Capacitor plugin (iOS only).
+// nativeAudio.ts — Bridge to the NativeAudioBridge Swift handler (iOS only).
 //
-// Provides an interface similar to HTMLAudioElement so the mobile providers
-// can swap between web <audio> and native AVPlayer with minimal changes.
+// On iOS, a WKScriptMessageHandler (NativeAudioBridge.swift) is installed on
+// the WKWebView. JS communicates via postMessage() and receives events through
+// a global callback. This bypasses Capacitor's plugin system entirely.
+//
 // On non-iOS platforms, returns null (providers fall back to <audio>).
-
-import { Capacitor } from '@capacitor/core'
 
 type ListenerCallback = (data?: Record<string, unknown>) => void
 
@@ -18,106 +18,84 @@ interface NativeAudioHandle {
   getDuration(): Promise<number>
   isPlaying(): Promise<boolean>
   setMetadata(opts: { title: string; artist: string; artwork?: string }): Promise<void>
-  startLevelAnalysis(intervalMs?: number): Promise<void>
-  stopLevelAnalysis(): Promise<void>
   on(event: string, cb: ListenerCallback): () => void
   destroy(): void
 }
 
+function isIOS(): boolean {
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+  return cap?.isNativePlatform?.() === true && cap.getPlatform?.() === 'ios'
+}
+
+function hasWKBridge(): boolean {
+  return typeof (window as unknown as { webkit?: { messageHandlers?: unknown } }).webkit?.messageHandlers !== 'undefined'
+    && typeof ((window as unknown as { webkit: { messageHandlers: Record<string, unknown> } }).webkit.messageHandlers).latencyAudio !== 'undefined'
+}
+
 function getPlugin(): NativeAudioHandle | null {
-  const cap = (window as unknown as { Capacitor?: typeof Capacitor }).Capacitor
-  if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== 'ios') return null
+  if (!isIOS() || !hasWKBridge()) return null
 
-  // Access the plugin through the global Capacitor bridge
-  const plugins = (cap as unknown as { Plugins?: Record<string, unknown> }).Plugins
-  const plugin = plugins?.LatencyAudio as Record<string, ((...args: unknown[]) => Promise<unknown>) & { addListener?: (event: string, cb: ListenerCallback) => { remove: () => void } }> | undefined
-  if (!plugin) return null
+  const bridge = (window as unknown as { webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } } }).webkit.messageHandlers.latencyAudio
 
-  const listeners = new Map<string, { remove: () => void }[]>()
+  const listeners = new Map<string, ListenerCallback[]>()
+
+  // Global callback for events from Swift → JS
+  ;(window as unknown as { __nativeAudioEvent?: (evt: Record<string, unknown>) => void }).__nativeAudioEvent = (evt: Record<string, unknown>) => {
+    const eventName = evt._event as string | undefined
+    if (!eventName) return
+    const cbs = listeners.get(eventName)
+    if (cbs) for (const cb of cbs) cb(evt)
+  }
+
+  const send = (msg: Record<string, unknown>): void => {
+    bridge.postMessage(msg)
+  }
+
+  // Promise-based request/response for getPosition/getDuration
+  let pendingResolve: ((v: number) => void) | null = null
+  listeners.set('positionResult', [(d) => { if (pendingResolve) { pendingResolve(d?.position as number ?? 0); pendingResolve = null } }])
+  listeners.set('durationResult', [(d) => { if (pendingResolve) { pendingResolve(d?.duration as number ?? 0); pendingResolve = null } }])
+
+  const requestNumber = (action: string): Promise<number> => {
+    return new Promise((resolve) => {
+      pendingResolve = resolve
+      send({ action })
+      // Fallback timeout
+      setTimeout(() => { if (pendingResolve === resolve) { resolve(0); pendingResolve = null } }, 2000)
+    })
+  }
 
   return {
-    async load(url: string) {
-      await plugin.load({ url })
-    },
-    async play() {
-      await plugin.play({})
-    },
-    async pause() {
-      await plugin.pause({})
-    },
-    async seek(time: number) {
-      await plugin.seek({ time })
-    },
-    async setVolume(volume: number) {
-      await plugin.setVolume({ volume })
-    },
-    async getPosition() {
-      const result = await plugin.getPosition({}) as { position: number }
-      return result.position ?? 0
-    },
-    async getDuration() {
-      const result = await plugin.getDuration({}) as { duration: number }
-      return result.duration ?? 0
-    },
-    async isPlaying() {
-      const result = await plugin.isPlaying({}) as { playing: boolean }
-      return result.playing ?? false
-    },
-    async setMetadata(opts: { title: string; artist: string; artwork?: string }) {
-      await plugin.setMetadata(opts)
-    },
-    async startLevelAnalysis(intervalMs = 50) {
-      await plugin.startLevelAnalysis({ interval: intervalMs })
-    },
-    async stopLevelAnalysis() {
-      await plugin.stopLevelAnalysis({})
-    },
+    async load(url: string) { send({ action: 'load', url }) },
+    async play() { send({ action: 'play' }) },
+    async pause() { send({ action: 'pause' }) },
+    async seek(time: number) { send({ action: 'seek', time }) },
+    async setVolume(volume: number) { send({ action: 'setVolume', volume }) },
+    async getPosition() { return requestNumber('getPosition') },
+    async getDuration() { return requestNumber('getDuration') },
+    async isPlaying() { return Promise.resolve(false) }, // Not needed in practice
+    async setMetadata(opts) { send({ action: 'setMetadata', title: opts.title, artist: opts.artist, artwork: opts.artwork }) },
     on(event: string, cb: ListenerCallback): () => void {
-      if (!plugin.addListener) return () => {}
-      // Capacitor addListener returns a Promise<PluginListenerHandle>
-      const handlePromise = plugin.addListener(event, cb)
-      let removed = false
       const list = listeners.get(event) ?? []
-      const marker = { removed }
-      list.push(marker as unknown as { remove: () => void })
+      list.push(cb)
       listeners.set(event, list)
       return () => {
-        if (removed) return
-        removed = true
-        marker.removed = true
-        // PluginListenerHandle.remove() resolves asynchronously
-        void handlePromise.then((h: unknown) => {
-          if (h && typeof h === 'object' && 'remove' in h) (h as { remove: () => void }).remove()
-        })
         const arr = listeners.get(event)
-        if (arr) {
-          const idx = arr.indexOf(marker as unknown as { remove: () => void })
-          if (idx >= 0) arr.splice(idx, 1)
-        }
+        if (arr) { const i = arr.indexOf(cb); if (i >= 0) arr.splice(i, 1) }
       }
     },
-    destroy() {
-      for (const list of listeners.values()) {
-        for (const h of list) h.remove()
-      }
-      listeners.clear()
-    }
+    destroy() { listeners.clear() }
   }
 }
 
-// Singleton — created once, reused by providers
 let _instance: NativeAudioHandle | null = null
 let _checked = false
 
 export function getNativeAudio(): NativeAudioHandle | null {
-  if (!_checked) {
-    _checked = true
-    _instance = getPlugin()
-  }
+  if (!_checked) { _checked = true; _instance = getPlugin() }
   return _instance
 }
 
-/** Check if native audio is available (iOS device). */
 export function isNativeAudioAvailable(): boolean {
   return getNativeAudio() !== null
 }
