@@ -47,6 +47,14 @@ function createNative(
     if (!destroyed) cb.onError(`iOS audio: ${d?.message ?? 'playback failed'}`)
   }))
 
+  // Seed duration from the track metadata immediately: iOS AVPlayerItem.duration
+  // stays `indefinite` (NaN) for progressive MP3, so the native timeUpdate never
+  // carries a real duration → the seek bar/time would read "-:--". The search
+  // result already knows the length.
+  if (typeof track.durationSec === 'number' && track.durationSec > 0) {
+    cb.onDuration(track.durationSec)
+  }
+
   // Set metadata for lock screen
   const art = track.artwork || undefined
   native.setMetadata({ title: track.title, artist: track.artist || 'SoundCloud', artwork: art })

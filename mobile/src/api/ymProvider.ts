@@ -45,6 +45,12 @@ function createNativeYM(
     if (!destroyed) cb.onError(`iOS audio: ${d?.message ?? 'playback failed'}`)
   }))
 
+  // Seed duration from metadata — iOS AVPlayerItem.duration is NaN for progressive
+  // MP3, so without this the seek bar/time reads "-:--". (See scProvider.)
+  if (typeof track.durationSec === 'number' && track.durationSec > 0) {
+    cb.onDuration(track.durationSec)
+  }
+
   native.setMetadata({ title: track.title, artist: track.artist || 'Yandex Music', artwork: track.artwork || undefined })
 
   let wantPlay = false
