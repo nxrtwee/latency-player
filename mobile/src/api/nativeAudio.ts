@@ -19,7 +19,7 @@ interface NativeAudioHandle {
   setVolume(volume: number): Promise<void>
   getPosition(): Promise<number>
   getDuration(): Promise<number>
-  setMetadata(opts: { title: string; artist: string; artwork?: string }): Promise<void>
+  setMetadata(opts: { title: string; artist: string; artwork?: string; duration?: number }): Promise<void>
   on(event: string, cb: ListenerCallback): () => void
   destroy(): void
 }
@@ -91,7 +91,7 @@ function getPlugin(): NativeAudioHandle | null {
     async setVolume(volume: number) { send({ action: 'setVolume', volume }) },
     async getPosition() { return requestNumber('getPosition', (r) => { posResolve = r }) },
     async getDuration() { return requestNumber('getDuration', (r) => { durResolve = r }) },
-    async setMetadata(opts) { send({ action: 'setMetadata', title: opts.title, artist: opts.artist, artwork: opts.artwork }) },
+    async setMetadata(opts) { send({ action: 'setMetadata', title: opts.title, artist: opts.artist, artwork: opts.artwork, duration: opts.duration }) },
     on(event: string, cb: ListenerCallback): () => void {
       const list = listeners.get(event) ?? []
       list.push(cb)

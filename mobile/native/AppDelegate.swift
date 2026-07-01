@@ -24,6 +24,9 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
     private var didEndObserver: NSObjectProtocol?
+    /// Duration (seconds) from the JS track metadata — AVPlayerItem.duration is NaN
+    /// for progressive MP3, so we can't rely on it for the lock-screen progress bar.
+    private var currentDuration: Double = 0
     private var nextHandler: NSObjectProtocol?
     private var prevHandler: NSObjectProtocol?
     private var playHandler: NSObjectProtocol?
@@ -70,7 +73,14 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             setMetadata(
                 title: body["title"] as? String ?? "",
                 artist: body["artist"] as? String ?? "",
-                artwork: body["artwork"] as? String
+                artwork: body["artwork"] as? String,
+                duration: body["duration"] as? Double
+            )
+        case "setPlaybackState":
+            updateNowPlayingProgress(
+                position: body["position"] as? Double,
+                playing: body["playing"] as? Bool ?? false,
+                duration: body["duration"] as? Double
             )
         case "getPosition":
             let sec = player?.currentTime().seconds ?? 0
@@ -216,31 +226,46 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 
     // MARK: - Metadata
 
-    private func setMetadata(title: String, artist: String, artwork: String?) {
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyArtist: artist,
-            MPMediaItemPropertyAlbumTitle: "Latency"
-        ]
+    private func setMetadata(title: String, artist: String, artwork: String?, duration: Double?) {
+        if let d = duration, d.isFinite, d > 0 { currentDuration = d }
+
+        var info: [String: Any] = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPMediaItemPropertyTitle] = title
+        info[MPMediaItemPropertyArtist] = artist
+        info[MPMediaItemPropertyAlbumTitle] = "Latency"
+        if currentDuration > 0 { info[MPMediaItemPropertyPlaybackDuration] = currentDuration }
+        let pos = player?.currentTime().seconds ?? 0
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = pos.isFinite ? pos : 0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = (player?.timeControlStatus == .playing) ? 1.0 : 0.0
+        // New track → drop the previous artwork until the new one loads.
+        info.removeValue(forKey: MPMediaItemPropertyArtwork)
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+
+        // Load artwork off the main thread and MERGE it in (don't overwrite the
+        // dict — that would wipe the elapsed/rate/duration we just set, freezing
+        // the progress bar).
         if let artStr = artwork, let artURL = URL(string: artStr) {
             DispatchQueue.global().async {
-                if let data = try? Data(contentsOf: artURL), let img = UIImage(data: data) {
-                    info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                guard let data = try? Data(contentsOf: artURL), let img = UIImage(data: data) else { return }
+                DispatchQueue.main.async {
+                    var i = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                    i[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = i
                 }
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             }
-        } else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
-        if let p = player {
-            var i = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-            let pos = p.currentTime().seconds
-            let dur = p.currentItem?.duration.seconds ?? 0
-            if pos.isFinite { i[MPNowPlayingInfoPropertyElapsedPlaybackTime] = pos }
-            if dur.isFinite { i[MPMediaItemPropertyPlaybackDuration] = dur }
-            i[MPNowPlayingInfoPropertyPlaybackRate] = p.timeControlStatus == .playing ? 1.0 : 0.0
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = i
-        }
+    }
+
+    /// Update just the elapsed time / rate / duration so the lock-screen progress
+    /// bar animates. iOS extrapolates position between updates from the rate, so
+    /// this only needs to fire on play/pause/seek, not every tick.
+    private func updateNowPlayingProgress(position: Double?, playing: Bool, duration: Double?) {
+        if let d = duration, d.isFinite, d > 0 { currentDuration = d }
+        var i = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        if let p = position, p.isFinite { i[MPNowPlayingInfoPropertyElapsedPlaybackTime] = p }
+        if currentDuration > 0 { i[MPMediaItemPropertyPlaybackDuration] = currentDuration }
+        i[MPNowPlayingInfoPropertyPlaybackRate] = playing ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = i
     }
 
     // MARK: - JS Communication

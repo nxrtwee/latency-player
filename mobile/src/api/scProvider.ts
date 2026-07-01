@@ -57,7 +57,7 @@ function createNative(
 
   // Set metadata for lock screen
   const art = track.artwork || undefined
-  native.setMetadata({ title: track.title, artist: track.artist || 'SoundCloud', artwork: art })
+  native.setMetadata({ title: track.title, artist: track.artist || 'SoundCloud', artwork: art, duration: track.durationSec })
 
   let wantPlay = false
 

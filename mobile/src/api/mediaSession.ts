@@ -76,13 +76,39 @@ function installNativeIOS(): void {
   }
 
   let lastTrackId = ''
+  let lastPlaying: boolean | null = null
+  let lastPosWhole = -1
   usePlayer.subscribe((s) => {
     const track = s.queue[s.currentIndex]
-    if (!track) { lastTrackId = ''; return }
+    if (!track) { lastTrackId = ''; lastPlaying = null; return }
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
       const art = offlineArtForUri(track.uri) || track.artwork
-      sendToNative({ action: 'setMetadata', title: track.title, artist: track.artist || 'SoundCloud', artwork: art || undefined })
+      sendToNative({
+        action: 'setMetadata',
+        title: track.title,
+        artist: track.artist || 'SoundCloud',
+        artwork: art || undefined,
+        duration: track.durationSec
+      })
+      lastPlaying = null // force a playback-state push for the new track
+    }
+    // Push elapsed + rate to the lock screen so its progress bar animates. iOS
+    // extrapolates between updates from the rate, so we only need to push on a
+    // play/pause change or a seek (whole-second jump) — not every tick.
+    const posWhole = Math.floor(s.positionSec)
+    const seeked = Math.abs(posWhole - lastPosWhole) > 1
+    if (s.isPlaying !== lastPlaying || seeked) {
+      lastPlaying = s.isPlaying
+      lastPosWhole = posWhole
+      sendToNative({
+        action: 'setPlaybackState',
+        position: s.positionSec,
+        playing: s.isPlaying,
+        duration: s.durationSec || track.durationSec || 0
+      })
+    } else {
+      lastPosWhole = posWhole
     }
   })
 }

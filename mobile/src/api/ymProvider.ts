@@ -51,7 +51,7 @@ function createNativeYM(
     cb.onDuration(track.durationSec)
   }
 
-  native.setMetadata({ title: track.title, artist: track.artist || 'Yandex Music', artwork: track.artwork || undefined })
+  native.setMetadata({ title: track.title, artist: track.artist || 'Yandex Music', artwork: track.artwork || undefined, duration: track.durationSec })
 
   let wantPlay = false
 
