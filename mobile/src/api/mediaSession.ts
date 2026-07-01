@@ -13,7 +13,6 @@
 //     in Chrome for OS media overlay.
 import { usePlayer } from '@renderer/store'
 import { offlineArtForUri } from './offline'
-import { getNativeAudio } from './nativeAudio'
 
 // ---- native Android plugin bridge types --------------------------------------
 interface MediaImage { src: string; sizes?: string; type?: string }
@@ -36,6 +35,10 @@ export function installMediaSession(): void {
     installAndroid(native)
     return
   }
+  // On iOS, NEVER use navigator.mediaSession — WKWebView forces ±10s skip
+  // buttons when it owns the media session. We use the native bridge instead.
+  // Even if the bridge isn't installed yet (it installs in applicationDidBecomeActive),
+  // we set up the JS side now and the bridge will pick up events when ready.
   if (cap?.isNativePlatform?.() && cap.getPlatform?.() === 'ios') {
     installNativeIOS()
     return
@@ -45,15 +48,33 @@ export function installMediaSession(): void {
 
 // ---- iOS: NativeAudioBridge → store + metadata push -------------------------
 function installNativeIOS(): void {
-  const native = getNativeAudio()
-  if (!native) return
   const get = usePlayer.getState
 
-  // Forward lock-screen prev/next to the store.
-  native.on('nextTrack', () => get().next())
-  native.on('previousTrack', () => get().prev())
+  // Set up the global event listener for the native bridge.
+  // The bridge (installed in AppDelegate's applicationDidBecomeActive) will call
+  // window.__nativeAudioEvent({ _event: 'nextTrack' }) etc. when the user taps
+  // prev/next on the lock screen.
+  const prev = (window as unknown as { __nativeAudioEvent?: (evt: Record<string, unknown>) => void }).__nativeAudioEvent
+  ;(window as unknown as { __nativeAudioEvent: (evt: Record<string, unknown>) => void }).__nativeAudioEvent = (evt) => {
+    // Chain to any previously-set handler
+    if (prev) prev(evt)
+    const name = evt._event as string | undefined
+    if (name === 'nextTrack') get().next()
+    else if (name === 'previousTrack') get().prev()
+  }
 
   // Push track metadata to the native bridge for lock-screen display.
+  // Uses postMessage directly — works even if the bridge isn't installed yet
+  // (postMessage is a no-op on a non-existent handler; the bridge will pick up
+  // metadata on next track change after it's installed).
+  const sendToNative = (msg: Record<string, unknown>): void => {
+    try {
+      const handler = (window as unknown as { webkit?: { messageHandlers?: Record<string, { postMessage: (m: unknown) => void }> } })
+        .webkit?.messageHandlers?.latencyAudio
+      handler?.postMessage(msg)
+    } catch { /* bridge not installed yet — will work on next track change */ }
+  }
+
   let lastTrackId = ''
   usePlayer.subscribe((s) => {
     const track = s.queue[s.currentIndex]
@@ -61,11 +82,7 @@ function installNativeIOS(): void {
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
       const art = offlineArtForUri(track.uri) || track.artwork
-      native.setMetadata({
-        title: track.title,
-        artist: track.artist || 'SoundCloud',
-        artwork: art || undefined
-      })
+      sendToNative({ action: 'setMetadata', title: track.title, artist: track.artist || 'SoundCloud', artwork: art || undefined })
     }
   })
 }
