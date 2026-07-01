@@ -18,6 +18,7 @@ import { WaveScreen } from './screens/Wave'
 import { useT } from './i18n'
 import { installMediaSession } from './api/mediaSession'
 import { installResolvePrefetch } from './api/resolveCache'
+import { installNativeLevels } from './api/nativeLevels'
 import { installStatusBar } from './api/statusBar'
 import { Splash } from '@renderer/components/Splash'
 import type { Album, Artist, Track } from '@shared/types'
@@ -119,6 +120,7 @@ export function MobileApp(): JSX.Element {
     void generateMixes()
     installMediaSession()
     installResolvePrefetch() // keep neighbour stream URLs resolved for lock-screen skips
+    installNativeLevels() // real visualizer from the iOS native audio tap
     installStatusBar()
   }, [loadLikes, loadPlaylists, loadScAuth, loadYmAuth, generateMixes])
 

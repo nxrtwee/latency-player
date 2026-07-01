@@ -11,6 +11,118 @@ import Capacitor
 import AVFoundation
 import MediaPlayer
 import WebKit
+import Accelerate
+
+// MARK: - Audio tap (real visualizer levels)
+
+// Streamed/offline audio on iOS plays through AVPlayer (outside Web Audio), so the
+// JS analyser can't see it. An MTAudioProcessingTap on the player item taps the PCM
+// on a real-time audio thread; we run an FFT and push per-band 0..1 levels to JS
+// (throttled, on the main thread) to drive the visualizer.
+final class TapContext {
+    weak var bridge: NativeAudioBridge?
+    let bandCount = 24
+    private let n = 1024
+    private var half: Int { n / 2 }
+    private let log2n: vDSP_Length = 10 // log2(1024)
+    private var fftSetup: FFTSetup?
+    private var window: UnsafeMutablePointer<Float>?
+    private var samples: UnsafeMutablePointer<Float>?
+    private var realp: UnsafeMutablePointer<Float>?
+    private var imagp: UnsafeMutablePointer<Float>?
+    private var mags: UnsafeMutablePointer<Float>?
+    private var smoothed = [Float](repeating: 0, count: 24)
+    private var lastSend: CFTimeInterval = 0
+
+    init(bridge: NativeAudioBridge) { self.bridge = bridge }
+
+    func prepare() {
+        fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
+        window = .allocate(capacity: n)
+        vDSP_hann_window(window!, vDSP_Length(n), Int32(vDSP_HANN_NORM))
+        samples = .allocate(capacity: n)
+        realp = .allocate(capacity: half)
+        imagp = .allocate(capacity: half)
+        mags = .allocate(capacity: half)
+    }
+
+    func teardown() {
+        if let s = fftSetup { vDSP_destroy_fftsetup(s); fftSetup = nil }
+        window?.deallocate(); window = nil
+        samples?.deallocate(); samples = nil
+        realp?.deallocate(); realp = nil
+        imagp?.deallocate(); imagp = nil
+        mags?.deallocate(); mags = nil
+    }
+
+    func process(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
+        guard let setup = fftSetup, let window, let samples, let realp, let imagp, let mags,
+              frames > 0 else { return }
+        let abl = UnsafeMutableAudioBufferListPointer(bufferList)
+        guard let first = abl.first, let raw = first.mData else { return }
+        let src = raw.assumingMemoryBound(to: Float.self)
+
+        let count = min(frames, n)
+        memset(samples, 0, n * MemoryLayout<Float>.size)
+        samples.update(from: src, count: count)
+        vDSP_vmul(samples, 1, window, 1, samples, 1, vDSP_Length(n))
+
+        var split = DSPSplitComplex(realp: realp, imagp: imagp)
+        samples.withMemoryRebound(to: DSPComplex.self, capacity: half) { cp in
+            vDSP_ctoz(cp, 2, &split, 1, vDSP_Length(half))
+        }
+        vDSP_fft_zrip(setup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+        vDSP_zvmags(&split, 1, mags, 1, vDSP_Length(half))
+
+        // Bin the lower ~60% of bins (music energy) into bands; sqrt(power) → amplitude.
+        let usable = Int(Float(half) * 0.6)
+        var bars = [Double](repeating: 0, count: bandCount)
+        for b in 0..<bandCount {
+            let lo = b * usable / bandCount
+            let hi = max(lo + 1, (b + 1) * usable / bandCount)
+            var sum: Float = 0
+            for i in lo..<hi { sum += mags[i] }
+            let amp = sqrtf(sum / Float(hi - lo))
+            // Perceptual scale + smoothing (rise fast, fall slow).
+            var v = amp / 900.0
+            if v > 1 { v = 1 }
+            let prev = smoothed[b]
+            let eased = v > prev ? prev + (v - prev) * 0.6 : prev + (v - prev) * 0.25
+            smoothed[b] = eased
+            bars[b] = Double(eased)
+        }
+
+        // Throttle to ~30 fps and hop to the main thread for the JS call.
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastSend < 0.033 { return }
+        lastSend = now
+        DispatchQueue.main.async { [weak bridge] in
+            bridge?.sendLevels(bars)
+        }
+    }
+}
+
+private let tapInit: MTAudioProcessingTapInitCallback = { _, clientInfo, tapStorageOut in
+    tapStorageOut.pointee = clientInfo
+}
+private let tapFinalize: MTAudioProcessingTapFinalizeCallback = { tap in
+    let ctx = Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap))
+    ctx.takeUnretainedValue().teardown()
+    ctx.release()
+}
+private let tapPrepare: MTAudioProcessingTapPrepareCallback = { tap, _, _ in
+    Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue().prepare()
+}
+private let tapUnprepare: MTAudioProcessingTapUnprepareCallback = { tap in
+    Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue().teardown()
+}
+private let tapProcess: MTAudioProcessingTapProcessCallback = { tap, numberFrames, _, bufferListInOut, numberFramesOut, flagsOut in
+    let status = MTAudioProcessingTapGetSourceAudio(tap, numberFrames, bufferListInOut, flagsOut, nil, numberFramesOut)
+    guard status == noErr else { return }
+    Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap))
+        .takeUnretainedValue()
+        .process(bufferListInOut, frames: Int(numberFramesOut.pointee))
+}
 
 // MARK: - NativeAudioBridge
 
@@ -126,15 +238,10 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         "(KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
 
     private func loadURL(_ url: URL) {
-        teardownPlayer()
         let asset = AVURLAsset(url: url, options: [
             "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": Self.browserUA]
         ])
-        let item = AVPlayerItem(asset: asset)
-        let av = AVPlayer(playerItem: item)
-        av.allowsExternalPlayback = true
-        self.player = av
-        attachObservers(av)
+        startPlayer(asset: asset)
     }
 
     /// Load from base64-encoded audio data (for blob: URLs that AVPlayer can't handle).
@@ -150,12 +257,51 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             print("NativeAudioBridge: failed to write temp file: \(error)")
             return
         }
+        startPlayer(asset: AVURLAsset(url: tmp))
+    }
+
+    private func startPlayer(asset: AVURLAsset) {
         teardownPlayer()
-        let item = AVPlayerItem(url: tmp)
+        let item = AVPlayerItem(asset: asset)
         let av = AVPlayer(playerItem: item)
         av.allowsExternalPlayback = true
         self.player = av
         attachObservers(av)
+        attachTap(to: item, asset: asset)
+    }
+
+    /// Attach an MTAudioProcessingTap to the item's audio track so we can compute
+    /// real visualizer levels. The audio track loads asynchronously (streaming), so
+    /// we wait for it, then set the item's audioMix.
+    private func attachTap(to item: AVPlayerItem, asset: AVURLAsset) {
+        asset.loadValuesAsynchronously(forKeys: ["tracks"]) { [weak self, weak item] in
+            guard let self = self else { return }
+            guard asset.statusOfValue(forKey: "tracks", error: nil) == .loaded,
+                  let track = asset.tracks(withMediaType: .audio).first else { return }
+            let ctx = TapContext(bridge: self)
+            var callbacks = MTAudioProcessingTapCallbacks(
+                version: kMTAudioProcessingTapCallbacksVersion_0,
+                clientInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(ctx).toOpaque()),
+                init: tapInit,
+                finalize: tapFinalize,
+                prepare: tapPrepare,
+                unprepare: tapUnprepare,
+                process: tapProcess
+            )
+            var tap: Unmanaged<MTAudioProcessingTap>?
+            let status = MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks,
+                                                    kMTAudioProcessingTapCreationFlag_PostEffects, &tap)
+            guard status == noErr, let tapObj = tap?.takeRetainedValue() else { return }
+            let params = AVMutableAudioMixInputParameters(track: track)
+            params.audioTapProcessor = tapObj
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [params]
+            DispatchQueue.main.async { item?.audioMix = mix }
+        }
+    }
+
+    func sendLevels(_ bars: [Double]) {
+        sendEvent("levels", data: ["bars": bars])
     }
 
     private func attachObservers(_ av: AVPlayer) {

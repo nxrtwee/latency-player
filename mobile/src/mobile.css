@@ -1753,13 +1753,13 @@ h2 {
   box-shadow: 0 0 6px var(--accent-glow);
 }
 .np-wave {
-  height: 54px;
+  height: 44px;
   margin-top: 24px;
 }
 .np-times {
   display: flex;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--text-dim);
 }

@@ -210,7 +210,20 @@ export function resumeAudio(): void {
  * source actually produced signal this frame. When there is no analyser yet, or
  * the source is silent/cross-origin-tainted, returns false and leaves `out` at 0.
  */
+// An optional external level source. On mobile iOS, playback goes through a native
+// AVPlayer (outside Web Audio), so the analyser sees nothing for streamed tracks —
+// the platform feeds real per-band levels in here instead (via a native audio tap).
+// Returns true if it filled `out` with a live frame this call. Desktop never sets
+// this, so behaviour there is unchanged.
+let externalSampler: ((out: Float32Array) => boolean) | null = null
+export function setExternalLevelSource(fn: ((out: Float32Array) => boolean) | null): void {
+  externalSampler = fn
+}
+
 export function sampleLevels(out: Float32Array): boolean {
+  // Prefer a live external (native) frame when present; fall back to the Web Audio
+  // analyser (used by same-origin sources: local files, downloaded tracks).
+  if (externalSampler && externalSampler(out)) return true
   if (!analyser || !freq) return false
   analyser.getByteFrequencyData(freq)
 
