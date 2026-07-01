@@ -3,11 +3,9 @@
 //
 // Native pieces:
 //   1. AVAudioSession .playback → audio when locked/backgrounded.
-//   2. NativeAudioBridge → WKScriptMessageHandler for lock-screen prev/next-track.
-//      The bridge is installed on the WKWebView when it becomes available, giving
-//      JS direct access to native AVPlayer and MPRemoteCommandCenter.
-//   3. Everything is in this single file so Xcode compiles it without needing
-//      to modify the .pbxproj (which is fragile in CI).
+//   2. NativeAudioBridge → WKScriptMessageHandler for lock-screen prev/next-track
+//      and native AVPlayer playback. Handles both network URLs and base64-encoded
+//      blob data (for offline files that can't be played via blob: URLs).
 import UIKit
 import Capacitor
 import AVFoundation
@@ -47,6 +45,9 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         case "load":
             guard let urlStr = body["url"] as? String, let url = URL(string: urlStr) else { return }
             loadURL(url)
+        case "loadBase64":
+            guard let b64 = body["base64"] as? String else { return }
+            loadBase64(b64)
         case "play":
             player?.play()
             sendEvent("playingChange", data: ["playing": true])
@@ -76,13 +77,37 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
+    // MARK: - Audio Loading
+
     private func loadURL(_ url: URL) {
         teardownPlayer()
         let item = AVPlayerItem(url: url)
         let av = AVPlayer(playerItem: item)
         av.allowsExternalPlayback = true
         self.player = av
+        attachObservers(av)
+    }
 
+    /// Load from base64-encoded audio data (for blob: URLs that AVPlayer can't handle).
+    private func loadBase64(_ b64: String) {
+        guard let data = Data(base64Encoded: b64) else { return }
+        // Write to a temp file — AVPlayer needs a file or network URL
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).m4a")
+        do {
+            try data.write(to: tmp)
+        } catch {
+            print("NativeAudioBridge: failed to write temp file: \(error)")
+            return
+        }
+        teardownPlayer()
+        let item = AVPlayerItem(url: tmp)
+        let av = AVPlayer(playerItem: item)
+        av.allowsExternalPlayback = true
+        self.player = av
+        attachObservers(av)
+    }
+
+    private func attachObservers(_ av: AVPlayer) {
         let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
         timeObserver = av.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             let sec = time.seconds
@@ -90,10 +115,12 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             let dur = av.currentItem?.duration.seconds ?? 0
             self?.sendEvent("timeUpdate", data: ["position": sec, "duration": dur.isFinite ? dur : 0])
         }
-        didEndObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
-        ) { [weak self] _ in
-            self?.sendEvent("ended", data: [:])
+        if let item = av.currentItem {
+            didEndObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+            ) { [weak self] _ in
+                self?.sendEvent("ended", data: [:])
+            }
         }
     }
 
@@ -104,6 +131,8 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         didEndObserver = nil
         player?.pause(); player = nil
     }
+
+    // MARK: - Lock Screen
 
     private func setupRemoteCommands() {
         let cc = MPRemoteCommandCenter.shared()
@@ -133,6 +162,8 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         cc.previousTrackCommand.isEnabled = true
     }
 
+    // MARK: - Metadata
+
     private func setMetadata(title: String, artist: String, artwork: String?) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
@@ -160,6 +191,8 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
+    // MARK: - JS Communication
+
     private func sendEvent(_ name: String, data: [String: Any]) {
         var json = data
         json["_event"] = name
@@ -177,7 +210,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var bridgeInstalled = false
-    private var commandTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
@@ -186,36 +218,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("AVAudioSession error: \(error)")
         }
-        // Start the lock-screen command timer immediately. WKWebView re-asserts
-        // its own skip±10s buttons every time <audio> starts playing, so we
-        // continuously force prev/next-track back.
-        startCommandTimer()
         return true
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         installBridgeIfNeeded()
-    }
-
-    /// Continuously enforce prev/next-track buttons on the lock screen.
-    /// WKWebView's internal media session overrides MPRemoteCommandCenter
-    /// on every playback start; this timer fights back every 0.5s.
-    private func startCommandTimer() {
-        commandTimer?.invalidate()
-        commandTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.enforceLockScreenButtons()
-        }
-    }
-
-    private func enforceLockScreenButtons() {
-        let cc = MPRemoteCommandCenter.shared()
-        // Force-disable scrub/skip that WKWebView enables
-        cc.skipForwardCommand.isEnabled = false
-        cc.skipBackwardCommand.isEnabled = false
-        cc.changePlaybackPositionCommand.isEnabled = false
-        // Force-enable next/prev track
-        cc.nextTrackCommand.isEnabled = true
-        cc.previousTrackCommand.isEnabled = true
     }
 
     private func installBridgeIfNeeded() {
@@ -234,10 +241,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return nil
     }
 
-    func applicationWillResignActive(_ application: UIApplication) {
-        // Enforce buttons right before the lock screen appears
-        enforceLockScreenButtons()
-    }
+    func applicationWillResignActive(_ application: UIApplication) {}
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
     func applicationWillTerminate(_ application: UIApplication) {}

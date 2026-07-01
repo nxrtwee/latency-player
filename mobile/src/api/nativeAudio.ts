@@ -1,14 +1,17 @@
-// nativeAudio.ts — Bridge to the NativeAudioBridge Swift handler (iOS only).
+// nativeAudio.ts — Bridge to NativeAudioBridge (WKScriptMessageHandler, iOS only).
 //
-// On iOS, a WKScriptMessageHandler (NativeAudioBridge.swift) is installed on
-// the WKWebView. JS communicates via postMessage() and receives events through
-// a global callback. This bypasses Capacitor's plugin system entirely.
+// On iOS, a NativeAudioBridge is installed on the WKWebView by AppDelegate.
+// JS communicates via window.webkit.messageHandlers.latencyAudio.postMessage().
+// Events come back via window.__nativeAudioEvent().
 //
-// On non-iOS platforms, returns null (providers fall back to <audio>).
+// The bridge handles AVPlayer (native audio) + MPRemoteCommandCenter (lock screen).
+// For blob: URLs (offline files), we read the bytes, send as base64 to Swift,
+// which writes to /tmp and plays via AVPlayer — so WKWebView never plays audio.
 
 type ListenerCallback = (data?: Record<string, unknown>) => void
 
 interface NativeAudioHandle {
+  /** Load a network URL or blob: URL for playback via native AVPlayer. */
   load(url: string): Promise<void>
   play(): Promise<void>
   pause(): Promise<void>
@@ -16,64 +19,78 @@ interface NativeAudioHandle {
   setVolume(volume: number): Promise<void>
   getPosition(): Promise<number>
   getDuration(): Promise<number>
-  isPlaying(): Promise<boolean>
   setMetadata(opts: { title: string; artist: string; artwork?: string }): Promise<void>
   on(event: string, cb: ListenerCallback): () => void
   destroy(): void
 }
 
-function isIOS(): boolean {
-  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
-  return cap?.isNativePlatform?.() === true && cap.getPlatform?.() === 'ios'
-}
-
 function hasWKBridge(): boolean {
-  return typeof (window as unknown as { webkit?: { messageHandlers?: unknown } }).webkit?.messageHandlers !== 'undefined'
-    && typeof ((window as unknown as { webkit: { messageHandlers: Record<string, unknown> } }).webkit.messageHandlers).latencyAudio !== 'undefined'
+  try {
+    const wh = (window as unknown as { webkit?: { messageHandlers?: unknown } }).webkit?.messageHandlers
+    if (!wh) return false
+    return typeof (wh as Record<string, unknown>).latencyAudio !== 'undefined'
+  } catch { return false }
 }
 
 function getPlugin(): NativeAudioHandle | null {
-  if (!isIOS() || !hasWKBridge()) return null
+  if (!hasWKBridge()) return null
 
   const bridge = (window as unknown as { webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } } }).webkit.messageHandlers.latencyAudio
 
   const listeners = new Map<string, ListenerCallback[]>()
 
-  // Global callback for events from Swift → JS
-  ;(window as unknown as { __nativeAudioEvent?: (evt: Record<string, unknown>) => void }).__nativeAudioEvent = (evt: Record<string, unknown>) => {
+  // Wire up global event callback (Swift → JS)
+  const existing = (window as unknown as { __nativeAudioEvent?: (evt: Record<string, unknown>) => void }).__nativeAudioEvent
+  ;(window as unknown as { __nativeAudioEvent: (evt: Record<string, unknown>) => void }).__nativeAudioEvent = (evt) => {
+    if (existing) existing(evt)
     const eventName = evt._event as string | undefined
     if (!eventName) return
     const cbs = listeners.get(eventName)
     if (cbs) for (const cb of cbs) cb(evt)
   }
 
-  const send = (msg: Record<string, unknown>): void => {
-    bridge.postMessage(msg)
-  }
+  const send = (msg: Record<string, unknown>): void => bridge.postMessage(msg)
 
   // Promise-based request/response for getPosition/getDuration
-  let pendingResolve: ((v: number) => void) | null = null
-  listeners.set('positionResult', [(d) => { if (pendingResolve) { pendingResolve(d?.position as number ?? 0); pendingResolve = null } }])
-  listeners.set('durationResult', [(d) => { if (pendingResolve) { pendingResolve(d?.duration as number ?? 0); pendingResolve = null } }])
+  let posResolve: ((v: number) => void) | null = null
+  let durResolve: ((v: number) => void) | null = null
+  listeners.set('positionResult', [(d) => { if (posResolve) { posResolve(d?.position as number ?? 0); posResolve = null } }])
+  listeners.set('durationResult', [(d) => { if (durResolve) { durResolve(d?.duration as number ?? 0); durResolve = null } }])
 
-  const requestNumber = (action: string): Promise<number> => {
+  const requestNumber = (action: string, setter: (r: (v: number) => void) => void): Promise<number> => {
     return new Promise((resolve) => {
-      pendingResolve = resolve
+      setter(resolve)
       send({ action })
-      // Fallback timeout
-      setTimeout(() => { if (pendingResolve === resolve) { resolve(0); pendingResolve = null } }, 2000)
+      setTimeout(() => { setter((v) => { resolve(v) }); resolve(0) }, 2000)
     })
   }
 
   return {
-    async load(url: string) { send({ action: 'load', url }) },
+    async load(url: string) {
+      // For blob: URLs, read bytes and send as base64 so Swift can write to /tmp
+      if (url.startsWith('blob:')) {
+        try {
+          const resp = await fetch(url)
+          const blob = await resp.blob()
+          const buf = await blob.arrayBuffer()
+          const bytes = new Uint8Array(buf)
+          let binary = ''
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+          const b64 = btoa(binary)
+          send({ action: 'loadBase64', base64: b64, mimeType: blob.type || 'audio/mpeg' })
+        } catch (e) {
+          console.error('NativeAudio: failed to read blob', e)
+        }
+      } else {
+        send({ action: 'load', url })
+      }
+    },
     async play() { send({ action: 'play' }) },
     async pause() { send({ action: 'pause' }) },
     async seek(time: number) { send({ action: 'seek', time }) },
     async setVolume(volume: number) { send({ action: 'setVolume', volume }) },
-    async getPosition() { return requestNumber('getPosition') },
-    async getDuration() { return requestNumber('getDuration') },
-    async isPlaying() { return Promise.resolve(false) }, // Not needed in practice
+    async getPosition() { return requestNumber('getPosition', (r) => { posResolve = r }) },
+    async getDuration() { return requestNumber('getDuration', (r) => { durResolve = r }) },
     async setMetadata(opts) { send({ action: 'setMetadata', title: opts.title, artist: opts.artist, artwork: opts.artwork }) },
     on(event: string, cb: ListenerCallback): () => void {
       const list = listeners.get(event) ?? []
