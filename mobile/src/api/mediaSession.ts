@@ -1,41 +1,27 @@
 // Lock-screen / OS media controls.
 //
-//   • iOS: the native LatencyAudio plugin (AVPlayer) owns the
-//     MPRemoteCommandCenter. When the lock screen shows prev/next-track buttons
-//     and the user taps them, the plugin fires `nextTrack`/`previousTrack` events
-//     which we forward to the store here. The web navigator.mediaSession is NOT
-//     used on iOS (it would conflict with the native plugin).
-//   • Android: the embedded System WebView (unlike Chrome-the-app) does NOT
-//     publish navigator.mediaSession to the system, so the lock screen and
-//     notification shade stay empty even though audio keeps playing. We bridge to
-//     a native MediaSession + media-style notification via the
-//     @jofr/capacitor-media-session plugin (added in mobile/package.json,
-//     registered by `cap sync`, called through the global Capacitor bridge so the
-//     web bundle needs no import — same pattern as offline.ts / statusBar.ts).
+//   • iOS: the NativeAudioBridge (WKScriptMessageHandler in AppDelegate.swift)
+//     owns the MPRemoteCommandCenter. When the lock screen shows prev/next-track
+//     buttons and the user taps them, the bridge fires nextTrack/previousTrack
+//     events via window.__nativeAudioEvent → store.prev()/next(). We also push
+//     metadata (title/artist/artwork) to the bridge for lock-screen display.
+//     Actual audio playback stays with <audio> (AVPlayer can't handle blob: URLs).
+//   • Android: the embedded System WebView does NOT publish navigator.mediaSession
+//     to the system. We bridge to a native MediaSession via the
+//     @jofr/capacitor-media-session plugin.
 //   • Browser (dev): the W3C Media Session API (navigator.mediaSession) works
 //     in Chrome for OS media overlay.
-//
-// True background playback (audio continuing while locked / backgrounded) needs
-// the native AVAudioSession on iOS (AppDelegate) and the plugin's foreground
-// service on Android (manifest permissions added by scripts/patch-android.sh).
 import { usePlayer } from '@renderer/store'
 import { offlineArtForUri } from './offline'
 import { getNativeAudio } from './nativeAudio'
 
-// ---- native Android plugin (@jofr/capacitor-media-session) bridge types -------
-interface MediaImage {
-  src: string
-  sizes?: string
-  type?: string
-}
+// ---- native Android plugin bridge types --------------------------------------
+interface MediaImage { src: string; sizes?: string; type?: string }
 interface NativeMediaSession {
   setMetadata(o: { title?: string; artist?: string; album?: string; artwork?: MediaImage[] }): Promise<void>
   setPlaybackState(o: { playbackState: 'none' | 'paused' | 'playing' }): Promise<void>
   setPositionState(o: { duration?: number; position?: number; playbackRate?: number }): Promise<void>
-  setActionHandler(
-    o: { action: string },
-    handler: ((details: { action: string; seekTime?: number | null }) => void) | null
-  ): Promise<void>
+  setActionHandler(o: { action: string }, handler: ((details: { action: string; seekTime?: number | null }) => void) | null): Promise<void>
 }
 interface CapGlobal {
   isNativePlatform?: () => boolean
@@ -50,25 +36,38 @@ export function installMediaSession(): void {
     installAndroid(native)
     return
   }
-  // On iOS, the native LatencyAudio plugin owns the lock screen — just listen
-  // for its prev/next events and forward to the store. No web MediaSession.
-  if (getNativeAudio()) {
+  if (cap?.isNativePlatform?.() && cap.getPlatform?.() === 'ios') {
     installNativeIOS()
     return
   }
   installWeb()
 }
 
-// ---- iOS: native LatencyAudio plugin → store --------------------------------
+// ---- iOS: NativeAudioBridge → store + metadata push -------------------------
 function installNativeIOS(): void {
   const native = getNativeAudio()
   if (!native) return
   const get = usePlayer.getState
 
-  // The plugin fires nextTrack/previousTrack when the user taps prev/next on
-  // the lock screen. Forward to the store.
+  // Forward lock-screen prev/next to the store.
   native.on('nextTrack', () => get().next())
   native.on('previousTrack', () => get().prev())
+
+  // Push track metadata to the native bridge for lock-screen display.
+  let lastTrackId = ''
+  usePlayer.subscribe((s) => {
+    const track = s.queue[s.currentIndex]
+    if (!track) { lastTrackId = ''; return }
+    if (track.id !== lastTrackId) {
+      lastTrackId = track.id
+      const art = offlineArtForUri(track.uri) || track.artwork
+      native.setMetadata({
+        title: track.title,
+        artist: track.artist || 'SoundCloud',
+        artwork: art || undefined
+      })
+    }
+  })
 }
 
 // ---- Android: native MediaSession + media notification ------------------------

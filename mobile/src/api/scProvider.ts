@@ -8,149 +8,93 @@
 // we just don't tap Web Audio (cross-origin would silence it), so the visualizer
 // falls back to synthetic motion — the accepted mobile behavior.
 //
-// On iOS, we use the native LatencyAudio plugin (AVPlayer) instead of <audio>,
-// which gives us proper prev/next-track buttons on the lock screen instead of
-// ±10s skip. The native plugin handles MPRemoteCommandCenter ownership.
+// On iOS, the native NativeAudioBridge handles lock-screen display and prev/next
+// controls, but actual playback stays with <audio> (AVPlayer can't handle blob:
+// URLs from offline downloads).
 import Hls from 'hls.js'
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
 import { makeVolumeFader } from './volumeFade'
-import { getNativeAudio } from './nativeAudio'
 
 const scProvider: PlaybackProvider = {
   id: 'soundcloud',
   name: 'SoundCloud',
 
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
-    const native = getNativeAudio()
-    if (native) return createNativePlayback(track, cb, native)
-    return createWebPlayback(track, cb)
-  }
-}
+    const audio = new Audio()
+    audio.preload = 'auto'
+    const isHls = track.uri.includes('/stream/hls')
+    const fader = makeVolumeFader(audio)
 
-// ---- Native audio (iOS) — AVPlayer via Capacitor plugin ---------------------
-function createNativePlayback(
-  track: Track,
-  cb: PlaybackCallbacks,
-  native: NonNullable<ReturnType<typeof getNativeAudio>>
-): PlaybackHandle {
-  let destroyed = false
-  const unsubs: (() => void)[] = []
-
-  unsubs.push(native.on('timeUpdate', (d) => {
-    if (destroyed) return
-    const pos = d?.position as number | undefined
-    if (typeof pos === 'number' && pos >= 0) cb.onTime(pos)
-    const dur = d?.duration as number | undefined
-    if (typeof dur === 'number' && dur > 0) cb.onDuration(dur)
-  }))
-  unsubs.push(native.on('ended', () => { if (!destroyed) cb.onEnded() }))
-  unsubs.push(native.on('playingChange', (d) => {
-    if (!destroyed) cb.onPlayingChange(d?.playing === true)
-  }))
-  unsubs.push(native.on('error', (d) => {
-    if (!destroyed) cb.onError(String(d?.message ?? 'native audio error'))
-  }))
-
-  // Set metadata for lock screen immediately
-  void native.setMetadata({
-    title: track.title,
-    artist: track.artist || 'SoundCloud',
-    artwork: track.artwork
-  })
-
-  // Resolve the stream URL and load it
-  const isHls = track.uri.includes('/stream/hls')
-  let wantPlay = false
-
-  window.api
-    .scResolveStream(track.uri)
-    .then((url) => {
-      if (destroyed) return
-      // HLS not supported on native AVPlayer for SC streams in this setup —
-      // play progressive directly (AVPlayer handles it fine for MP3).
-      void native.load(url).then(() => {
-        if (wantPlay) void native.play()
-      })
+    audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
+    audio.addEventListener('durationchange', () => {
+      if (Number.isFinite(audio.duration)) cb.onDuration(audio.duration)
     })
-    .catch((e) => cb.onError(`SoundCloud: ${e instanceof Error ? e.message : String(e)}`))
+    audio.addEventListener('play', () => cb.onPlayingChange(true))
+    audio.addEventListener('pause', () => cb.onPlayingChange(false))
+    audio.addEventListener('ended', () => cb.onEnded())
+    audio.addEventListener('error', () =>
+      cb.onError(audio.error ? `stream error (code ${audio.error.code})` : 'unknown stream error')
+    )
 
-  return {
-    play: () => { wantPlay = true; void native.play() },
-    pause: () => { wantPlay = false; void native.pause() },
-    seek: (sec) => { void native.seek(sec) },
-    setVolume: (v) => { void native.setVolume(v) },
-    setNormalization: () => {},
-    setFade: () => {},
-    destroy: () => {
-      destroyed = true
-      for (const u of unsubs) u()
-      native.destroy()
+    let hls: Hls | null = null
+    let wantPlay = false
+    let ready = false
+    let destroyed = false
+
+    const tryPlay = (): void => {
+      if (ready && wantPlay) audio.play().catch((e) => cb.onError(String(e)))
     }
-  }
-}
 
-// ---- Web audio (<audio> element) — Android + browser -------------------------
-function createWebPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
-  const audio = new Audio()
-  audio.preload = 'auto'
-  const isHls = track.uri.includes('/stream/hls')
-  const fader = makeVolumeFader(audio)
+    window.api
+      .scResolveStream(track.uri)
+      .then((url) => {
+        if (destroyed) return
+        // Offline downloads resolve to a same-origin blob: URL — always play it
+        // directly (HLS is never downloaded). Otherwise honor the HLS branch.
+        if (isHls && !url.startsWith('blob:') && Hls.isSupported()) {
+          hls = new Hls({ enableWorker: true })
+          hls.on(Hls.Events.ERROR, (_evt, data) => {
+            if (data.fatal) cb.onError(`HLS error: ${data.type} / ${data.details}`)
+          })
+          hls.loadSource(url)
+          hls.attachMedia(audio)
+        } else {
+          audio.src = url
+        }
+        ready = true
+        tryPlay()
+      })
+      .catch((e) => cb.onError(`SoundCloud: ${e instanceof Error ? e.message : String(e)}`))
 
-  audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
-  audio.addEventListener('durationchange', () => {
-    if (Number.isFinite(audio.duration)) cb.onDuration(audio.duration)
-  })
-  audio.addEventListener('play', () => cb.onPlayingChange(true))
-  audio.addEventListener('pause', () => cb.onPlayingChange(false))
-  audio.addEventListener('ended', () => cb.onEnded())
-  audio.addEventListener('error', () =>
-    cb.onError(audio.error ? `stream error (code ${audio.error.code})` : 'unknown stream error')
-  )
-
-  let hls: Hls | null = null
-  let wantPlay = false
-  let ready = false
-  let destroyed = false
-
-  const tryPlay = (): void => {
-    if (ready && wantPlay) audio.play().catch((e) => cb.onError(String(e)))
-  }
-
-  window.api
-    .scResolveStream(track.uri)
-    .then((url) => {
-      if (destroyed) return
-      if (isHls && !url.startsWith('blob:') && Hls.isSupported()) {
-        hls = new Hls({ enableWorker: true })
-        hls.on(Hls.Events.ERROR, (_evt, data) => {
-          if (data.fatal) cb.onError(`HLS error: ${data.type} / ${data.details}`)
-        })
-        hls.loadSource(url)
-        hls.attachMedia(audio)
-      } else {
-        audio.src = url
+    return {
+      play: () => {
+        wantPlay = true
+        tryPlay()
+      },
+      pause: () => {
+        wantPlay = false
+        audio.pause()
+      },
+      seek: (sec) => {
+        if (ready) audio.currentTime = sec
+      },
+      setVolume: (v) => fader.setVolume(v),
+      // Cross-origin stream: no Web Audio, so no loudness boost on mobile.
+      setNormalization: () => {},
+      setFade: (value, rampSec) => fader.setFade(value, rampSec),
+      destroy: () => {
+        destroyed = true
+        fader.destroy()
+        audio.pause()
+        if (hls) {
+          hls.destroy()
+          hls = null
+        }
+        audio.removeAttribute('src')
+        audio.load()
       }
-      ready = true
-      tryPlay()
-    })
-    .catch((e) => cb.onError(`SoundCloud: ${e instanceof Error ? e.message : String(e)}`))
-
-  return {
-    play: () => { wantPlay = true; tryPlay() },
-    pause: () => { wantPlay = false; audio.pause() },
-    seek: (sec) => { if (ready) audio.currentTime = sec },
-    setVolume: (v) => fader.setVolume(v),
-    setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
-    destroy: () => {
-      destroyed = true
-      fader.destroy()
-      audio.pause()
-      if (hls) { hls.destroy(); hls = null }
-      audio.removeAttribute('src')
-      audio.load()
     }
   }
 }
