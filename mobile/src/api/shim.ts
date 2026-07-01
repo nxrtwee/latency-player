@@ -15,6 +15,7 @@ import * as sc from './soundcloud'
 import * as ym from './yandex'
 import * as lyrics from './lyrics'
 import { offlineSrcForUri } from './offline'
+import { getFreshResolve, putResolve } from './resolveCache'
 
 // The shared store derives initial volume from Number(localStorage['lp.volume']).
 // Since Number(null) === 0 passes its 0..1 range check, a fresh install would
@@ -157,9 +158,17 @@ const api = {
   ): Promise<{ timeSec: number; body: string; user: string; avatar?: string }[]> =>
     sc.getComments(trackId),
   scResolveStream: async (transcodingUrl: string): Promise<string> => {
+    // A pre-resolved (prefetched) URL is returned synchronously — this is what
+    // makes a lock-screen skip work: no background network from the throttled
+    // WKWebView. See resolveCache.ts.
+    const cached = getFreshResolve(transcodingUrl)
+    if (cached) return cached
     // Prefer a downloaded copy (offline) over the network stream.
     const local = await offlineSrcForUri(transcodingUrl)
-    return local ?? sc.resolveStream(transcodingUrl)
+    if (local) return local
+    const url = await sc.resolveStream(transcodingUrl)
+    putResolve(transcodingUrl, url)
+    return url
   },
   // Authenticated (OAuth web-session) features — driven by a user-pasted token
   // (auto-capture needs a native WKWebView; see ios-notes). Once the token is
@@ -188,9 +197,14 @@ const api = {
   ymAlbumTracks: (albumId: string): Promise<Track[]> => ym.getAlbumTracks(albumId),
   ymPlaylistTracks: (playlistId: string): Promise<Track[]> => ym.getPlaylistTracks(playlistId),
   ymResolveStream: async (trackId: string): Promise<string> => {
+    const cached = getFreshResolve(trackId)
+    if (cached) return cached
     // Prefer a downloaded copy (offline) over the network stream.
     const local = await offlineSrcForUri(trackId)
-    return local ?? ym.resolveStream(trackId)
+    if (local) return local
+    const url = await ym.resolveStream(trackId)
+    putResolve(trackId, url)
+    return url
   },
   // Auth — driven by a user-pasted OAuth token (or redirect URL). Auto-capture
   // needs a native WebView; see ios-notes / android-notes.

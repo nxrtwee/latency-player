@@ -17,6 +17,7 @@ import { AlbumScreen } from './screens/Album'
 import { WaveScreen } from './screens/Wave'
 import { useT } from './i18n'
 import { installMediaSession } from './api/mediaSession'
+import { installResolvePrefetch } from './api/resolveCache'
 import { installStatusBar } from './api/statusBar'
 import { Splash } from '@renderer/components/Splash'
 import type { Album, Artist, Track } from '@shared/types'
@@ -116,6 +117,7 @@ export function MobileApp(): JSX.Element {
     void loadYmAuth() // restore a saved Yandex token → My Wave / likes import
     void generateMixes()
     installMediaSession()
+    installResolvePrefetch() // keep neighbour stream URLs resolved for lock-screen skips
     installStatusBar()
   }, [loadLikes, loadPlaylists, loadScAuth, loadYmAuth, generateMixes])
 

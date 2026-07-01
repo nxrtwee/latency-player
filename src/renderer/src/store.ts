@@ -481,7 +481,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
    * (SMTC), so this is what fills the system media overlay with cover/title/
    * artist/progress — without it Windows shows "unknown application".
    */
+  // On iOS (Capacitor WKWebView) a native bridge owns the lock screen
+  // (MPRemoteCommandCenter / MPNowPlayingInfoCenter). Driving navigator.mediaSession
+  // from here fights it — it re-introduces the ±10s skip buttons and can leave the
+  // OS unsure which session is "now playing". Leave the whole web media session to
+  // the native bridge on iOS. (Desktop Electron has no window.Capacitor → unaffected.)
+  function osMediaSessionOwnedByNative(): boolean {
+    const cap = (window as unknown as {
+      Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string }
+    }).Capacitor
+    return !!(cap?.isNativePlatform?.() && cap.getPlatform?.() === 'ios')
+  }
+
   function updateMediaSession(): void {
+    if (osMediaSessionOwnedByNative()) return
     if (!('mediaSession' in navigator)) return
     try {
       const { queue, currentIndex, isPlaying, positionSec, durationSec } = get()
@@ -521,6 +534,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
    * Registered once at startup; each handler reads the latest controls via get().
    */
   function bindMediaSessionHandlers(): void {
+    if (osMediaSessionOwnedByNative()) return
     if (!('mediaSession' in navigator)) return
     const ms = navigator.mediaSession
     const on = (action: MediaSessionAction, fn: MediaSessionActionHandler): void => {

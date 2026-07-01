@@ -101,7 +101,12 @@ function getPlugin(): NativeAudioHandle | null {
         if (arr) { const i = arr.indexOf(cb); if (i >= 0) arr.splice(i, 1) }
       }
     },
-    destroy() { listeners.clear() }
+    // This handle wraps a process-lifetime SINGLETON bridge shared by every track.
+    // Do NOT clear the shared listener map here — each playback handle already
+    // removes its own listeners via the unsub returned from on(). Clearing it
+    // would wipe the incoming track's listeners on a switch and the one-shot
+    // position/duration responders. Just stop the native player.
+    destroy() { send({ action: 'pause' }) }
   }
 }
 
