@@ -177,6 +177,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var bridgeInstalled = false
+    private var commandTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
@@ -185,11 +186,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("AVAudioSession error: \(error)")
         }
+        // Start the lock-screen command timer immediately. WKWebView re-asserts
+        // its own skip±10s buttons every time <audio> starts playing, so we
+        // continuously force prev/next-track back.
+        startCommandTimer()
         return true
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         installBridgeIfNeeded()
+    }
+
+    /// Continuously enforce prev/next-track buttons on the lock screen.
+    /// WKWebView's internal media session overrides MPRemoteCommandCenter
+    /// on every playback start; this timer fights back every 0.5s.
+    private func startCommandTimer() {
+        commandTimer?.invalidate()
+        commandTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.enforceLockScreenButtons()
+        }
+    }
+
+    private func enforceLockScreenButtons() {
+        let cc = MPRemoteCommandCenter.shared()
+        // Force-disable scrub/skip that WKWebView enables
+        cc.skipForwardCommand.isEnabled = false
+        cc.skipBackwardCommand.isEnabled = false
+        cc.changePlaybackPositionCommand.isEnabled = false
+        // Force-enable next/prev track
+        cc.nextTrackCommand.isEnabled = true
+        cc.previousTrackCommand.isEnabled = true
     }
 
     private func installBridgeIfNeeded() {
@@ -208,7 +234,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return nil
     }
 
-    func applicationWillResignActive(_ application: UIApplication) {}
+    func applicationWillResignActive(_ application: UIApplication) {
+        // Enforce buttons right before the lock screen appears
+        enforceLockScreenButtons()
+    }
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
     func applicationWillTerminate(_ application: UIApplication) {}
