@@ -114,21 +114,21 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             self?.player?.play()
             self?.sendEvent("playingChange", data: ["playing": true])
             return .success
-        }
+        } as? NSObjectProtocol
         pauseHandler = cc.pauseCommand.addTarget { [weak self] _ in
             self?.player?.pause()
             self?.sendEvent("playingChange", data: ["playing": false])
             return .success
-        }
+        } as? NSObjectProtocol
         cc.togglePlayPauseCommand.isEnabled = true
         nextHandler = cc.nextTrackCommand.addTarget { [weak self] _ in
             self?.sendEvent("nextTrack", data: [:])
             return .success
-        }
+        } as? NSObjectProtocol
         prevHandler = cc.previousTrackCommand.addTarget { [weak self] _ in
             self?.sendEvent("previousTrack", data: [:])
             return .success
-        }
+        } as? NSObjectProtocol
         cc.nextTrackCommand.isEnabled = true
         cc.previousTrackCommand.isEnabled = true
     }
@@ -153,7 +153,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             var i = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
             let pos = p.currentTime().seconds
             let dur = p.currentItem?.duration.seconds ?? 0
-            if pos.isFinite { i[MPNowPlayingInfoPropertyPlaybackPosition] = pos }
+            if pos.isFinite { i[MPNowPlayingInfoPropertyElapsedPlaybackTime] = pos }
             if dur.isFinite { i[MPMediaItemPropertyPlaybackDuration] = dur }
             i[MPNowPlayingInfoPropertyPlaybackRate] = p.timeControlStatus == .playing ? 1.0 : 0.0
             MPNowPlayingInfoCenter.default().nowPlayingInfo = i
