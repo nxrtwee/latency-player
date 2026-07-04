@@ -103,7 +103,7 @@ npm run dist:win   # установщик (NSIS) + портативный exe в
 
 > Для `dist:win` локально на Windows нужен включённый **Developer Mode** (иначе
 > electron-builder падает на распаковке winCodeSign с `Cannot create symbolic
-> link`). В CI собирается автоматически — см ниже.
+> link`). В CI собирается автоматически — см. ниже.
 
 ### Релизы (CI)
 
