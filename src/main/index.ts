@@ -9,6 +9,7 @@ import * as likes from './likes'
 import * as playlists from './playlists'
 import * as lyrics from './lyrics'
 import * as discord from './discord'
+import * as nowplaying from './nowplaying'
 import * as offline from './offline'
 import type { Track } from '../shared/types'
 
@@ -150,6 +151,7 @@ function registerIpc(): void {
   ipcMain.handle('sc:logout', () => soundcloud.logout())
   ipcMain.handle('sc:me', () => soundcloud.getMe())
   ipcMain.handle('sc:isAuthed', () => soundcloud.isAuthed())
+  ipcMain.handle('sc:reachable', () => soundcloud.reachable())
   ipcMain.handle('sc:myLikes', () => soundcloud.getMyLikes())
   ipcMain.handle('sc:personalMixes', () => soundcloud.getPersonalMixes())
   ipcMain.handle('sc:resolveStream', (_e, transcodingUrl: string) =>
@@ -172,6 +174,7 @@ function registerIpc(): void {
   ipcMain.handle('ym:logout', () => yandex.logout())
   ipcMain.handle('ym:me', () => yandex.getMe())
   ipcMain.handle('ym:isAuthed', () => yandex.isAuthed())
+  ipcMain.handle('ym:reachable', () => yandex.reachable())
   ipcMain.handle('ym:resolveStream', (_e, trackId: string) => yandex.resolveStream(trackId))
   ipcMain.handle('ym:myLikes', () => yandex.getMyLikes())
   ipcMain.handle('ym:myWave', (_e, queueId?: string) => yandex.getMyWave(queueId))
@@ -289,6 +292,7 @@ function registerIpc(): void {
   ipcMain.on('discord:update', (_e, activity: discord.DiscordActivity | null) =>
     discord.update(activity)
   )
+  ipcMain.on('nowplaying:update', (_e, np: nowplaying.NowPlaying | null) => nowplaying.update(np))
 
   ipcMain.handle('playlists:get', () => playlists.getAll())
   ipcMain.handle('playlists:create', (_e, name: string) => playlists.create(name))

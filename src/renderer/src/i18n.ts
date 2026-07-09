@@ -66,6 +66,13 @@ const dict: Record<string, { en: string; ru: string }> = {
   title: { en: 'Title', ru: 'Название' },
   // common
   play: { en: 'Play', ru: 'Слушать' },
+  pause: { en: 'Pause', ru: 'Пауза' },
+  openFullscreen: { en: 'Open player', ru: 'Открыть плеер' },
+  listened: { en: 'listened', ru: 'прослушано' },
+  greetNight: { en: 'Good night', ru: 'Доброй ночи' },
+  greetMorning: { en: 'Good morning', ru: 'Доброе утро' },
+  greetAfternoon: { en: 'Good afternoon', ru: 'Добрый день' },
+  greetEvening: { en: 'Good evening', ru: 'Добрый вечер' },
   // tracklist actions
   downloadAll: { en: 'Download all', ru: 'Скачать всё' },
   downloadingAll: { en: 'Downloading…', ru: 'Скачивание…' },
@@ -87,11 +94,31 @@ const dict: Record<string, { en: string; ru: string }> = {
   exploreSub: { en: 'Search millions of tracks and stream them instantly.', ru: 'Ищите миллионы треков и слушайте сразу.' },
   explorePlaceholder: { en: 'What do you want to listen to?', ru: 'Что хотите послушать?' },
   search: { en: 'Search', ru: 'Искать' },
+  searchPlaceholder: { en: 'Search tracks, artists…', ru: 'Треки, артисты…' },
   profiles: { en: 'Profiles', ru: 'Профили' },
   searching: { en: 'Searching {p}…', ru: 'Поиск в {p}…' },
   // search modes (Explore tab)
   searchModeTracks: { en: 'Tracks', ru: 'Треки' },
   searchModeLyrics: { en: 'By lyrics', ru: 'По строчке' },
+  // smart source availability
+  sourceAuto: { en: 'Auto', ru: 'Авто' },
+  sourceAutoOnHint: {
+    en: 'Auto: the app picks a reachable source. Click to choose manually.',
+    ru: 'Авто: плеер сам выбирает доступный источник. Нажмите, чтобы выбрать вручную.'
+  },
+  sourceAutoOffHint: {
+    en: 'Manual source. Click to let the app choose automatically.',
+    ru: 'Ручной выбор источника. Нажмите, чтобы плеер выбирал сам.'
+  },
+  sourceUnreachable: {
+    en: 'Unreachable from your network (VPN may be required)',
+    ru: 'Недоступен из вашей сети (может понадобиться VPN)'
+  },
+  smartSourceTitle: { en: 'Smart source', ru: 'Умный выбор источника' },
+  smartSourceSub: {
+    en: 'Automatically search & play from whichever source is reachable',
+    ru: 'Автоматически искать и играть из доступного источника'
+  },
   lyricsPlaceholder: { en: 'Type a line from the song…', ru: 'Введите строчку из песни…' },
   lyricSearchHint: {
     en: 'Remember a line? Type it and we’ll find the track.',

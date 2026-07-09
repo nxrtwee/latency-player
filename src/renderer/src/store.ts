@@ -66,6 +66,13 @@ interface PlayerState {
 
   // track search (provider chosen via searchSource)
   searchSource: 'soundcloud' | 'yandex'
+  // Smart availability: which backends are reachable for THIS user. SoundCloud
+  // is RKN-blocked in RU without a VPN → the app auto-picks a working source and
+  // falls back on stream failure, instead of asking the user to choose.
+  scReachable: boolean
+  ymReachable: boolean
+  availabilityChecked: boolean
+  autoSource: boolean
   searchQuery: string
   searchResults: Track[]
   searchArtists: Artist[]
@@ -234,6 +241,12 @@ interface PlayerState {
   // track search actions
   runSearch: (query: string) => Promise<void>
   setSearchSource: (source: 'soundcloud' | 'yandex') => void
+  // Probe SC/YM reachability at startup and pick a working default source.
+  probeAvailability: () => Promise<void>
+  // Toggle auto (smart) vs manual source selection.
+  setAutoSource: (auto: boolean) => void
+  // Re-resolve a track that failed to play on the other backend and swap it in.
+  playFromOtherSource: (track: Track, queueIndex: number) => Promise<void>
 
   // search history
   pushSearchHistory: (query: string) => void
@@ -384,11 +397,31 @@ let crossfadeTimer: ReturnType<typeof setTimeout> | null = null
 // to 0 whenever a new track loads. Persist is throttled to avoid hammering disk.
 let lastTickPos = 0
 let lastListenPersist = 0
+// Throttle now-playing file publishing to ~1s (position ticks fire far more often).
+let lastNpPublish = 0
 
 // Synchronous map of trackId -> local media:// URL for offline-cached tracks, so
 // loadIndex can swap a streamed SoundCloud track for its downloaded file without
 // an async hop mid-playback. Populated by loadOffline().
 const offlineUrls = new Map<string, string>()
+
+// Tracks we've already tried to re-source on the other backend after a play
+// failure — prevents an infinite SC↔YM bounce if neither can play a track.
+const triedCrossSourceFallback = new Set<string>()
+
+/**
+ * Default search source for a fresh install: Russian-language systems default
+ * to Yandex Music (works without a VPN in RU; SoundCloud is RKN-blocked), all
+ * others to SoundCloud. Once the user (or the smart probe) picks a source it's
+ * persisted, so this only decides the very first run.
+ */
+const initialSearchSource = (): 'soundcloud' | 'yandex' => {
+  const saved = localStorage.getItem('lp.searchSource')
+  if (saved === 'yandex' || saved === 'soundcloud') return saved
+  const langs = [navigator.language, ...(navigator.languages || [])].filter(Boolean)
+  const isRu = langs.some((l) => l.toLowerCase().startsWith('ru'))
+  return isRu ? 'yandex' : 'soundcloud'
+}
 
 const VOLUME_KEY = 'lp.volume'
 const initialVolume = (() => {
@@ -454,10 +487,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
   /** Push the current track + play state to Discord (no-op when RPC is off). */
   function updatePresence(): void {
     try {
-      const { queue, currentIndex, isPlaying, positionSec } = get()
+      const { queue, currentIndex, isPlaying, positionSec, durationSec } = get()
       const track = currentIndex >= 0 ? queue[currentIndex] : undefined
       if (!track) {
         window.api.discordUpdate(null)
+        window.api.nowPlayingUpdate(null)
         return
       }
       window.api.discordUpdate({
@@ -468,6 +502,34 @@ export const usePlayer = create<PlayerState>((set, get) => {
         // local files have data: URLs which Discord can't load.
         artwork: track.artwork && /^https?:\/\//.test(track.artwork) ? track.artwork : undefined,
         startedAt: Date.now() - Math.round(positionSec * 1000),
+        playing: isPlaying
+      })
+    } catch {
+      /* ignore */
+    }
+    publishNowPlaying()
+  }
+
+  /**
+   * Mirror now-playing to ~/.latency (via main) for external readers like the Rockstar Minecraft
+   * client's MusicInfo HUD. Cheap enough to call on every position tick — main only rewrites the
+   * tiny JSON and re-encodes the cover when the artwork actually changes.
+   */
+  function publishNowPlaying(): void {
+    try {
+      const { queue, currentIndex, isPlaying, positionSec, durationSec } = get()
+      const track = currentIndex >= 0 ? queue[currentIndex] : undefined
+      if (!track) {
+        window.api.nowPlayingUpdate(null)
+        return
+      }
+      window.api.nowPlayingUpdate({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artwork: track.artwork,
+        positionSec,
+        durationSec,
         playing: isPlaying
       })
     } catch {
@@ -734,11 +796,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
           set({ positionSec: sec })
         }
         maybeStartCrossfade(sec)
+        const nowMs = Date.now()
+        if (nowMs - lastNpPublish > 1000) {
+          lastNpPublish = nowMs
+          publishNowPlaying()
+        }
       },
       onDuration: (sec) => {
         if (!active()) return
         set({ durationSec: sec })
         updateMediaSession()
+        publishNowPlaying()
       },
       onPlayingChange: (playing) => {
         if (!active()) return
@@ -750,6 +818,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
         // A failure on the incoming (inactive) handle aborts the crossfade.
         if (!active()) {
           if (incoming) cancelCrossfade()
+          return
+        }
+        // Smart availability at PLAY time: SoundCloud's media CDN can be blocked
+        // even when search works, so a track resolves but won't stream. In auto
+        // mode, transparently re-resolve the SAME track on the other source and
+        // play that instead of just surfacing an error.
+        const failing = get().queue[get().currentIndex]
+        if (get().autoSource && failing && !triedCrossSourceFallback.has(failing.id)) {
+          triedCrossSourceFallback.add(failing.id)
+          void get().playFromOtherSource(failing, get().currentIndex)
           return
         }
         set({ error: message })
@@ -933,7 +1011,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     playlists: [],
 
-    searchSource: localStorage.getItem('lp.searchSource') === 'yandex' ? 'yandex' : 'soundcloud',
+    searchSource: initialSearchSource(),
+    // Assume both reachable until the startup probe says otherwise (optimistic).
+    scReachable: true,
+    ymReachable: true,
+    availabilityChecked: false,
+    // Auto (smart) source is the default; user can pin a source in Settings.
+    autoSource: localStorage.getItem('lp.autoSource') !== '0',
     searchQuery: '',
     searchResults: [],
     searchArtists: [],
@@ -985,8 +1069,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
       return t === 'light' || t === 'green' ? 'crimson' : t
     })(),
     // nextgen is the flagship skin: default to it unless the user explicitly
-    // chose oldgen (i.e. first launch / unset = nextgen).
-    skin: localStorage.getItem('lp.skin') === 'oldgen' ? 'oldgen' : 'nextgen',
+    // chose another (i.e. first launch / unset = nextgen).
+    skin: (() => {
+      const v = localStorage.getItem('lp.skin')
+      return v === 'oldgen' || v === 'postgen' ? v : 'nextgen'
+    })(),
     graphics: (() => {
       const v = localStorage.getItem('lp.graphics') || ''
       return ['balanced', 'optimized', 'performance'].includes(v) ? v : 'standard'
@@ -1206,6 +1293,87 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    setAutoSource(auto) {
+      set({ autoSource: auto })
+      try {
+        localStorage.setItem('lp.autoSource', auto ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      // Turning auto back on immediately re-probes and re-picks a working source.
+      if (auto) void get().probeAvailability()
+    },
+
+    async probeAvailability() {
+      // Probe both backends in parallel. Auth implies reachability (we already
+      // talked to it), so authed sources are trusted without a network hit.
+      const [sc, ym] = await Promise.all([
+        get().scAuth ? Promise.resolve(true) : window.api.scReachable().catch(() => false),
+        get().ymAuth ? Promise.resolve(true) : window.api.ymReachable().catch(() => false)
+      ])
+      set({ scReachable: sc, ymReachable: ym, availabilityChecked: true })
+
+      // In auto mode, land the effective source on something that actually works.
+      // Preference order: keep the current pick if it's reachable, else switch to
+      // whichever backend is up (Yandex wins ties — works without VPN in RU).
+      if (get().autoSource) {
+        const cur = get().searchSource
+        const curOk = cur === 'soundcloud' ? sc : ym
+        if (!curOk) {
+          const next: 'soundcloud' | 'yandex' = ym ? 'yandex' : sc ? 'soundcloud' : cur
+          if (next !== cur) {
+            set({ searchSource: next })
+            try {
+              localStorage.setItem('lp.searchSource', next)
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+    },
+
+    async playFromOtherSource(track, queueIndex) {
+      // The track failed to play on its own backend (typically SC media CDN
+      // blocked). Find the same song on the OTHER source and swap it into the
+      // queue slot so playback continues seamlessly.
+      const from = track.providerId
+      const to: 'soundcloud' | 'yandex' = from === 'yandex' ? 'soundcloud' : 'yandex'
+      // Mark that source as unreachable-for-media so future searches prefer the
+      // working one (SC search may still return, but its streams don't play).
+      if (from === 'soundcloud') set({ scReachable: false, searchSource: 'yandex' })
+      else if (from === 'yandex') set({ ymReachable: false, searchSource: 'soundcloud' })
+      try {
+        localStorage.setItem('lp.searchSource', to)
+      } catch {
+        /* ignore */
+      }
+
+      const artist = track.artists?.[0]?.name || track.artist || ''
+      const q = `${artist} ${track.title}`.trim()
+      try {
+        const results = to === 'yandex' ? await window.api.ymSearch(q) : await window.api.scSearch(q)
+        if (!results.length) {
+          set({ error: `Track unavailable on ${from === 'soundcloud' ? 'SoundCloud' : 'Yandex'}` })
+          return
+        }
+        const titleLc = track.title.toLowerCase()
+        const match =
+          results.find((r) => r.title.toLowerCase().includes(titleLc)) ||
+          results.find((r) => titleLc.includes(r.title.toLowerCase())) ||
+          results[0]
+        // Swap the failed track for the working one in the queue, keep position.
+        const queue = [...get().queue]
+        if (queueIndex >= 0 && queueIndex < queue.length) {
+          queue[queueIndex] = match
+          set({ queue })
+          get().jumpTo(queueIndex)
+        }
+      } catch {
+        set({ error: `Track unavailable on ${from === 'soundcloud' ? 'SoundCloud' : 'Yandex'}` })
+      }
+    },
+
     async runSearch(query) {
       set({ searchQuery: query })
       const q = query.trim()
@@ -1213,34 +1381,74 @@ export const usePlayer = create<PlayerState>((set, get) => {
         set({ searchResults: [], searchArtists: [], searchAlbums: [], searchLoading: false })
         return
       }
-      const source = get().searchSource
+
+      // Fetch tracks + facets from one source. The primary tracks() call is NOT
+      // swallowed (throws bubble up so the fallback can catch), while the facet
+      // calls (artists/albums) stay best-effort.
+      const fetchFrom = async (
+        src: 'soundcloud' | 'yandex'
+      ): Promise<{ results: Track[]; artists: Artist[]; albums: Album[] }> => {
+        if (src === 'yandex') {
+          const [results, artists, albums, playlists] = await Promise.all([
+            window.api.ymSearch(q),
+            window.api.ymSearchArtists(q).catch(() => []),
+            window.api.ymSearchAlbums(q).catch(() => []),
+            window.api.ymSearchPlaylists(q).catch(() => [])
+          ])
+          return { results, artists, albums: [...albums, ...playlists] }
+        }
+        const [results, artists, albums, playlists] = await Promise.all([
+          window.api.scSearch(q),
+          window.api.scSearchUsers(q).catch(() => []),
+          window.api.scSearchAlbums(q).catch(() => []),
+          window.api.scSearchPlaylists(q).catch(() => [])
+        ])
+        return { results, artists, albums: [...albums, ...playlists] }
+      }
+
+      const primary = get().searchSource
+      const other: 'soundcloud' | 'yandex' = primary === 'yandex' ? 'soundcloud' : 'yandex'
       set({ searchLoading: true, error: null })
+
+      const label = (s: string): string => (s === 'yandex' ? 'Yandex' : 'SoundCloud')
+
       try {
-        const [results, artists, albums, playlists] =
-          source === 'yandex'
-            ? await Promise.all([
-                window.api.ymSearch(q),
-                window.api.ymSearchArtists(q).catch(() => []),
-                window.api.ymSearchAlbums(q).catch(() => []),
-                window.api.ymSearchPlaylists(q).catch(() => [])
-              ])
-            : await Promise.all([
-                window.api.scSearch(q),
-                window.api.scSearchUsers(q).catch(() => []),
-                window.api.scSearchAlbums(q).catch(() => []),
-                window.api.scSearchPlaylists(q).catch(() => [])
-              ])
+        const out = await fetchFrom(primary)
         set({
-          searchResults: results,
-          searchArtists: artists,
-          searchAlbums: [...albums, ...playlists],
+          searchResults: out.results,
+          searchArtists: out.artists,
+          searchAlbums: out.albums,
           searchLoading: false
         })
       } catch (e) {
-        const label = source === 'yandex' ? 'Yandex' : 'SoundCloud'
+        // Primary source failed (typically unreachable / RKN-blocked). In auto
+        // mode, silently try the other source and switch the effective source to
+        // it so subsequent searches / playback use the working backend.
+        if (get().autoSource) {
+          try {
+            const out = await fetchFrom(other)
+            set({
+              searchResults: out.results,
+              searchArtists: out.artists,
+              searchAlbums: out.albums,
+              searchLoading: false,
+              searchSource: other,
+              scReachable: other === 'soundcloud' ? true : false,
+              ymReachable: other === 'yandex' ? true : false
+            })
+            try {
+              localStorage.setItem('lp.searchSource', other)
+            } catch {
+              /* ignore */
+            }
+            return
+          } catch {
+            /* both failed → surface the original error below */
+          }
+        }
         set({
           searchLoading: false,
-          error: `${label}: ${e instanceof Error ? e.message : String(e)}`
+          error: `${label(primary)}: ${e instanceof Error ? e.message : String(e)}`
         })
       }
     },
@@ -1597,7 +1805,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     setSkin(skin) {
-      const v = skin === 'nextgen' ? 'nextgen' : 'oldgen'
+      const v = skin === 'nextgen' || skin === 'postgen' ? skin : 'oldgen'
       set({ skin: v })
       try {
         localStorage.setItem('lp.skin', v)

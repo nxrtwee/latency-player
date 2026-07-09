@@ -60,6 +60,29 @@ export function isAuthed(): boolean {
   return !!oauthToken
 }
 
+/**
+ * Fast reachability probe (mirror of soundcloud.reachable). Yandex Music works
+ * without a VPN in RU but may be unreachable elsewhere; we probe so the smart
+ * source picker never lands the user on a dead backend. Hits a public endpoint
+ * that responds without auth.
+ */
+export async function reachable(timeoutMs = 4000): Promise<boolean> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${API}/search?type=track&page=0&text=test`, {
+      method: 'GET',
+      headers: apiHeaders(),
+      signal: ctrl.signal
+    })
+    return res.ok || res.status > 0
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function init(): Promise<void> {
   await loadCache()
 }

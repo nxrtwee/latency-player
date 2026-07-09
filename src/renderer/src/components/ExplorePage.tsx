@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
-import { SearchIcon, SoundCloudIcon, YandexIcon, ClockIcon, PlayIcon } from './Icons'
+import {
+  SearchIcon,
+  SoundCloudIcon,
+  YandexIcon,
+  ClockIcon,
+  PlayIcon,
+  AutopilotIcon
+} from './Icons'
 import { TrackRow } from './TrackRow'
 
 const GENRES = [
@@ -56,6 +63,10 @@ export function ExplorePage(): JSX.Element {
   const searchLoading = usePlayer((s) => s.searchLoading)
   const searchSource = usePlayer((s) => s.searchSource)
   const setSearchSource = usePlayer((s) => s.setSearchSource)
+  const autoSource = usePlayer((s) => s.autoSource)
+  const setAutoSource = usePlayer((s) => s.setAutoSource)
+  const scReachable = usePlayer((s) => s.scReachable)
+  const ymReachable = usePlayer((s) => s.ymReachable)
   const runSearch = usePlayer((s) => s.runSearch)
   const openArtist = usePlayer((s) => s.openArtist)
   const openAlbum = usePlayer((s) => s.openAlbum)
@@ -74,6 +85,8 @@ export function ExplorePage(): JSX.Element {
     runSearch(q)
   }
   function chooseSource(source: 'soundcloud' | 'yandex'): void {
+    // Explicitly picking a source pins it → leave auto mode.
+    if (autoSource) setAutoSource(false)
     if (source === searchSource) return
     setSearchSource(source)
     // Re-run the keyword search on the new source; lyric mode re-resolves via effect.
@@ -190,20 +203,39 @@ export function ExplorePage(): JSX.Element {
           </button>
         </div>
 
+        {/* Smart availability: in auto mode the app picks a reachable source
+            itself; the pill just reports which one is live and offers a manual
+            override. Toggling a source off pins it (manual mode). */}
         <div className="ex-source">
           <button
-            className={`ex-source-btn ${searchSource === 'soundcloud' ? 'active' : ''}`}
+            className={`ex-source-auto ${autoSource ? 'active' : ''}`}
+            onClick={() => setAutoSource(!autoSource)}
+            title={autoSource ? t('sourceAutoOnHint') : t('sourceAutoOffHint')}
+          >
+            <AutopilotIcon size={14} />
+            {t('sourceAuto')}
+          </button>
+          <button
+            className={`ex-source-btn ${
+              !autoSource && searchSource === 'soundcloud' ? 'active' : ''
+            } ${!scReachable ? 'down' : ''}`}
             onClick={() => chooseSource('soundcloud')}
+            title={scReachable ? 'SoundCloud' : t('sourceUnreachable')}
           >
             <SoundCloudIcon size={15} />
             SoundCloud
+            {!scReachable && <span className="ex-source-dot" />}
           </button>
           <button
-            className={`ex-source-btn ${searchSource === 'yandex' ? 'active' : ''}`}
+            className={`ex-source-btn ${
+              !autoSource && searchSource === 'yandex' ? 'active' : ''
+            } ${!ymReachable ? 'down' : ''}`}
             onClick={() => chooseSource('yandex')}
+            title={ymReachable ? 'Yandex Music' : t('sourceUnreachable')}
           >
             <YandexIcon size={15} />
             {t('yandexMusic')}
+            {!ymReachable && <span className="ex-source-dot" />}
           </button>
         </div>
 

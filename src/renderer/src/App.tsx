@@ -7,6 +7,8 @@ import { PlayerBar } from './components/PlayerBar'
 import { RightPanel } from './components/RightPanel'
 import { TitleBar } from './components/TitleBar'
 import { Resizer } from './components/Resizer'
+import { PostgenTopBar } from './components/PostgenTopBar'
+import { PostgenRail } from './components/PostgenRail'
 import { InfoPage } from './components/InfoPage'
 import { HomePage } from './components/HomePage'
 import { ExplorePage } from './components/ExplorePage'
@@ -46,6 +48,7 @@ export function App(): JSX.Element {
   const generateMixes = usePlayer((s) => s.generateMixes)
   const loadScAuth = usePlayer((s) => s.loadScAuth)
   const loadYmAuth = usePlayer((s) => s.loadYmAuth)
+  const probeAvailability = usePlayer((s) => s.probeAvailability)
   const loadMyWave = usePlayer((s) => s.loadMyWave)
   const error = usePlayer((s) => s.error)
   const source = usePlayer((s) => s.source)
@@ -132,7 +135,12 @@ export function App(): JSX.Element {
       if (resumeSession) restoreQueue()
     })
     loadYmAuth().then(() => loadMyWave())
-    Promise.all([loadLikes(), loadScAuth()]).then(() => generateMixes())
+    Promise.all([loadLikes(), loadScAuth()]).then(() => {
+      generateMixes()
+      // Probe source reachability AFTER auth loads so authed backends are
+      // trusted without a network hit, and the effective source auto-corrects.
+      void probeAvailability()
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -145,18 +153,95 @@ export function App(): JSX.Element {
     void img.decode?.().catch(() => {})
   }, [customBg])
 
+  const postgen = skin === 'postgen'
+
+  // Shared page router — identical across shells; only the surrounding chrome
+  // (top bar + rail vs sidebar + bottom playerbar) differs by skin.
+  const page = (
+    <CustomScroll key={viewKey}>
+      {source === 'home' ? (
+        <HomePage />
+      ) : source === 'explore' ? (
+        <ExplorePage />
+      ) : source === 'activity' ? (
+        <ActivityPage />
+      ) : source === 'artist' ? (
+        <ArtistPage />
+      ) : source === 'album' ? (
+        <AlbumPage />
+      ) : source === 'mix' ? (
+        <MixPage />
+      ) : source === 'wave' ? (
+        <WavePage />
+      ) : source === 'info' ? (
+        <InfoPage />
+      ) : source === 'profile' ? (
+        <ProfilePage />
+      ) : source === 'comments' ? (
+        <CommentsPage />
+      ) : (
+        <TrackList />
+      )}
+    </CustomScroll>
+  )
+
+  const overlays = (
+    <>
+      {lyricsOpen && <LyricsView />}
+      {settingsOpen && <Settings />}
+      {framingOpen && <BgFraming />}
+      {eqOpen && <Equalizer />}
+      {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
+    </>
+  )
+
+  const bgLayer = showInterfaceBg && (
+    <div className="app-bg">
+      <img
+        src={customBg!}
+        alt=""
+        style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+      />
+      <div className="app-bg-scrim" />
+    </div>
+  )
+
+  // ---- postgen shell: top deck (nav + search + transport) + thin left rail,
+  // no bottom playerbar. Structurally different from oldgen/nextgen. ----
+  if (postgen) {
+    return (
+      <div className={`app pg ${showInterfaceBg ? 'has-bg' : ''}`}>
+        {bgLayer}
+        <PostgenTopBar />
+        <div className="app-body pg-body">
+          <PostgenRail />
+          <main className="content">
+            {error && <div className="error-banner">{error}</div>}
+            {page}
+          </main>
+          {rightOpen && (
+            <Resizer
+              width={rightW}
+              setWidth={setRightW}
+              min={280}
+              max={540}
+              dir={-1}
+              persistKey="lp.rightW"
+            />
+          )}
+          {rightMounted && (
+            <RightPanel width={rightW} closing={!rightOpen} onClosed={() => setRightMounted(false)} />
+          )}
+        </div>
+        <PlayerBar />
+        {overlays}
+      </div>
+    )
+  }
+
   return (
     <div className={`app ${showInterfaceBg ? 'has-bg' : ''}`}>
-      {showInterfaceBg && (
-        <div className="app-bg">
-          <img
-            src={customBg!}
-            alt=""
-            style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
-          />
-          <div className="app-bg-scrim" />
-        </div>
-      )}
+      {bgLayer}
       <TitleBar />
       <div className="app-body">
         <Sidebar
@@ -177,31 +262,7 @@ export function App(): JSX.Element {
         )}
         <main className="content">
           {error && <div className="error-banner">{error}</div>}
-          <CustomScroll key={viewKey}>
-            {source === 'home' ? (
-              <HomePage />
-            ) : source === 'explore' ? (
-              <ExplorePage />
-            ) : source === 'activity' ? (
-              <ActivityPage />
-            ) : source === 'artist' ? (
-              <ArtistPage />
-            ) : source === 'album' ? (
-              <AlbumPage />
-            ) : source === 'mix' ? (
-              <MixPage />
-            ) : source === 'wave' ? (
-              <WavePage />
-            ) : source === 'info' ? (
-              <InfoPage />
-            ) : source === 'profile' ? (
-              <ProfilePage />
-            ) : source === 'comments' ? (
-              <CommentsPage />
-            ) : (
-              <TrackList />
-            )}
-          </CustomScroll>
+          {page}
         </main>
         {rightOpen && (
           <Resizer
@@ -222,11 +283,7 @@ export function App(): JSX.Element {
         )}
       </div>
       <PlayerBar />
-      {lyricsOpen && <LyricsView />}
-      {settingsOpen && <Settings />}
-      {framingOpen && <BgFraming />}
-      {eqOpen && <Equalizer />}
-      {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
+      {overlays}
     </div>
   )
 }

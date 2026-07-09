@@ -86,6 +86,8 @@ export function Settings(): JSX.Element {
   const setBgScope = usePlayer((s) => s.setBgScope)
   const compact = usePlayer((s) => s.compact)
   const setCompact = usePlayer((s) => s.setCompact)
+  const autoSource = usePlayer((s) => s.autoSource)
+  const setAutoSource = usePlayer((s) => s.setAutoSource)
   const showSearchAlbums = usePlayer((s) => s.showSearchAlbums)
   const setShowSearchAlbums = usePlayer((s) => s.setShowSearchAlbums)
   const showSearchPlaylists = usePlayer((s) => s.showSearchPlaylists)
@@ -193,6 +195,12 @@ export function Settings(): JSX.Element {
                   onClick={() => setSkin('nextgen')}
                 >
                   nextgen
+                </button>
+                <button
+                  className={skin === 'postgen' ? 'active' : ''}
+                  onClick={() => setSkin('postgen')}
+                >
+                  postgen
                 </button>
               </div>
             </div>
@@ -327,6 +335,14 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('compactSub')}</span>
               </div>
               <Toggle checked={compact} onChange={setCompact} />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('smartSourceTitle')}</span>
+                <span className="set-row-sub">{t('smartSourceSub')}</span>
+              </div>
+              <Toggle checked={autoSource} onChange={setAutoSource} />
             </div>
 
             <div className="set-row">

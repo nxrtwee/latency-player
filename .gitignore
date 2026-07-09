@@ -30,3 +30,6 @@ Pods/
 soundcloud.json
 .env
 .env.*
+
+# Local scratch notes (personal to-do lists), never part of the repo
+bugs.txt

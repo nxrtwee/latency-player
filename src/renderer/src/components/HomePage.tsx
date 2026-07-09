@@ -14,6 +14,7 @@ import {
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
+import { HomeBento } from './HomeBento'
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -67,12 +68,16 @@ export function HomePage(): JSX.Element {
   const myWave = usePlayer((s) => s.myWave)
   const playMyWave = usePlayer((s) => s.playMyWave)
   const offlineCount = usePlayer((s) => s.offlineIds.length)
+  const skin = usePlayer((s) => s.skin)
   const t = useT()
 
   const [firstRun] = useState(() => !localStorage.getItem('lp.visited'))
   useEffect(() => {
     localStorage.setItem('lp.visited', '1')
   }, [])
+
+  // postgen swaps the whole home surface for a bento dashboard (own markup).
+  if (skin === 'postgen') return <HomeBento />
 
   const jumpBack = recentlyPlayed.slice(0, 8)
 

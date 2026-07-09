@@ -178,6 +178,9 @@ const api = {
   scLogout: async (): Promise<void> => sc.logout(),
   scMe: (): Promise<Artist | null> => sc.getMe(),
   scIsAuthed: async (): Promise<boolean> => sc.isAuthed(),
+  // Reachability probe (desktop smart-availability). On mobile both backends go
+  // through CapacitorHttp / the dev proxy, so assume reachable.
+  scReachable: async (): Promise<boolean> => true,
   scMyLikes: (): Promise<Track[]> => sc.getMyLikes(),
   scPersonalMixes: (): Promise<
     { title: string; subtitle?: string; cover?: string; tracks: Track[] }[]
@@ -213,6 +216,7 @@ const api = {
   ymLogout: async (): Promise<void> => ym.logout(),
   ymMe: (): Promise<Artist | null> => ym.getMe(),
   ymIsAuthed: async (): Promise<boolean> => ym.isAuthed(),
+  ymReachable: async (): Promise<boolean> => true,
   ymMyLikes: (): Promise<Track[]> => ym.getMyLikes(),
   ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
     ym.getMyWave(queueId),

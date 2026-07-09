@@ -46,6 +46,45 @@ export function isAuthed(): boolean {
   return !!oauthToken
 }
 
+async function probe(url: string, timeoutMs: number): Promise<boolean> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': UA },
+      signal: ctrl.signal
+    })
+    // Any HTTP response (even a redirect/4xx) means the host is reachable.
+    return res.ok || res.status > 0
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Fast reachability probe. In RU, SoundCloud is blocked by RKN (a network
+ * block, not geo) → the request hangs / resets rather than returning a body.
+ *
+ * IMPORTANT: the website host (soundcloud.com / api) and the STREAMING CDN
+ * (*.sndcdn.com) are blocked independently. A user can reach the API (so search
+ * works) yet have the media CDN blocked (so nothing actually plays/downloads).
+ * We therefore require BOTH the API host AND the media CDN to be reachable —
+ * otherwise the smart picker would land on SC and every track would fail at
+ * play time. Both probes race a short timeout; either failing = "not usable".
+ */
+export async function reachable(timeoutMs = 4000): Promise<boolean> {
+  const [api, cdn] = await Promise.all([
+    probe('https://api-v2.soundcloud.com/', timeoutMs),
+    // A tiny known asset on the media CDN — HEADs aren't allowed, but a GET that
+    // connects (even 4xx) proves the CDN host is not blocked.
+    probe('https://cf-media.sndcdn.com/', timeoutMs)
+  ])
+  return api && cdn
+}
+
 /** Scrape soundcloud.com's script bundles for the public client_id. */
 async function discoverClientId(): Promise<string> {
   const home = await fetch('https://soundcloud.com/', { headers: { 'User-Agent': UA } })

@@ -5065,6 +5065,40 @@ button:disabled {
   color: var(--bg);
   background: var(--accent);
 }
+/* Smart-availability controls */
+.ex-source-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    color 0.13s ease,
+    background 0.13s ease;
+}
+.ex-source-auto:hover {
+  color: var(--text);
+}
+.ex-source-auto.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.ex-source-btn.down {
+  opacity: 0.5;
+}
+.ex-source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff5a5a;
+  box-shadow: 0 0 6px #ff5a5a;
+}
 @keyframes gs-spin {
   to {
     transform: rotate(360deg);

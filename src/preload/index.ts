@@ -30,6 +30,7 @@ const api = {
   scLogout: (): Promise<void> => ipcRenderer.invoke('sc:logout'),
   scMe: (): Promise<Artist | null> => ipcRenderer.invoke('sc:me'),
   scIsAuthed: (): Promise<boolean> => ipcRenderer.invoke('sc:isAuthed'),
+  scReachable: (): Promise<boolean> => ipcRenderer.invoke('sc:reachable'),
   scMyLikes: (): Promise<Track[]> => ipcRenderer.invoke('sc:myLikes'),
   scPersonalMixes: (): Promise<{ title: string; subtitle?: string; cover?: string; tracks: Track[] }[]> =>
     ipcRenderer.invoke('sc:personalMixes'),
@@ -59,6 +60,7 @@ const api = {
   ymLogout: (): Promise<void> => ipcRenderer.invoke('ym:logout'),
   ymMe: (): Promise<Artist | null> => ipcRenderer.invoke('ym:me'),
   ymIsAuthed: (): Promise<boolean> => ipcRenderer.invoke('ym:isAuthed'),
+  ymReachable: (): Promise<boolean> => ipcRenderer.invoke('ym:reachable'),
   ymResolveStream: (trackId: string): Promise<string> =>
     ipcRenderer.invoke('ym:resolveStream', trackId),
   ymMyLikes: (): Promise<Track[]> => ipcRenderer.invoke('ym:myLikes'),
@@ -168,6 +170,18 @@ const api = {
       playing: boolean
     } | null
   ): void => ipcRenderer.send('discord:update', activity),
+
+  nowPlayingUpdate: (
+    np: {
+      title: string
+      artist?: string
+      album?: string
+      artwork?: string
+      positionSec: number
+      durationSec: number
+      playing: boolean
+    } | null
+  ): void => ipcRenderer.send('nowplaying:update', np),
 
   getPlaylists: (): Promise<Playlist[]> => ipcRenderer.invoke('playlists:get'),
   createPlaylist: (name: string): Promise<Playlist[]> => ipcRenderer.invoke('playlists:create', name),
