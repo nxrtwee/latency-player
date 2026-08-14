@@ -68,7 +68,7 @@ export function HomePage(): JSX.Element {
   const myWave = usePlayer((s) => s.myWave)
   const playMyWave = usePlayer((s) => s.playMyWave)
   const offlineCount = usePlayer((s) => s.offlineIds.length)
-  const skin = usePlayer((s) => s.skin)
+  const visual = usePlayer((s) => s.visual)
   const t = useT()
 
   const [firstRun] = useState(() => !localStorage.getItem('lp.visited'))
@@ -76,8 +76,9 @@ export function HomePage(): JSX.Element {
     localStorage.setItem('lp.visited', '1')
   }, [])
 
-  // postgen swaps the whole home surface for a bento dashboard (own markup).
-  if (skin === 'postgen') return <HomeBento />
+  // Universal visual swaps the whole home surface for a bento dashboard (own
+  // markup). Orthogonal to skin — works under both oldgen and nextgen.
+  if (visual === 'universal') return <HomeBento />
 
   const jumpBack = recentlyPlayed.slice(0, 8)
 

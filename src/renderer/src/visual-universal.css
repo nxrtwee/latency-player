@@ -1,0 +1,425 @@
+/* ============================================================
+   VISUAL: UNIVERSAL
+   ------------------------------------------------------------
+   Orthogonal to skin (oldgen/nextgen). The Universal visual does
+   exactly two things and nothing else — chrome (player, layout,
+   lists) stays governed by the active skin:
+     1. Home surface  → bento dashboard (HomeBento, .pg-* markup).
+     2. Collapsed sidebar → shows count badges on the icon rail.
+   Scoped under [data-visual='universal'] so it layers on top of
+   whichever skin/theme is active.
+   ============================================================ */
+
+/* Glass tokens the bento tiles consume. Only the --pg-* set — we do NOT
+   override the skin's base palette (--bg/--text/--panel/…); the theme owns
+   those. Universal is a surface treatment, not a theme. */
+[data-visual='universal'] {
+  --pg-r: 18px;
+  --pg-r-lg: 26px;
+  --pg-r-xl: 32px;
+  --pg-glass: blur(30px) saturate(1.4);
+  --pg-shadow: 0 24px 70px -34px rgba(0, 0, 0, 0.92);
+  --pg-ring: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --pg-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --pg-glow: 0 0 30px -6px var(--accent);
+  --pg-glass-fill: linear-gradient(
+    160deg,
+    rgba(30, 26, 46, 0.62),
+    rgba(14, 12, 24, 0.62)
+  );
+}
+
+/* ============================================================
+   COLLAPSED SIDEBAR — count badges on the icon rail.
+   The standard collapsed sidebar hides .nav-badge (styles.css); under
+   Universal we bring it back as a small corner pill on the icon, the
+   way the old postgen rail showed likes/downloaded counts.
+   ============================================================ */
+[data-visual='universal'] .sidebar.collapsed .nav-item {
+  position: relative;
+  overflow: visible;
+}
+[data-visual='universal'] .sidebar.collapsed .nav-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* ============================================================
+   HOME — BENTO DASHBOARD
+   A responsive grid of variably-sized glass tiles.
+   ============================================================ */
+[data-visual='universal'] .pg-home {
+  padding: 22px;
+}
+[data-visual='universal'] .pg-bento {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Rows grow past the 128px base when a full-width section (mixes / jump-back)
+     wraps its cards onto extra lines — otherwise those sections overflow their
+     fixed track and collide with the section below. */
+  grid-auto-rows: minmax(128px, auto);
+  gap: 14px;
+}
+
+/* shared tile chrome */
+[data-visual='universal'] .pg-tile {
+  position: relative;
+  border-radius: var(--pg-r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--pg-glass-fill);
+  box-shadow: var(--pg-ring);
+  overflow: hidden;
+  text-align: left;
+  color: var(--text);
+  animation: pgTileIn 0.5s var(--pg-ease) both;
+}
+@keyframes pgTileIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-visual='universal'] button.pg-tile {
+  cursor: pointer;
+  transition:
+    transform 0.2s var(--pg-ease),
+    box-shadow 0.2s var(--pg-ease),
+    border-color 0.2s var(--pg-ease);
+}
+[data-visual='universal'] button.pg-tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--pg-glow), var(--pg-ring);
+}
+
+/* ---- hero / now playing (2x2) ---- */
+[data-visual='universal'] .pg-tile-hero {
+  grid-column: span 2;
+  grid-row: span 2;
+  display: flex;
+  align-items: flex-end;
+}
+[data-visual='universal'] .pg-hero-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(2px) saturate(1.1);
+  transform: scale(1.08);
+  opacity: 0.55;
+}
+[data-visual='universal'] .pg-tile-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 6, 15, 0.1),
+    rgba(8, 6, 15, 0.55) 55%,
+    rgba(8, 6, 15, 0.9)
+  );
+}
+[data-visual='universal'] .pg-hero-inner {
+  position: relative;
+  z-index: 1;
+  padding: 26px;
+  width: 100%;
+}
+[data-visual='universal'] .pg-hero-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+[data-visual='universal'] .pg-hero-title {
+  margin: 8px 0 4px;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+[data-visual='universal'] .pg-hero-title .accent {
+  color: var(--accent);
+}
+[data-visual='universal'] .pg-hero-sub {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+[data-visual='universal'] .pg-hero-actions {
+  display: flex;
+  gap: 10px;
+}
+[data-visual='universal'] .pg-hero-play {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 12px;
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--accent-ink);
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  box-shadow: var(--pg-glow);
+  transition: transform 0.16s var(--pg-ease);
+}
+[data-visual='universal'] .pg-hero-play:hover {
+  transform: scale(1.04);
+}
+[data-visual='universal'] .pg-hero-ghost {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.16s var(--pg-ease);
+}
+[data-visual='universal'] .pg-hero-ghost:hover {
+  background: var(--row-hover);
+}
+
+/* ---- quick tiles (1x1) ---- */
+[data-visual='universal'] .pg-tile-quick {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+}
+[data-visual='universal'] .pg-quick-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+[data-visual='universal'] .pg-quick-label {
+  font-size: 14px;
+  font-weight: 700;
+}
+[data-visual='universal'] .pg-quick-sub {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+/* Section-artwork backdrop — heavier blur than the now-playing hero so tiles
+   read as mood, not detail. Content sits above via z-index. */
+[data-visual='universal'] .pg-tile-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(15px) saturate(1.2);
+  transform: scale(1.25);
+  /* Kept modest so bright (white) artwork can't wash the tile out — the
+     ::after scrim below then guarantees contrast for the light text. */
+  opacity: 0.42;
+}
+[data-visual='universal'] .pg-tile-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Dark, near-uniform veil so text stays legible over ANY artwork — a solid
+     floor plus a directional gradient for depth. Without the floor, white or
+     bright covers left the light text invisible. */
+  background: linear-gradient(155deg, rgba(8, 6, 15, 0.58), rgba(8, 6, 15, 0.82));
+}
+/* Lift content above the backdrop. The absolutely-positioned count (.pg-quick-sub)
+   keeps its own positioning — only its stacking is raised. */
+[data-visual='universal'] .pg-tile-quick > *:not(.pg-tile-bg):not(.pg-quick-sub),
+[data-visual='universal'] .pg-tile-stats > *:not(.pg-tile-bg) {
+  position: relative;
+  z-index: 1;
+}
+[data-visual='universal'] .pg-quick-sub {
+  z-index: 1;
+}
+[data-visual='universal'] .pg-tile-quick:hover .pg-tile-bg,
+[data-visual='universal'] .pg-tile-stats:hover .pg-tile-bg {
+  opacity: 0.5;
+}
+
+/* ---- My Wave (2x1) ---- */
+[data-visual='universal'] .pg-tile-wave {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  cursor: pointer;
+}
+[data-visual='universal'] .pg-wave-disc {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+[data-visual='universal'] .pg-wave-core {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  box-shadow: var(--pg-glow);
+}
+[data-visual='universal'] .pg-tile-wave .wave-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: pgWaveRing 2.6s ease-out infinite;
+}
+[data-visual='universal'] .pg-tile-wave .wave-ring.r2 {
+  animation-delay: 1.3s;
+}
+@keyframes pgWaveRing {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+[data-visual='universal'] .pg-wave-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+[data-visual='universal'] .pg-wave-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+}
+[data-visual='universal'] .pg-wave-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+[data-visual='universal'] .pg-wave-play {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--accent-ink);
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  box-shadow: var(--pg-glow);
+  transition: transform 0.16s var(--pg-ease);
+}
+[data-visual='universal'] .pg-wave-play:hover {
+  transform: scale(1.08);
+}
+
+/* ---- stats widget (2x1 — spans two columns) ---- */
+[data-visual='universal'] .pg-tile-stats {
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+}
+[data-visual='universal'] .pg-stats-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+[data-visual='universal'] .pg-stats-rows {
+  display: flex;
+  flex-direction: row;
+  gap: 32px;
+  margin-top: auto;
+}
+[data-visual='universal'] .pg-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+[data-visual='universal'] .pg-stat-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+[data-visual='universal'] .pg-stat-artist {
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-visual='universal'] .pg-stat-key {
+  font-size: 11px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ---- native sections (mixes / jump-back / playlists), full-width ----
+   These reuse Default's own markup and styles (.home-section, .home-h2,
+   .mix-grid, .home-grid, .home-card* — all in styles.css), which truncate
+   correctly. Universal only slots them into the bento grid as a full-width
+   cell; it adds NO card styling of its own here. */
+[data-visual='universal'] .pg-native {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+/* The bento already separates cells with its own gap — drop the native
+   section's trailing margin so spacing stays even. */
+[data-visual='universal'] .pg-native .home-section {
+  margin-bottom: 0;
+}
+
+/* Narrower windows — collapse the bento to 2 columns. The native sections
+   (mixes / jump-back / playlists) reflow on their own (auto-fill grids in
+   styles.css), so they need no width override here. */
+@media (max-width: 1100px) {
+  [data-visual='universal'] .pg-bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

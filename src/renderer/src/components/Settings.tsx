@@ -68,6 +68,8 @@ export function Settings(): JSX.Element {
   const setTheme = usePlayer((s) => s.setTheme)
   const skin = usePlayer((s) => s.skin)
   const setSkin = usePlayer((s) => s.setSkin)
+  const visual = usePlayer((s) => s.visual)
+  const setVisual = usePlayer((s) => s.setVisual)
   const graphics = usePlayer((s) => s.graphics)
   const setGraphics = usePlayer((s) => s.setGraphics)
   const fpsLimit = usePlayer((s) => s.fpsLimit)
@@ -196,11 +198,26 @@ export function Settings(): JSX.Element {
                 >
                   nextgen
                 </button>
+              </div>
+            </div>
+
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('visual')}</span>
+                <span className="set-row-sub">{t('visualSub')}</span>
+              </div>
+              <div className="mix-toggle">
                 <button
-                  className={skin === 'postgen' ? 'active' : ''}
-                  onClick={() => setSkin('postgen')}
+                  className={visual === 'default' ? 'active' : ''}
+                  onClick={() => setVisual('default')}
                 >
-                  postgen
+                  {t('visualDefault')}
+                </button>
+                <button
+                  className={visual === 'universal' ? 'active' : ''}
+                  onClick={() => setVisual('universal')}
+                >
+                  {t('visualUniversal')}
                 </button>
               </div>
             </div>

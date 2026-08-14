@@ -26,13 +26,13 @@ function greeting(t: ReturnType<typeof useT>): string {
 }
 
 /**
- * postgen Home — a bento dashboard.
+ * Universal-visual Home — a bento dashboard.
  *
- * Instead of the stacked hero + rows of oldgen/nextgen, this lays the home
+ * Instead of the stacked hero + rows of the default home, this lays the home
  * surface out as a grid of variably-sized tiles: a large now-playing / hero
  * tile, quick-access chips, My Wave, a mixes strip, a jump-back grid and a
- * stats widget. Only rendered when `skin === 'postgen'` (HomePage gate); reuses
- * the exact same store data.
+ * stats widget. Only rendered when `visual === 'universal'` (HomePage gate);
+ * reuses the exact same store data.
  */
 export function HomeBento(): JSX.Element {
   const setSource = usePlayer((s) => s.setSource)
@@ -260,86 +260,88 @@ export function HomeBento(): JSX.Element {
           </div>
         </button>
 
-        {/* Mixes strip. */}
+        {/* Mixes — native Default cards. The bento's own card markup could not
+            be made to truncate reliably, so mixes / jump-back / playlists reuse
+            the proven .mix-grid / .home-grid + .home-card* from styles.css.
+            Wrapped in a full-width bento cell (.pg-native) so they slot into the
+            grid; the other tiles above stay custom. */}
         {mixesVisible && mixes.length > 0 && (
-          <div className="pg-tile pg-tile-mixes">
-            <div className="pg-tile-head">
-              <h2>{t('yourMixes')}</h2>
-              <button className="pg-see-all" onClick={() => setSource('explore')}>
-                {t('explore')}
-              </button>
-            </div>
-            <div className="pg-mix-row">
-              {mixes.slice(0, 6).map((mix) => (
-                <button
-                  key={mix.id}
-                  className="pg-mix-card"
-                  onClick={() => openMix(mix)}
-                  title={mix.title}
-                >
-                  <div className="pg-mix-art">
-                    {mix.cover ? <img src={mix.cover} alt="" /> : <span>♪</span>}
-                    <span className="pg-mix-badge">{mixesReal ? 'SC' : 'MIX'}</span>
-                  </div>
-                  <span className="pg-mix-title">{mix.title}</span>
-                </button>
-              ))}
+          <div className="pg-native">
+            <div className="home-section">
+              <h2 className="home-h2">{t('yourMixes')}</h2>
+              <div className="mix-grid">
+                {mixes.slice(0, 6).map((mix) => (
+                  <button
+                    key={mix.id}
+                    className="mix-card"
+                    onClick={() => openMix(mix)}
+                    title={mix.title}
+                  >
+                    <div className="mix-art">
+                      {mix.cover ? <img src={mix.cover} alt="" /> : <span>♪</span>}
+                      <span className="mix-badge">{mixesReal ? 'SC' : 'MIX'}</span>
+                    </div>
+                    <span className="home-card-title">{mix.title}</span>
+                    <span className="home-card-sub">{mix.subtitle}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Jump back in. */}
+        {/* Jump back in — native Default cards. */}
         {jumpBack.length > 0 && (
-          <div className="pg-tile pg-tile-jump">
-            <div className="pg-tile-head">
-              <h2>{t('jumpBackIn')}</h2>
-            </div>
-            <div className="pg-jump-grid">
-              {jumpBack.map((tr: Track, i) => (
-                <button
-                  key={`${tr.id}-${i}`}
-                  className="pg-jump-card"
-                  onClick={() => playQueue(recentlyPlayed, i)}
-                  title={`${tr.title} — ${tr.artist || ''}`}
-                >
-                  <div className="pg-jump-art">
-                    {tr.artwork ? <img src={tr.artwork} alt="" /> : <span>♫</span>}
-                  </div>
-                  <span className="pg-jump-title">{tr.title}</span>
-                  <span className="pg-jump-sub">{tr.artist || t('listen')}</span>
-                </button>
-              ))}
+          <div className="pg-native">
+            <div className="home-section">
+              <h2 className="home-h2">{t('jumpBackIn')}</h2>
+              <div className="home-grid">
+                {jumpBack.map((tr: Track, i) => (
+                  <button
+                    key={`${tr.id}-${i}`}
+                    className="home-card"
+                    onClick={() => playQueue(recentlyPlayed, i)}
+                    title={`${tr.title} — ${tr.artist || ''}`}
+                  >
+                    <div className="home-card-art">
+                      {tr.artwork ? <img src={tr.artwork} alt="" /> : <span>♫</span>}
+                    </div>
+                    <span className="home-card-title">{tr.title}</span>
+                    <span className="home-card-sub">{tr.artist || t('listen')}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Playlists strip. */}
+        {/* Playlists — native Default cards. */}
         {playlists.length > 0 && (
-          <div className="pg-tile pg-tile-jump">
-            <div className="pg-tile-head">
-              <h2>{t('yourPlaylists')}</h2>
-            </div>
-            <div className="pg-jump-grid">
-              {playlists.slice(0, 6).map((pl) => (
-                <button
-                  key={pl.id}
-                  className="pg-jump-card"
-                  onClick={() => openPlaylist(pl.id)}
-                  title={pl.name}
-                >
-                  <div className="pg-jump-art pl">
-                    {pl.tracks.find((tr) => tr.artwork)?.artwork ? (
-                      <img src={pl.tracks.find((tr) => tr.artwork)?.artwork} alt="" />
-                    ) : (
-                      <span>♪</span>
-                    )}
-                  </div>
-                  <span className="pg-jump-title">{pl.name}</span>
-                  <span className="pg-jump-sub">
-                    {pl.tracks.length} {t('tracks')}
-                  </span>
-                </button>
-              ))}
+          <div className="pg-native">
+            <div className="home-section">
+              <h2 className="home-h2">{t('yourPlaylists')}</h2>
+              <div className="home-grid">
+                {playlists.slice(0, 6).map((pl) => (
+                  <button
+                    key={pl.id}
+                    className="home-card"
+                    onClick={() => openPlaylist(pl.id)}
+                    title={pl.name}
+                  >
+                    <div className="home-card-art pl">
+                      {pl.tracks.find((tr) => tr.artwork)?.artwork ? (
+                        <img src={pl.tracks.find((tr) => tr.artwork)?.artwork} alt="" />
+                      ) : (
+                        <span>♪</span>
+                      )}
+                    </div>
+                    <span className="home-card-title">{pl.name}</span>
+                    <span className="home-card-sub">
+                      {pl.tracks.length} {t('tracks')}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}

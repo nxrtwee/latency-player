@@ -141,6 +141,10 @@ interface PlayerState {
   // appearance
   theme: string
   skin: string
+  // Visual is orthogonal to skin: 'default' keeps each skin's normal look,
+  // 'universal' swaps the home surface for the bento dashboard + shows count
+  // badges on the collapsed sidebar. Chrome (player, layout) stays per-skin.
+  visual: string
   // Graphics quality preset: standard | balanced | optimized | performance.
   // Higher tiers progressively shed GPU-heavy effects (glass blur, grain,
   // infinite animations, visualizer rAF). standard = unchanged current look.
@@ -307,6 +311,7 @@ interface PlayerState {
   // appearance
   setTheme: (theme: string) => void
   setSkin: (skin: string) => void
+  setVisual: (visual: string) => void
   setGraphics: (g: string) => void
   setFpsLimit: (n: number) => void
   setCustomAccent: (hex: string) => void
@@ -810,6 +815,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
       },
       onPlayingChange: (playing) => {
         if (!active()) return
+        // During a crossfade the OUTGOING track (still the active handle until the
+        // fade completes) reaches its natural end and — per the HTML media spec —
+        // fires `pause` right before `ended`. That pause must be ignored: the
+        // incoming track is already audibly playing, but its own `play` event was
+        // swallowed earlier (it wasn't the active token yet), so honoring this
+        // pause would strand isPlaying=false while sound continues — leaving the
+        // play/pause button showing "paused" and unresponsive (togglePlay would
+        // call play() on an already-playing handle). A real user pause can't reach
+        // here mid-crossfade: togglePlay cancels the crossfade first. This is the
+        // sibling guard to the `if (crossfading) return` already in onEnded.
+        if (crossfading && !playing) return
         set({ isPlaying: playing })
         updatePresence()
         updateMediaSession()
@@ -925,7 +941,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
     crossfading = false
     lastTickPos = 0
     const track = get().queue[nextIndex]
-    set({ currentIndex: nextIndex, positionSec: 0, durationSec: track?.durationSec ?? 0 })
+    // The promoted handle is already playing; its `play` event fired while it was
+    // still the inactive (incoming) token and was swallowed, so force isPlaying
+    // true here to guarantee the button/OS state matches the audible track.
+    set({
+      currentIndex: nextIndex,
+      positionSec: 0,
+      durationSec: track?.durationSec ?? 0,
+      isPlaying: true
+    })
     updateMediaSession()
     updatePresence()
     persistQueue()
@@ -1069,10 +1093,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       return t === 'light' || t === 'green' ? 'crimson' : t
     })(),
     // nextgen is the flagship skin: default to it unless the user explicitly
-    // chose another (i.e. first launch / unset = nextgen).
+    // chose oldgen. Any legacy value (incl. the removed 'postgen') → nextgen.
     skin: (() => {
       const v = localStorage.getItem('lp.skin')
-      return v === 'oldgen' || v === 'postgen' ? v : 'nextgen'
+      return v === 'oldgen' ? v : 'nextgen'
+    })(),
+    // Visual layer (orthogonal to skin). Legacy postgen users effectively wanted
+    // this look — but we don't auto-migrate; default everyone to 'default'.
+    visual: (() => {
+      const v = localStorage.getItem('lp.visual')
+      return v === 'universal' ? 'universal' : 'default'
     })(),
     graphics: (() => {
       const v = localStorage.getItem('lp.graphics') || ''
@@ -1593,6 +1623,23 @@ export const usePlayer = create<PlayerState>((set, get) => {
           })
           return
         }
+        // Some YM tracks (wave/rotor/podcast rows) carry no artistId — resolve the
+        // real Yandex artist by name instead of falling through to the `local`
+        // branch below, which would render only the 0–1 locally-matching tracks.
+        if (track.artist) {
+          try {
+            const artists = await window.api.ymSearchArtists(track.artist)
+            const match =
+              artists.find((a) => a.name.toLowerCase() === track.artist!.toLowerCase()) ||
+              artists[0]
+            if (match) {
+              await get().openArtist(match)
+              return
+            }
+          } catch {
+            /* fall through to local */
+          }
+        }
       }
       if (track.providerId === 'soundcloud') {
         if (track.artistId) {
@@ -1603,7 +1650,22 @@ export const usePlayer = create<PlayerState>((set, get) => {
           })
           return
         }
-        // Older liked SC tracks have no artistId — resolve the profile by name.
+        // Tracks pulled from feeds/mixes/related often omit the uploader id, so
+        // artistId is missing. Resolve the uploader straight from the track id —
+        // this reuses the working getUserTracks(id) path and is immune to fragile
+        // username matching (e.g. profiles with symbols like `✶` that break search).
+        if (track.id.startsWith('sc:')) {
+          try {
+            const artist = await window.api.scTrackArtist(track.id.slice(3))
+            if (artist) {
+              await get().openArtist(artist)
+              return
+            }
+          } catch {
+            /* fall through to name search */
+          }
+        }
+        // Last resort: resolve the profile by name (older liked tracks, etc.).
         if (track.artist) {
           try {
             const users = await window.api.scSearchUsers(track.artist)
@@ -1805,10 +1867,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     setSkin(skin) {
-      const v = skin === 'nextgen' || skin === 'postgen' ? skin : 'oldgen'
+      const v = skin === 'oldgen' ? 'oldgen' : 'nextgen'
       set({ skin: v })
       try {
         localStorage.setItem('lp.skin', v)
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setVisual(visual) {
+      const v = visual === 'universal' ? 'universal' : 'default'
+      set({ visual: v })
+      try {
+        localStorage.setItem('lp.visual', v)
       } catch {
         /* ignore */
       }

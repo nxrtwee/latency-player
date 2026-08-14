@@ -7,8 +7,6 @@ import { PlayerBar } from './components/PlayerBar'
 import { RightPanel } from './components/RightPanel'
 import { TitleBar } from './components/TitleBar'
 import { Resizer } from './components/Resizer'
-import { PostgenTopBar } from './components/PostgenTopBar'
-import { PostgenRail } from './components/PostgenRail'
 import { InfoPage } from './components/InfoPage'
 import { HomePage } from './components/HomePage'
 import { ExplorePage } from './components/ExplorePage'
@@ -62,6 +60,8 @@ export function App(): JSX.Element {
   const settingsOpen = usePlayer((s) => s.settingsOpen)
   const eqOpen = usePlayer((s) => s.eqOpen)
   const theme = usePlayer((s) => s.theme)
+  const skin = usePlayer((s) => s.skin)
+  const visual = usePlayer((s) => s.visual)
   const customAccent = usePlayer((s) => s.customAccent)
   const customBg = usePlayer((s) => s.customBg)
   const bgPosX = usePlayer((s) => s.bgPosX)
@@ -74,7 +74,6 @@ export function App(): JSX.Element {
   const showInterfaceBg = !!customBg && bgScope !== 'fullscreen'
   const compact = usePlayer((s) => s.compact)
   const sidebarCollapsed = usePlayer((s) => s.sidebarCollapsed)
-  const skin = usePlayer((s) => s.skin)
   const graphics = usePlayer((s) => s.graphics)
   const hwAccel = usePlayer((s) => s.hwAccel)
   const lyricsSize = usePlayer((s) => s.lyricsSize)
@@ -95,6 +94,7 @@ export function App(): JSX.Element {
     const root = document.documentElement
     root.setAttribute('data-theme', theme)
     root.setAttribute('data-skin', skin)
+    root.setAttribute('data-visual', visual)
     root.setAttribute('data-graphics', graphics)
     // Software compositing (HW accel off) makes backdrop-filter/blur/grain
     // brutally expensive — flag it so the CSS sheds those heavy effects (else
@@ -106,7 +106,7 @@ export function App(): JSX.Element {
     // --accent-soft are derived in CSS via color-mix. Other themes use their own.
     if (theme === 'custom') root.style.setProperty('--accent', customAccent)
     else root.style.removeProperty('--accent')
-  }, [theme, skin, graphics, hwAccel, customAccent, compact, lyricsSize])
+  }, [theme, skin, visual, graphics, hwAccel, customAccent, compact, lyricsSize])
 
   const viewKey =
     source === 'playlist'
@@ -153,10 +153,9 @@ export function App(): JSX.Element {
     void img.decode?.().catch(() => {})
   }, [customBg])
 
-  const postgen = skin === 'postgen'
-
   // Shared page router — identical across shells; only the surrounding chrome
-  // (top bar + rail vs sidebar + bottom playerbar) differs by skin.
+  // differs by skin. HomePage itself swaps to the bento surface when the
+  // Universal visual is on (see HomePage's visual gate).
   const page = (
     <CustomScroll key={viewKey}>
       {source === 'home' ? (
@@ -205,39 +204,6 @@ export function App(): JSX.Element {
       <div className="app-bg-scrim" />
     </div>
   )
-
-  // ---- postgen shell: top deck (nav + search + transport) + thin left rail,
-  // no bottom playerbar. Structurally different from oldgen/nextgen. ----
-  if (postgen) {
-    return (
-      <div className={`app pg ${showInterfaceBg ? 'has-bg' : ''}`}>
-        {bgLayer}
-        <PostgenTopBar />
-        <div className="app-body pg-body">
-          <PostgenRail />
-          <main className="content">
-            {error && <div className="error-banner">{error}</div>}
-            {page}
-          </main>
-          {rightOpen && (
-            <Resizer
-              width={rightW}
-              setWidth={setRightW}
-              min={280}
-              max={540}
-              dir={-1}
-              persistKey="lp.rightW"
-            />
-          )}
-          {rightMounted && (
-            <RightPanel width={rightW} closing={!rightOpen} onClosed={() => setRightMounted(false)} />
-          )}
-        </div>
-        <PlayerBar />
-        {overlays}
-      </div>
-    )
-  }
 
   return (
     <div className={`app ${showInterfaceBg ? 'has-bg' : ''}`}>

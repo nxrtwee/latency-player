@@ -213,14 +213,29 @@ export async function getSimilarArtists(artistId: string, limit = 12): Promise<A
   }
 }
 
-export async function getArtistTracks(artistId: string, limit = 50): Promise<Track[]> {
-  const res = await fetch(
-    `${API}/artists/${encodeURIComponent(artistId)}/tracks?page=0&page-size=${limit}`,
-    { headers: apiHeaders() }
-  )
-  if (!res.ok) throw new Error(`Yandex artist tracks failed (${res.status})`)
-  const data = (await res.json()) as { result?: { tracks?: YmTrack[] } }
-  return (data.result?.tracks || []).map(toTrack).filter((t): t is Track => t !== null)
+export async function getArtistTracks(artistId: string, max = 500): Promise<Track[]> {
+  // Page through the artist's whole catalogue, not just the first 50. The endpoint
+  // reports `pager.total`; loop until we've collected it (or hit `max`).
+  const perPage = 50
+  const out: Track[] = []
+  for (let page = 0; out.length < max; page++) {
+    const res = await fetch(
+      `${API}/artists/${encodeURIComponent(artistId)}/tracks?page=${page}&page-size=${perPage}`,
+      { headers: apiHeaders() }
+    )
+    if (!res.ok) {
+      if (page === 0) throw new Error(`Yandex artist tracks failed (${res.status})`)
+      break
+    }
+    const data = (await res.json()) as {
+      result?: { tracks?: YmTrack[]; pager?: { total?: number } }
+    }
+    const batch = data.result?.tracks || []
+    out.push(...batch.map(toTrack).filter((t): t is Track => t !== null))
+    const total = data.result?.pager?.total ?? out.length
+    if (batch.length === 0 || out.length >= total) break
+  }
+  return out
 }
 
 interface YmAlbum {

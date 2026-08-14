@@ -141,6 +141,7 @@ function registerIpc(): void {
   ipcMain.handle('sc:searchAlbums', (_e, query: string) => soundcloud.searchAlbums(query))
   ipcMain.handle('sc:searchPlaylists', (_e, query: string) => soundcloud.searchPlaylists(query))
   ipcMain.handle('sc:user', (_e, userId: string) => soundcloud.getUser(userId))
+  ipcMain.handle('sc:trackArtist', (_e, trackId: string) => soundcloud.getTrackArtist(trackId))
   ipcMain.handle('sc:userTracks', (_e, userId: string) => soundcloud.getUserTracks(userId))
   ipcMain.handle('sc:userAlbums', (_e, userId: string) => soundcloud.getUserAlbums(userId))
   ipcMain.handle('sc:albumTracks', (_e, albumId: string) => soundcloud.getAlbumTracks(albumId))

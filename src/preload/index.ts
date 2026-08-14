@@ -11,6 +11,8 @@ const api = {
   scSearch: (query: string): Promise<Track[]> => ipcRenderer.invoke('sc:search', query),
   scSearchUsers: (query: string): Promise<Artist[]> => ipcRenderer.invoke('sc:searchUsers', query),
   scUser: (userId: string): Promise<Artist | null> => ipcRenderer.invoke('sc:user', userId),
+  scTrackArtist: (trackId: string): Promise<Artist | null> =>
+    ipcRenderer.invoke('sc:trackArtist', trackId),
   scUserTracks: (userId: string): Promise<Track[]> => ipcRenderer.invoke('sc:userTracks', userId),
   scUserAlbums: (userId: string): Promise<Album[]> => ipcRenderer.invoke('sc:userAlbums', userId),
   scAlbumTracks: (albumId: string): Promise<Track[]> =>

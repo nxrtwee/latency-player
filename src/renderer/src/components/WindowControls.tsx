@@ -24,8 +24,8 @@ const CloseGlyph = (): JSX.Element => (
 )
 
 /**
- * Min / maximize / close buttons for the frameless window. Shared by the oldgen
- * TitleBar and the postgen top bar. The container is marked no-drag by callers
+ * Min / maximize / close buttons for the frameless window. Used by the
+ * TitleBar. The container is marked no-drag by callers
  * (or via CSS) so the buttons stay clickable inside a draggable region.
  */
 export function WindowControls(): JSX.Element {

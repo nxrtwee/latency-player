@@ -212,6 +212,28 @@ export async function getUser(userId: string): Promise<Artist | null> {
   return toArtist(u)
 }
 
+/**
+ * Resolve a track's uploader straight from the track id (`/tracks/{id}`).
+ * Used when a Track carries no artistId (tracks pulled from feeds/mixes/related
+ * often omit the nested `user.id`). Resolving by track id is immune to fragile
+ * username matching — e.g. profiles with symbols like `✶` that break user search.
+ */
+export async function getTrackArtist(trackId: string): Promise<Artist | null> {
+  const res = await authedFetch(
+    (id) => `${API}/tracks/${encodeURIComponent(trackId)}?client_id=${id}`
+  )
+  if (!res.ok) return null
+  const t = (await res.json()) as ScTrack
+  const u = t.user
+  if (u?.id == null || !u.username) return null
+  return {
+    id: String(u.id),
+    name: u.username,
+    provider: 'soundcloud',
+    avatar: u.avatar_url ? u.avatar_url.replace('-large', '-t200x200') : undefined
+  }
+}
+
 /** Tracks SoundCloud considers related to a given track id (numeric, no `sc:`). */
 export async function relatedTracks(trackId: string, limit = 25): Promise<Track[]> {
   const res = await authedFetch(
@@ -284,13 +306,33 @@ export async function getComments(trackId: string, limit = 100): Promise<ScComme
     .sort((a, b) => a.timeSec - b.timeSec)
 }
 
-export async function getUserTracks(userId: string, limit = 60): Promise<Track[]> {
-  const res = await authedFetch(
-    (id) => `${API}/users/${encodeURIComponent(userId)}/tracks?limit=${limit}&client_id=${id}`
+export async function getUserTracks(userId: string, max = 500): Promise<Track[]> {
+  // Page through the artist's whole track list, not just the first 60. SC v2 uses
+  // cursor pagination: `linked_partitioning=1` returns a `next_href` (already
+  // carrying the client_id) that we follow until it runs out or we hit `max`.
+  const first = await authedFetch(
+    (id) =>
+      `${API}/users/${encodeURIComponent(userId)}/tracks?limit=50&linked_partitioning=1&client_id=${id}`
   )
-  if (!res.ok) throw new Error(`SoundCloud artist tracks failed (${res.status})`)
-  const data = (await res.json()) as { collection?: ScTrack[] }
-  return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
+  if (!first.ok) throw new Error(`SoundCloud artist tracks failed (${first.status})`)
+  let data = (await first.json()) as { collection?: ScTrack[]; next_href?: string | null }
+  const raw: ScTrack[] = [...(data.collection || [])]
+  let next = data.next_href || null
+  while (next && raw.length < max) {
+    try {
+      const url = next.includes('client_id=')
+        ? next
+        : `${next}${next.includes('?') ? '&' : '?'}client_id=${await getClientId()}`
+      const res = await fetch(url, { headers: { 'User-Agent': UA } })
+      if (!res.ok) break
+      data = (await res.json()) as { collection?: ScTrack[]; next_href?: string | null }
+      raw.push(...(data.collection || []))
+      next = data.next_href || null
+    } catch {
+      break
+    }
+  }
+  return raw.map(toTrack).filter((t): t is Track => t !== null)
 }
 
 interface ScPlaylist {

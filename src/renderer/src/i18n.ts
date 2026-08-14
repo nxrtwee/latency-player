@@ -268,6 +268,13 @@ const dict: Record<string, { en: string; ru: string }> = {
   collapseSidebar: { en: 'Collapse sidebar', ru: 'Свернуть панель' },
   expandSidebar: { en: 'Expand sidebar', ru: 'Развернуть панель' },
   skinSub: { en: 'oldgen — classic · nextgen — cinematic', ru: 'oldgen — классика · nextgen — кино' },
+  visual: { en: 'Visual', ru: 'Визуал' },
+  visualSub: {
+    en: 'Default — standard look · Universal — bento home + collapsed-sidebar counters',
+    ru: 'Default — обычный вид · Universal — bento-главная + счётчики в свёрнутой панели'
+  },
+  visualDefault: { en: 'Default', ru: 'Default' },
+  visualUniversal: { en: 'Universal', ru: 'Universal' },
   graphics: { en: 'Graphics preset', ru: 'Пресет графики' },
   graphicsSub: {
     en: 'Lower GPU load — Standard keeps the current look',
