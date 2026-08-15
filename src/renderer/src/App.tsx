@@ -82,6 +82,7 @@ export function App(): JSX.Element {
   const visual = usePlayer((s) => s.visual)
   const customAccent = usePlayer((s) => s.customAccent)
   const customBg = usePlayer((s) => s.customBg)
+  const bgKind = usePlayer((s) => s.bgKind)
   const bgPosX = usePlayer((s) => s.bgPosX)
   const bgPosY = usePlayer((s) => s.bgPosY)
   const bgZoom = usePlayer((s) => s.bgZoom)
@@ -165,12 +166,96 @@ export function App(): JSX.Element {
 
   // Warm the decode cache for the custom background so the fullscreen player can
   // show it instantly (no first-open flash), even when the interface doesn't use it.
+  // Images only — a <video> streams its own frames, there's nothing to pre-decode.
   useEffect(() => {
-    if (!customBg) return
+    if (!customBg || bgKind === 'video') return
     const img = new Image()
     img.src = customBg
     void img.decode?.().catch(() => {})
-  }, [customBg])
+  }, [customBg, bgKind])
+
+  // The interface background video keeps decoding even while the fullscreen player
+  // is open — but the player fully covers it and renders its OWN background, so two
+  // video layers decode at once (the FPS drop after adding video backgrounds). Pause
+  // the (invisible) interface clip while lyrics are open; resume on close.
+  //
+  // Also self-heal: Chromium can spontaneously pause a background <video> during
+  // heavy compositing — whenever it pauses and we didn't ask for it, resume.
+  const bgVideoRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const v = bgVideoRef.current
+    if (!v) return
+    const sync = (): void => {
+      if (usePlayer.getState().lyricsOpen) v.pause()
+      else v.play().catch(() => {})
+    }
+    sync()
+    v.addEventListener('pause', sync)
+    return () => v.removeEventListener('pause', sync)
+  }, [lyricsOpen, customBg, bgKind])
+
+  // Freeze watchdog. The self-heal above only catches an explicit `pause`. But a
+  // background <video> in Chromium/Electron can also wedge PERMANENTLY after an
+  // FPS dip / compositor stall: the element keeps reporting playing (paused is
+  // false, no `pause` event) yet never presents another frame — it sits dead
+  // until the bg or the whole app is reloaded. Detect it via
+  // requestVideoFrameCallback: while the clip should be playing, a presented
+  // frame must arrive every ~1.5s. If none does, re-kick decode (tiny seek +
+  // play) AND nudge the layer transform to force the compositor to re-present.
+  // Skipped while lyrics owns the clip (we pause it there on purpose).
+  useEffect(() => {
+    const v = bgVideoRef.current
+    if (!v || bgKind !== 'video' || !customBg) return
+    // rVFC isn't in every TS DOM lib version — reach it through a narrow cast
+    // (via unknown so it doesn't clash with a built-in declaration if present).
+    const vf = v as unknown as {
+      requestVideoFrameCallback?: (cb: () => void) => number
+      cancelVideoFrameCallback?: (h: number) => void
+    }
+    const hasRvfc = typeof vf.requestVideoFrameCallback === 'function'
+    let lastFrame = performance.now()
+    let lastTime = v.currentTime
+    let rvfc = 0
+    const onFrame = (): void => {
+      lastFrame = performance.now()
+      rvfc = vf.requestVideoFrameCallback!(onFrame)
+    }
+    if (hasRvfc) rvfc = vf.requestVideoFrameCallback!(onFrame)
+
+    const watchdog = window.setInterval(() => {
+      if (v.paused || usePlayer.getState().lyricsOpen) {
+        lastFrame = performance.now()
+        lastTime = v.currentTime
+        return
+      }
+      // No presented frame (rVFC) — or, lacking rVFC, a frozen currentTime — for
+      // longer than the grace window means the clip is wedged. 500ms still sits
+      // above the frame interval of a janking-but-alive clip (so a legit FPS dip
+      // isn't mistaken for a freeze), while recovering almost imperceptibly fast.
+      const stalled = hasRvfc
+        ? performance.now() - lastFrame > 500
+        : v.currentTime === lastTime
+      lastTime = v.currentTime
+      if (!stalled) return
+      try {
+        v.currentTime = v.currentTime + 0.001
+      } catch {
+        /* seek can throw mid-load; ignore */
+      }
+      v.play().catch(() => {})
+      // Force the compositor to re-composite the (possibly frozen) layer.
+      v.style.transform = 'translateZ(0) translateY(0.02px)'
+      requestAnimationFrame(() => {
+        v.style.transform = ''
+      })
+      lastFrame = performance.now()
+    }, 250)
+
+    return () => {
+      window.clearInterval(watchdog)
+      if (hasRvfc && rvfc) vf.cancelVideoFrameCallback?.(rvfc)
+    }
+  }, [customBg, bgKind])
 
   // ---- Client hotkeys ---------------------------------------------------------
   // In-app dispatch: catch keydown (when focused) and all mouse-button binds in
@@ -288,11 +373,15 @@ export function App(): JSX.Element {
 
   const bgLayer = showInterfaceBg && (
     <div className="app-bg">
-      <img
-        src={customBg!}
-        alt=""
-        style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
-      />
+      {bgKind === 'video' ? (
+        <video ref={bgVideoRef} src={customBg!} autoPlay loop muted playsInline />
+      ) : (
+        <img
+          src={customBg!}
+          alt=""
+          style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+        />
+      )}
       <div className="app-bg-scrim" />
     </div>
   )

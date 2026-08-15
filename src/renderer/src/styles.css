@@ -78,13 +78,24 @@ button {
   overflow: hidden;
   pointer-events: none;
 }
-.app-bg img {
+.app-bg img,
+.app-bg video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform-origin: center;
+}
+/* Promote the background video to its OWN compositor layer. Without this the
+   clip shares the root layer with the backdrop-filter panels above it, and a
+   compositor-thread wheel scroll (which skips re-rasterizing filtered regions —
+   see the .content::before note below) stalls the video's frame presentation
+   too: the picture "freezes" until a click. An isolated GPU layer decouples the
+   video's playback from that scroll/blur raster, so it keeps playing. */
+.app-bg video {
+  transform: translateZ(0);
+  will-change: transform;
 }
 .app-bg-scrim {
   position: absolute;
@@ -4897,6 +4908,10 @@ button:disabled {
   position: absolute;
   right: 0;
   bottom: 52px;
+  /* Sit above the sibling corner icon buttons (reset/sync), which are positioned
+     with z-index: 3 in the same stacking context — without this the pop-up menu
+     renders behind them. */
+  z-index: 10;
   width: 240px;
   background: rgba(18, 16, 26, 0.94);
   backdrop-filter: blur(14px);
@@ -4915,6 +4930,19 @@ button:disabled {
   letter-spacing: 0.6px;
   color: var(--muted);
   padding: 2px 6px 6px;
+}
+.kbg-scope-label {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 6px 6px;
+}
+.kbg-scope {
+  margin: 0 2px 6px;
+  display: flex;
+}
+.kbg-scope button {
+  flex: 1;
+  text-align: center;
 }
 .kbg-opt {
   text-align: left;
@@ -5469,7 +5497,58 @@ button:disabled {
 /* List heading */
 .cm-list-head {
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
+/* Reset the borrowed-comments link (misclick recovery). */
+.cm-unlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.cm-unlink:hover { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+
+/* "Find this track on SoundCloud" flow (non-SC tracks). */
+.cm-find { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+.cm-scfind-list { display: flex; flex-direction: column; gap: 1px; }
+.cm-scfind-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px;
+  border: none; background: transparent; border-radius: 10px;
+  cursor: pointer; text-align: left; width: 100%;
+  transition: background 0.12s ease;
+}
+.cm-scfind-row:hover { background: var(--row-hover); }
+.cm-scfind-pick {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  color: var(--muted); background: var(--border-2);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.cm-scfind-row:hover .cm-scfind-pick { color: var(--accent); background: var(--accent-soft); }
+/* Play count on a suggested SC match. */
+.cm-scfind-plays {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-2);
+}
+.cm-scfind-plays svg { opacity: 0.7; }
+
 
 /* Designed empty state (non-SC track, or SC track with no comments) */
 .cm-empty {

@@ -144,6 +144,20 @@ const dict: Record<string, { en: string; ru: string }> = {
     en: 'Play a SoundCloud track to see timed comments scroll along with it.',
     ru: 'Включите трек из SoundCloud — комментарии поедут по таймкодам вместе с ним.'
   },
+  commentsFindSub: {
+    en: 'But you can find this track on SoundCloud and borrow its comments here.',
+    ru: 'Но вы можете найти этот трек на SoundCloud и использовать его комментарии для просмотра.'
+  },
+  commentsSearching: { en: 'Searching SoundCloud…', ru: 'Ищем на SoundCloud…' },
+  commentsNoMatches: {
+    en: 'Nothing found on SoundCloud for this track.',
+    ru: 'На SoundCloud ничего не нашлось для этого трека.'
+  },
+  commentsUseThis: {
+    en: 'Use this track’s comments',
+    ru: 'Использовать комментарии этого трека'
+  },
+  commentsResetLink: { en: 'Reset link', ru: 'Сбросить привязку' },
   noCommentsSub: {
     en: 'Be the first wave — nobody has dropped a comment here yet.',
     ru: 'Здесь пока тихо — ни одного комментария по таймкодам.'
@@ -184,6 +198,10 @@ const dict: Record<string, { en: string; ru: string }> = {
   kbgVideoFile: { en: 'Video file…', ru: 'Видео-файл…' },
   kbgLinkPh: { en: 'Video URL or YouTube…', ru: 'Ссылка на видео или YouTube…' },
   kbgReset: { en: 'Remove track background', ru: 'Убрать фон трека' },
+  kbgResetAll: { en: 'Remove background from all tracks', ru: 'Убрать фон со всех треков' },
+  kbgScope: { en: 'Where to apply the background?', ru: 'Где применить фон?' },
+  kbgScopeTrack: { en: 'This track', ru: 'Только этот трек' },
+  kbgScopeAll: { en: 'All tracks', ru: 'На всех треках' },
   nextInQueue: { en: 'Next in Queue', ru: 'Очередь' },
   clear: { en: 'Clear', ru: 'Очистить' },
   queueEmpty: { en: 'Queue is empty', ru: 'Очередь пуста' },
@@ -305,6 +323,8 @@ const dict: Record<string, { en: string; ru: string }> = {
   customBackground: { en: 'Custom background', ru: 'Свой фон' },
   chooseImage: { en: 'Choose image…', ru: 'Выбрать изображение…' },
   changeImage: { en: 'Change image…', ru: 'Сменить изображение…' },
+  chooseVideo: { en: 'Choose video…', ru: 'Выбрать видео…' },
+  changeVideo: { en: 'Change video…', ru: 'Сменить видео…' },
   adjustFraming: { en: 'Adjust framing…', ru: 'Кадрировать…' },
   frameBackground: { en: 'Frame background', ru: 'Кадрирование фона' },
   frameHint: { en: 'Drag to reposition · scroll or slider to zoom', ru: 'Тяните, чтобы сместить · колесо или ползунок для зума' },

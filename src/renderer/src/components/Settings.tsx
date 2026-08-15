@@ -105,7 +105,9 @@ export function Settings(): JSX.Element {
   const customAccent = usePlayer((s) => s.customAccent)
   const setCustomAccent = usePlayer((s) => s.setCustomAccent)
   const customBg = usePlayer((s) => s.customBg)
+  const bgKind = usePlayer((s) => s.bgKind)
   const pickBackground = usePlayer((s) => s.pickBackground)
+  const pickBackgroundVideo = usePlayer((s) => s.pickBackgroundVideo)
   const clearBackground = usePlayer((s) => s.clearBackground)
   const openFraming = usePlayer((s) => s.openFraming)
   const bgScope = usePlayer((s) => s.bgScope)
@@ -435,9 +437,12 @@ export function Settings(): JSX.Element {
               <span className="set-row-title">{t('customBackground')}</span>
               <div className="set-account">
                 <button className="sync-btn ghost" onClick={() => pickBackground()}>
-                  {customBg ? t('changeImage') : t('chooseImage')}
+                  {customBg && bgKind === 'image' ? t('changeImage') : t('chooseImage')}
                 </button>
-                {customBg && (
+                <button className="sync-btn ghost" onClick={() => pickBackgroundVideo()}>
+                  {customBg && bgKind === 'video' ? t('changeVideo') : t('chooseVideo')}
+                </button>
+                {customBg && bgKind === 'image' && (
                   <button className="sync-btn ghost" onClick={() => openFraming()}>
                     {t('adjustFraming')}
                   </button>

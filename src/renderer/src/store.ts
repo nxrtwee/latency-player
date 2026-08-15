@@ -153,6 +153,9 @@ interface PlayerState {
   fpsLimit: number
   customAccent: string
   customBg: string | null
+  // Whether the global custom background is a still image or a video (mp4/webm…).
+  // Karaoke already renders video backgrounds; this lets the global one do the same.
+  bgKind: 'image' | 'video'
   // Per-track cover overrides (trackId → media:// url). Falls back to the
   // provider artwork when absent. Reset removes the override.
   customCovers: Record<string, string>
@@ -160,9 +163,19 @@ interface PlayerState {
   // the first track's artwork when absent. Key = source name for system tabs
   // ('likes'|'recent'|'local'|'offline'), or the playlist id for user playlists.
   customTabCovers: Record<string, string>
+  // Comment borrowing for tracks that can't have native comments (Yandex/local):
+  // maps such a track's id → a chosen SoundCloud track id (bare, no `sc:` prefix)
+  // whose comment stream is shown in their stead. Persisted, reset per-track.
+  scCommentLinks: Record<string, string>
   // Per-track karaoke/fullscreen background (independent of the global bg).
   // image/video are media:// urls.
   karaokeBgs: Record<string, KaraokeBg>
+  // A karaoke/fullscreen background applied to ALL tracks — the fallback used when
+  // a track has no per-track entry in `karaokeBgs`. null = none.
+  karaokeBgAll: KaraokeBg | null
+  // Where a newly-picked karaoke background is applied: only the current track
+  // ('track') or every track ('all').
+  karaokeBgScope: 'track' | 'all'
   // Client hotkeys: action id → combo string (see keybindings.ts). Empty by
   // default; every binding is added by the user. Persisted as lp.keybindings.
   keybindings: Record<string, string>
@@ -323,14 +336,19 @@ interface PlayerState {
   setFpsLimit: (n: number) => void
   setCustomAccent: (hex: string) => void
   pickBackground: () => Promise<void>
+  pickBackgroundVideo: () => Promise<void>
   clearBackground: () => void
   setTrackCover: (trackId: string) => Promise<void>
   resetTrackCover: (trackId: string) => void
   setTabCover: (tabKey: string) => Promise<void>
   resetTabCover: (tabKey: string) => void
+  linkScComments: (trackId: string, scTrackId: string) => void
+  unlinkScComments: (trackId: string) => void
   setKaraokeImage: (trackId: string) => Promise<void>
   setKaraokeVideoFile: (trackId: string) => Promise<void>
   resetKaraokeBg: (trackId: string) => void
+  resetKaraokeBgAll: () => void
+  setKaraokeBgScope: (scope: 'track' | 'all') => void
   setPlayerBarWidth: (pct: number) => void
   setPlayerBarHeight: (pct: number) => void
   setBgFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
@@ -502,6 +520,22 @@ export const usePlayer = create<PlayerState>((set, get) => {
     } catch {
       /* ignore */
     }
+  }
+
+  function setKaraokeBgAll(bg: KaraokeBg): void {
+    set({ karaokeBgAll: bg })
+    try {
+      localStorage.setItem('lp.karaokeBgAll', JSON.stringify(bg))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Route a freshly-picked karaoke background to the current scope: the single
+  // track, or the shared all-tracks slot.
+  function applyKaraokeBg(trackId: string, bg: KaraokeBg): void {
+    if (get().karaokeBgScope === 'all') setKaraokeBgAll(bg)
+    else setKaraokeBg(trackId, bg)
   }
 
   /** Push the current track + play state to Discord (no-op when RPC is off). */
@@ -1141,6 +1175,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     })(),
     customAccent: localStorage.getItem('lp.customAccent') || '#ff2e54',
     customBg: localStorage.getItem('lp.bg'),
+    bgKind: (localStorage.getItem('lp.bgKind') as 'image' | 'video') || 'image',
     customCovers: (() => {
       try {
         const raw = localStorage.getItem('lp.customCovers')
@@ -1159,6 +1194,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
         return {}
       }
     })(),
+    scCommentLinks: (() => {
+      try {
+        const raw = localStorage.getItem('lp.scCommentLinks')
+        const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        return obj && typeof obj === 'object' ? obj : {}
+      } catch {
+        return {}
+      }
+    })(),
     karaokeBgs: (() => {
       try {
         const raw = localStorage.getItem('lp.karaokeBgs')
@@ -1168,6 +1212,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
         return {}
       }
     })(),
+    karaokeBgAll: (() => {
+      try {
+        const raw = localStorage.getItem('lp.karaokeBgAll')
+        return raw ? (JSON.parse(raw) as KaraokeBg) : null
+      } catch {
+        return null
+      }
+    })(),
+    karaokeBgScope: (localStorage.getItem('lp.karaokeBgScope') as 'track' | 'all') || 'track',
     keybindings: (() => {
       try {
         const raw = localStorage.getItem('lp.keybindings')
@@ -2009,9 +2062,28 @@ export const usePlayer = create<PlayerState>((set, get) => {
       const url = await window.api.pickBackground()
       if (url) {
         // New image → reset framing to centered/fit, then open the framing modal.
-        set({ customBg: url, bgPosX: 50, bgPosY: 50, bgZoom: 1, framingOpen: true })
+        set({ customBg: url, bgKind: 'image', bgPosX: 50, bgPosY: 50, bgZoom: 1, framingOpen: true })
         try {
           localStorage.setItem('lp.bg', url)
+          localStorage.setItem('lp.bgKind', 'image')
+          localStorage.setItem('lp.bgPosX', '50')
+          localStorage.setItem('lp.bgPosY', '50')
+          localStorage.setItem('lp.bgZoom', '1')
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+
+    async pickBackgroundVideo() {
+      const url = await window.api.pickVideo()
+      if (url) {
+        // Video backgrounds are object-fit: cover (no manual framing) — reset the
+        // framing transform so a leftover image zoom/pan can't crop the clip.
+        set({ customBg: url, bgKind: 'video', bgPosX: 50, bgPosY: 50, bgZoom: 1, framingOpen: false })
+        try {
+          localStorage.setItem('lp.bg', url)
+          localStorage.setItem('lp.bgKind', 'video')
           localStorage.setItem('lp.bgPosX', '50')
           localStorage.setItem('lp.bgPosY', '50')
           localStorage.setItem('lp.bgZoom', '1')
@@ -2022,9 +2094,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     clearBackground() {
-      set({ customBg: null, framingOpen: false, bgPosX: 50, bgPosY: 50, bgZoom: 1 })
+      set({ customBg: null, bgKind: 'image', framingOpen: false, bgPosX: 50, bgPosY: 50, bgZoom: 1 })
       try {
         localStorage.removeItem('lp.bg')
+        localStorage.removeItem('lp.bgKind')
       } catch {
         /* ignore */
       }
@@ -2112,14 +2185,37 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    linkScComments(trackId, scTrackId) {
+      if (!trackId || !scTrackId) return
+      const next = { ...get().scCommentLinks, [trackId]: scTrackId }
+      set({ scCommentLinks: next })
+      try {
+        localStorage.setItem('lp.scCommentLinks', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    unlinkScComments(trackId) {
+      const next = { ...get().scCommentLinks }
+      if (!(trackId in next)) return
+      delete next[trackId]
+      set({ scCommentLinks: next })
+      try {
+        localStorage.setItem('lp.scCommentLinks', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
     async setKaraokeImage(trackId) {
       const url = await window.api.pickBackground()
-      if (url) setKaraokeBg(trackId, { type: 'image', url })
+      if (url) applyKaraokeBg(trackId, { type: 'image', url })
     },
 
     async setKaraokeVideoFile(trackId) {
       const url = await window.api.pickVideo()
-      if (url) setKaraokeBg(trackId, { type: 'video', url })
+      if (url) applyKaraokeBg(trackId, { type: 'video', url })
     },
 
     resetKaraokeBg(trackId) {
@@ -2129,6 +2225,25 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ karaokeBgs: next })
       try {
         localStorage.setItem('lp.karaokeBgs', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    resetKaraokeBgAll() {
+      if (!get().karaokeBgAll) return
+      set({ karaokeBgAll: null })
+      try {
+        localStorage.removeItem('lp.karaokeBgAll')
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setKaraokeBgScope(scope) {
+      set({ karaokeBgScope: scope })
+      try {
+        localStorage.setItem('lp.karaokeBgScope', scope)
       } catch {
         /* ignore */
       }

@@ -1207,6 +1207,30 @@ h2 {
 .sheet-title {
   font-size: 17px;
   font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* Reset the borrowed-comments link (Yandex/local track). */
+.cm-unlink {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--card, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  padding: 5px 11px;
+}
+.cm-unlink:active { color: var(--text); }
+/* "Find this track on SoundCloud" flow. */
+.cm-find { display: flex; flex-direction: column; gap: 10px; }
+.cm-find-sub {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+  padding: 0 8px;
 }
 .sheet-track {
   font-size: 13px;

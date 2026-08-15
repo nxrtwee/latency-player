@@ -2,13 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
-import { RealSoundCloudIcon, RealYandexMusicIcon, FolderIcon, CommentIcon } from './Icons'
+import { RealSoundCloudIcon, RealYandexMusicIcon, FolderIcon, CommentIcon, SearchIcon, CloseIcon, PlayIcon } from './Icons'
+import type { Track } from '@shared/types'
 
 interface ScComment {
   timeSec: number
   body: string
   user: string
   avatar?: string
+}
+
+// Abbreviated play count (1_200 → "1.2K"), matching TrackRow's formatting.
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
 }
 
 const WINDOW = 4.5
@@ -28,8 +36,18 @@ export function CommentsPage(): JSX.Element {
   const positionSec = usePlayer((s) => s.positionSec)
   const seek = usePlayer((s) => s.seek)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
+  const scCommentLinks = usePlayer((s) => s.scCommentLinks)
+  const linkScComments = usePlayer((s) => s.linkScComments)
+  const unlinkScComments = usePlayer((s) => s.unlinkScComments)
 
   const isSc = track?.providerId === 'soundcloud' && !!track?.id.startsWith('sc:')
+  // A non-SC track (Yandex/local) can borrow a SoundCloud track's comment stream.
+  const linkedScId = track && !isSc ? scCommentLinks[track.id] : undefined
+  // The bare SC track id whose comments we actually render: the track's own for a
+  // real SC track, or the linked one for a borrowed stream.
+  const commentScId = isSc ? track!.id.slice(3) : linkedScId
+  // Show the "find it on SoundCloud" UI when a non-SC track has no link yet.
+  const canFind = !!track && !isSc && !linkedScId
 
   // Source label/icon for the header (was hardcoded to SoundCloud).
   const source =
@@ -44,15 +62,43 @@ export function CommentsPage(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    if (!isSc || !track) { setComments([]); return }
+    if (!commentScId) { setComments([]); return }
     setLoading(true)
-    window.api.scComments(track.id.slice(3)).then(cs => {
+    window.api.scComments(commentScId).then(cs => {
       if (!cancelled) { setComments(cs); setLoading(false) }
     }).catch(() => {
       if (!cancelled) { setComments([]); setLoading(false) }
     })
     return () => { cancelled = true }
-  }, [track?.id])
+  }, [commentScId])
+
+  // Auto-search SoundCloud for a matching track (title + artist) so the user can
+  // pick one and bind its comments to this non-SC track.
+  const [results, setResults] = useState<Track[]>([])
+  const [searching, setSearching] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    if (!canFind || !track) { setResults([]); setSearching(false); return }
+    const title = track.title?.trim() ?? ''
+    const primary = [title, track.artist].filter(Boolean).join(' ').trim()
+    if (!primary) { setResults([]); return }
+    setSearching(true)
+    // Primary query is title + artist; if that yields nothing, fall back to a
+    // title-only search (looser — helps when the artist name differs across
+    // services or is missing on SoundCloud).
+    ;(async () => {
+      try {
+        let r = await window.api.scSearch(primary)
+        if (!cancelled && r.length === 0 && title && title !== primary) {
+          r = await window.api.scSearch(title)
+        }
+        if (!cancelled) { setResults(r.slice(0, 12)); setSearching(false) }
+      } catch {
+        if (!cancelled) { setResults([]); setSearching(false) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [canFind, track?.id])
 
   const activeIndex = useMemo(() => {
     let best = -1
@@ -146,21 +192,66 @@ export function CommentsPage(): JSX.Element {
       </div>
 
       {/* Comment list */}
-      <div className="cm-list-head">
-        <span className="ph-label">{comments.length} {t('comments').toLowerCase()}</span>
-      </div>
-
-      {loading && <div className="empty">{t('commentsLoading')}</div>}
-      {!loading && !isSc && (
-        <div className="cm-empty">
-          <span className="cm-empty-icon">
-            <CommentIcon size={28} />
-          </span>
-          <span className="cm-empty-title">{t('commentsScOnly')}</span>
-          <span className="cm-empty-sub">{t('commentsScOnlySub')}</span>
+      {(isSc || linkedScId) && (
+        <div className="cm-list-head">
+          <span className="ph-label">{comments.length} {t('comments').toLowerCase()}</span>
+          {linkedScId && (
+            <button className="cm-unlink" onClick={() => unlinkScComments(track.id)} title={t('commentsResetLink')}>
+              <CloseIcon size={13} />
+              <span>{t('commentsResetLink')}</span>
+            </button>
+          )}
         </div>
       )}
-      {!loading && isSc && comments.length === 0 && (
+
+      {loading && <div className="empty">{t('commentsLoading')}</div>}
+
+      {!loading && canFind && (
+        <div className="cm-find">
+          <div className="cm-empty">
+            <span className="cm-empty-icon">
+              <CommentIcon size={28} />
+            </span>
+            <span className="cm-empty-title">{t('commentsScOnly')}</span>
+            <span className="cm-empty-sub">{t('commentsFindSub')}</span>
+          </div>
+          {searching && <div className="empty">{t('commentsSearching')}</div>}
+          {!searching && results.length === 0 && (
+            <div className="empty">{t('commentsNoMatches')}</div>
+          )}
+          {!searching && results.length > 0 && (
+            <div className="cm-scfind-list">
+              {results.map((r) => (
+                <button
+                  key={r.id}
+                  className="cm-scfind-row"
+                  onClick={() => linkScComments(track.id, r.id.slice(3))}
+                  title={t('commentsUseThis')}
+                >
+                  <div className="cm-avatar">
+                    {r.artwork ? <img src={r.artwork} alt="" /> : <span>♪</span>}
+                  </div>
+                  <div className="cm-meta">
+                    <span className="cm-user">{r.title}</span>
+                    <span className="cm-text">{r.artist || 'Unknown artist'}</span>
+                  </div>
+                  {r.playCount != null && (
+                    <span className="cm-scfind-plays" title={t('plays')}>
+                      <PlayIcon size={11} />
+                      {formatCount(r.playCount)}
+                    </span>
+                  )}
+                  <span className="cm-scfind-pick">
+                    <SearchIcon size={15} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && (isSc || linkedScId) && comments.length === 0 && (
         <div className="cm-empty">
           <span className="cm-empty-icon">
             <CommentIcon size={28} />

@@ -94,7 +94,9 @@ html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .playerba
 html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .sidebar,
 html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .rp-card,
 html:is([data-graphics='performance'], [data-hwaccel='0']) .app.has-bg .content::before {
-  background: rgba(11, 14, 13, 0.9);
+  /* More transparent on the performance preset so the custom background (image or
+     video) reads through the panels — the frosting is already gone at this tier. */
+  background: rgba(11, 14, 13, 0.62);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }

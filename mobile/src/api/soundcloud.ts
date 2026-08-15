@@ -122,7 +122,8 @@ interface ScTrack {
   title: string
   duration: number
   artwork_url: string | null
-  user?: { id?: number; username?: string }
+  playback_count?: number
+  user?: { id?: number; username?: string; avatar_url?: string | null }
   media?: { transcodings?: ScTranscoding[] }
   // SoundCloud now gates stream resolution behind a per-track authorization
   // token returned alongside the track. Without it the resolve 404s.
@@ -159,7 +160,8 @@ function toTrack(sc: ScTrack): Track | null {
     artist: sc.user?.username,
     artistId: sc.user?.id != null ? String(sc.user.id) : undefined,
     durationSec: sc.duration ? sc.duration / 1000 : undefined,
-    artwork: sc.artwork_url ? sc.artwork_url.replace('-large', '-t500x500') : undefined
+    artwork: sc.artwork_url ? sc.artwork_url.replace('-large', '-t500x500') : undefined,
+    playCount: sc.playback_count
   }
 }
 
@@ -219,6 +221,55 @@ export async function relatedTracks(trackId: string, limit = 25): Promise<Track[
   if (!res.ok) throw new Error(`SoundCloud related failed (${res.status})`)
   const data = (await res.json()) as { collection?: ScTrack[] }
   return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
+}
+
+/** The uploader behind a track id (numeric or `sc:`-prefixed), resolved straight
+ *  from the track object — immune to the fragile username search that breaks on
+ *  profiles with non-ASCII symbols (e.g. `✶`). Mirrors the desktop main handler;
+ *  this is the fix that was already on desktop (1.3.0) but missing on mobile. */
+export async function getTrackArtist(trackId: string): Promise<Artist | null> {
+  const bare = trackId.replace(/^sc:/, '')
+  const res = await authedFetch((id) => `${API}/tracks/${encodeURIComponent(bare)}?client_id=${id}`)
+  if (!res.ok) return null
+  const t = (await res.json()) as ScTrack
+  const u = t.user
+  if (u?.id == null || !u.username) return null
+  return {
+    id: String(u.id),
+    name: u.username,
+    provider: 'soundcloud',
+    avatar: u.avatar_url ? u.avatar_url.replace('-large', '-t200x200') : undefined
+  }
+}
+
+/** Distinct uploaders behind a track's related tracks — our "fans also like"
+ *  (SoundCloud has no related-artists API). Mirrors the desktop handler; without
+ *  it the shared store's openArtist call to scRelatedArtists throws on mobile. */
+export async function relatedArtists(trackId: string, limit = 12): Promise<Artist[]> {
+  try {
+    const res = await authedFetch(
+      (id) => `${API}/tracks/${encodeURIComponent(trackId)}/related?limit=25&client_id=${id}`
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { collection?: ScTrack[] }
+    const seen = new Set<string>()
+    const out: Artist[] = []
+    for (const t of data.collection || []) {
+      const u = t.user
+      if (u?.id != null && u.username && !seen.has(String(u.id))) {
+        seen.add(String(u.id))
+        out.push({
+          id: String(u.id),
+          name: u.username,
+          provider: 'soundcloud',
+          avatar: u.avatar_url ? u.avatar_url.replace('-large', '-t200x200') : undefined
+        })
+      }
+    }
+    return out.slice(0, limit)
+  } catch {
+    return []
+  }
 }
 
 // ---- timed comments -----------------------------------------------------------

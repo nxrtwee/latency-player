@@ -148,6 +148,7 @@ export function LyricsView(): JSX.Element {
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
   const openArtist = usePlayer((s) => s.openArtist)
   const customBg = usePlayer((s) => s.customBg)
+  const bgKind = usePlayer((s) => s.bgKind)
   const bgPosX = usePlayer((s) => s.bgPosX)
   const bgPosY = usePlayer((s) => s.bgPosY)
   const bgZoom = usePlayer((s) => s.bgZoom)
@@ -158,11 +159,21 @@ export function LyricsView(): JSX.Element {
   const hasCustomCover = usePlayer((s) => (track ? !!s.customCovers[track.id] : false))
 
   // Per-track karaoke background (image / video / youtube), independent of the
-  // global interface background. Takes precedence in the fullscreen player.
-  const karaokeBg = usePlayer((s) => (track ? s.karaokeBgs[track.id] : undefined))
+  // global interface background. Takes precedence in the fullscreen player. Falls
+  // back to the all-tracks karaoke background when this track has no own entry.
+  const perTrackBg = usePlayer((s) => (track ? s.karaokeBgs[track.id] : undefined))
+  const karaokeBgAll = usePlayer((s) => s.karaokeBgAll)
+  const karaokeBgScope = usePlayer((s) => s.karaokeBgScope)
   const setKaraokeImage = usePlayer((s) => s.setKaraokeImage)
   const setKaraokeVideoFile = usePlayer((s) => s.setKaraokeVideoFile)
   const resetKaraokeBg = usePlayer((s) => s.resetKaraokeBg)
+  const resetKaraokeBgAll = usePlayer((s) => s.resetKaraokeBgAll)
+  const setKaraokeBgScope = usePlayer((s) => s.setKaraokeBgScope)
+
+  // Effective karaoke background: a per-track override wins; otherwise the shared
+  // all-tracks one. `isPerTrackBg` gates the position-sync (see the video effect).
+  const karaokeBg = perTrackBg ?? karaokeBgAll
+  const isPerTrackBg = !!perTrackBg
 
   // The image shows in fullscreen for 'fullscreen' and 'global' scopes.
   const showFsBg = !!customBg && bgScope !== 'interface'
@@ -177,10 +188,15 @@ export function LyricsView(): JSX.Element {
   const [bgReady, setBgReady] = useState(false)
 
   // Only reveal the custom background once it's fully decoded — then it crossfades
-  // in over the gradient base, so there's never a half-loaded flash on open.
+  // in over the gradient base, so there's never a half-loaded flash on open. Video
+  // backgrounds stream their own frames (nothing to pre-decode) so they show at once.
   useEffect(() => {
     if (!showFsBg || !customBg) {
       setBgReady(false)
+      return
+    }
+    if (bgKind === 'video') {
+      setBgReady(true)
       return
     }
     let cancelled = false
@@ -194,7 +210,7 @@ export function LyricsView(): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [customBg, showFsBg])
+  }, [customBg, showFsBg, bgKind])
 
   // Karaoke wants the whole window. If the app is running in a restored
   // (windowed) state, maximize it on open — a normal window maximize, never OS
@@ -230,24 +246,31 @@ export function LyricsView(): JSX.Element {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [kbgMenu])
 
-  // --- video background sync: play/pause + coarse seek follow the player ---
+  // --- video background sync: keep it looping; coarse seek follows the player ---
+  // The clip is a decorative backdrop, so it loops continuously even while the
+  // music is paused — pausing it froze the background, which read as a bug. We only
+  // ensure playback is running; the `loop` attribute handles the restart.
   useEffect(() => {
     const v = videoRef.current
     if (!v || karaokeBg?.type !== 'video') return
-    if (isPlaying) v.play().catch(() => {})
-    else v.pause()
-  }, [isPlaying, karaokeBg])
+    v.play().catch(() => {})
+  }, [karaokeBg])
 
   useEffect(() => {
     const v = videoRef.current
     if (!v || karaokeBg?.type !== 'video') return
+    // The all-tracks background is decorative/ambient — let it loop freely rather
+    // than snapping to each song's position (which would jump on every track
+    // change). Only a per-track clip, chosen to match that one song, follows the
+    // playhead.
+    if (!isPerTrackBg) return
     const dur = v.duration
     // Only map the song position onto the clip when the clip is long enough;
     // shorter clips/edits just loop. Correct only real drift (user seek / start).
     if (dur && isFinite(dur) && positionSec < dur && Math.abs(v.currentTime - positionSec) > 1.2) {
       v.currentTime = positionSec
     }
-  }, [positionSec, karaokeBg])
+  }, [positionSec, karaokeBg, isPerTrackBg])
 
   const trackKey = track ? `${track.title}|${track.artist}` : ''
 
@@ -412,7 +435,17 @@ export function LyricsView(): JSX.Element {
           playsInline
         />
       )}
-      {!hasKaraokeBg && showFsBg && bgReady && (
+      {!hasKaraokeBg && showFsBg && bgReady && bgKind === 'video' && (
+        <video
+          className="fsplayer-bg-video"
+          src={customBg!}
+          autoPlay
+          loop
+          muted
+          playsInline
+        />
+      )}
+      {!hasKaraokeBg && showFsBg && bgReady && bgKind !== 'video' && (
         <img
           className="fsplayer-bg-img"
           src={customBg!}
@@ -472,18 +505,41 @@ export function LyricsView(): JSX.Element {
             {kbgMenu && (
               <div className="kbg-menu" onClick={(e) => e.stopPropagation()}>
                 <div className="kbg-menu-head">{tr('trackBackground')}</div>
+                <div className="kbg-scope-label">{tr('kbgScope')}</div>
+                <div className="mix-toggle kbg-scope">
+                  <button
+                    className={karaokeBgScope === 'track' ? 'active' : ''}
+                    onClick={() => setKaraokeBgScope('track')}
+                  >
+                    {tr('kbgScopeTrack')}
+                  </button>
+                  <button
+                    className={karaokeBgScope === 'all' ? 'active' : ''}
+                    onClick={() => setKaraokeBgScope('all')}
+                  >
+                    {tr('kbgScopeAll')}
+                  </button>
+                </div>
                 <button className="kbg-opt" onClick={() => { setKaraokeImage(track.id); setKbgMenu(false) }}>
                   {tr('kbgImage')}
                 </button>
                 <button className="kbg-opt" onClick={() => { setKaraokeVideoFile(track.id); setKbgMenu(false) }}>
                   {tr('kbgVideoFile')}
                 </button>
-                {hasKaraokeBg && (
+                {!!perTrackBg && (
                   <button
                     className="kbg-opt danger"
                     onClick={() => { resetKaraokeBg(track.id); setKbgMenu(false) }}
                   >
                     {tr('kbgReset')}
+                  </button>
+                )}
+                {!!karaokeBgAll && (
+                  <button
+                    className="kbg-opt danger"
+                    onClick={() => { resetKaraokeBgAll(); setKbgMenu(false) }}
+                  >
+                    {tr('kbgResetAll')}
                   </button>
                 )}
               </div>
