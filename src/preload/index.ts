@@ -96,10 +96,15 @@ const api = {
     ipcRenderer.invoke('likes:addMany', tracks),
   removeProviderLikes: (providerId: Track['providerId']): Promise<Track[]> =>
     ipcRenderer.invoke('likes:removeProvider', providerId),
+  scSetLike: (id: string, liked: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('sc:setLike', id, liked),
+  ymSetLike: (id: string, liked: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('ym:setLike', id, liked),
 
   // window controls (frameless)
   windowMinimize: (): void => ipcRenderer.send('window:minimize'),
   windowToggleMaximize: (): void => ipcRenderer.send('window:toggleMaximize'),
+  windowMaximize: (): void => ipcRenderer.send('window:maximize'),
   windowClose: (): void => ipcRenderer.send('window:close'),
   windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
   pickBackground: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickImage'),
@@ -150,7 +155,7 @@ const api = {
 
   offlineList: (): Promise<string[]> => ipcRenderer.invoke('offline:list'),
   offlineTracks: (): Promise<Track[]> => ipcRenderer.invoke('offline:tracks'),
-  offlineDownload: (track: Track): Promise<boolean> =>
+  offlineDownload: (track: Track): Promise<Track | null> =>
     ipcRenderer.invoke('offline:download', track),
   offlineRemove: (trackId: string): Promise<void> => ipcRenderer.invoke('offline:remove', trackId),
   offlineClear: (): Promise<void> => ipcRenderer.invoke('offline:clear'),
@@ -195,7 +200,18 @@ const api = {
   addTracksToPlaylist: (id: string, tracks: Track[]): Promise<Playlist[]> =>
     ipcRenderer.invoke('playlists:addTracks', id, tracks),
   removeFromPlaylist: (id: string, trackId: string): Promise<Playlist[]> =>
-    ipcRenderer.invoke('playlists:removeTrack', id, trackId)
+    ipcRenderer.invoke('playlists:removeTrack', id, trackId),
+
+  // Client hotkeys: push the keyboard combos (as Electron accelerators) to the
+  // main process for global (background) registration; receive triggers back
+  // when a global shortcut fires while the window is not focused.
+  setGlobalHotkeys: (list: { accel: string; id: string }[]): Promise<void> =>
+    ipcRenderer.invoke('hotkeys:register', list),
+  onHotkeyTrigger: (cb: (id: string) => void): (() => void) => {
+    const listener = (_e: unknown, id: string): void => cb(id)
+    ipcRenderer.on('hotkey:trigger', listener)
+    return () => ipcRenderer.removeListener('hotkey:trigger', listener)
+  }
 }
 
 export type Api = typeof api

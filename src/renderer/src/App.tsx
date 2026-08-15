@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePlayer } from './store'
+import {
+  eventToCombo,
+  runHotkeyAction,
+  comboToAccelerator,
+  isGlobalCombo,
+  isCaptureActive,
+  type HotkeyActionId
+} from './keybindings'
 import { Sidebar } from './components/Sidebar'
 import { OverlayScrollbar } from './components/OverlayScrollbar'
 import { TrackList } from './components/TrackList'
@@ -23,6 +31,16 @@ import { ProfilePage } from './components/ProfilePage'
 import { Equalizer } from './components/Equalizer'
 import { CommentsPage } from './components/CommentsPage'
 import { Splash } from './components/Splash'
+
+// True when the given element (or the currently focused element) is a text-entry
+// context. Used to make hotkeys stand down while the user is typing anywhere.
+function isEditableEl(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null
+  if (!t || !t.tagName) return false
+  const tag = t.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable
+}
+
 
 function usePersistentWidth(
   key: string,
@@ -79,6 +97,7 @@ export function App(): JSX.Element {
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const resumeSession = usePlayer((s) => s.resumeSession)
   const loadPrefs = usePlayer((s) => s.loadPrefs)
+  const keybindings = usePlayer((s) => s.keybindings)
 
   // Keep the right panel mounted through its slide-out so the collapse animation
   // can play; it unmounts only after rpOut finishes (see RightPanel onClosed).
@@ -152,6 +171,79 @@ export function App(): JSX.Element {
     img.src = customBg
     void img.decode?.().catch(() => {})
   }, [customBg])
+
+  // ---- Client hotkeys ---------------------------------------------------------
+  // In-app dispatch: catch keydown (when focused) and all mouse-button binds in
+  // the capture phase. Reads live state via getState() so the listener is bound
+  // once. Skips typing contexts and the settings capture mode.
+  useEffect(() => {
+    const dispatch = (e: KeyboardEvent | MouseEvent): void => {
+      if (isCaptureActive() || isEditableEl(e.target) || isEditableEl(document.activeElement)) return
+      const combo = eventToCombo(e)
+      if (!combo) return
+      // Combos registered as OS-global shortcuts (accelerator + modifier) are
+      // handled solely via the main globalShortcut → onHotkeyTrigger path, so we
+      // skip them here to avoid double-firing. Everything else — mouse buttons and
+      // modifierless / unmappable keys — is in-app only and handled right here.
+      if (isGlobalCombo(combo)) return
+      const binds = usePlayer.getState().keybindings
+      const hit = Object.keys(binds).find((id) => binds[id] === combo)
+      if (!hit) return
+      e.preventDefault()
+      runHotkeyAction(hit as HotkeyActionId)
+    }
+    const onKey = (e: KeyboardEvent): void => dispatch(e)
+    const onMouse = (e: MouseEvent): void => dispatch(e)
+    window.addEventListener('keydown', onKey, { capture: true })
+    window.addEventListener('mousedown', onMouse, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKey, { capture: true })
+      window.removeEventListener('mousedown', onMouse, { capture: true })
+    }
+  }, [])
+
+  // Background + focused dispatch for keyboard accelerators: main forwards every
+  // globalShortcut trigger here. The DOM listener above skips accelerator combos,
+  // so there's no double-fire. Stand down while the user is typing.
+  useEffect(() => {
+    const unsub = window.api?.onHotkeyTrigger?.((id) => {
+      if (isEditableEl(document.activeElement)) return
+      runHotkeyAction(id as HotkeyActionId)
+    })
+    return () => unsub?.()
+  }, [])
+
+  // Keep the OS-global registration in sync with the bound keyboard combos. Only
+  // modifier-bearing combos are registered globally (a bare key would hijack
+  // typing in every app). Mouse binds and modifierless keys stay in-app only.
+  // While any text field is focused we register an EMPTY set, so combos never
+  // fire (and their keys flow into the input) while the user is typing.
+  useEffect(() => {
+    if (!window.api?.setGlobalHotkeys) return
+    const list: { accel: string; id: string }[] = []
+    for (const [id, combo] of Object.entries(keybindings)) {
+      if (isGlobalCombo(combo)) list.push({ accel: comboToAccelerator(combo)!, id })
+    }
+    let current: 'full' | 'empty' | null = null
+    const apply = (): void => {
+      const want = isEditableEl(document.activeElement) ? 'empty' : 'full'
+      if (want === current) return
+      current = want
+      void window.api!.setGlobalHotkeys!(want === 'empty' ? [] : list)
+    }
+    apply()
+    const onFocusIn = (): void => apply()
+    // focusout fires before activeElement updates — defer a tick.
+    const onFocusOut = (): void => {
+      window.setTimeout(apply, 0)
+    }
+    window.addEventListener('focusin', onFocusIn)
+    window.addEventListener('focusout', onFocusOut)
+    return () => {
+      window.removeEventListener('focusin', onFocusIn)
+      window.removeEventListener('focusout', onFocusOut)
+    }
+  }, [keybindings])
 
   // Shared page router — identical across shells; only the surrounding chrome
   // differs by skin. HomePage itself swaps to the bento surface when the

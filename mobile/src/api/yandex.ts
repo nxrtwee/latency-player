@@ -452,6 +452,29 @@ export async function getMyLikes(limit = 300): Promise<Track[]> {
   }
 }
 
+/**
+ * Like / unlike a track on the signed-in user's Yandex account. Mirrors the
+ * desktop main/yandex.ts write: a form-urlencoded POST to add-multiple/remove.
+ * No bot protection here (unlike SoundCloud), so the pasted token is enough.
+ */
+export async function setLike(id: string, liked: boolean): Promise<boolean> {
+  if (!oauthToken) return false
+  if (myUid == null) await getMe()
+  if (myUid == null) return false
+  const trackId = id.replace(/^ym:/, '')
+  try {
+    const action = liked ? 'add-multiple' : 'remove'
+    const res = await ymFetch(`${API}/users/${myUid}/likes/tracks/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `track-ids=${encodeURIComponent(trackId)}`
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export interface YmWave {
   cover?: string
   tracks: Track[]

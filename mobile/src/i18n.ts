@@ -109,6 +109,15 @@ const STRINGS: Record<string, { ru: string; en: string }> = {
   ymAccount: { ru: 'Аккаунт Яндекс Музыки', en: 'Yandex Music account' },
   ymSub: { ru: 'Моя волна и лайки появятся после входа.', en: 'My Wave and likes appear after sign-in.' },
   connectYM: { ru: 'Подключить Яндекс Музыку', en: 'Connect Yandex Music' },
+  likesSync: { ru: 'Синхронизация лайков', en: 'Likes sync' },
+  mirrorLikes: { ru: 'Зеркалировать лайки в сервис', en: 'Mirror likes to service' },
+  mirrorLikesSub: {
+    ru: 'Лайки в плеере отправляются на площадку (SC→SC, YM→YM), снятие лайка тоже убирает его там. Меняет реальный аккаунт. SoundCloud может отклонять запись.',
+    en: 'Player likes are pushed to the service (SC→SC, YM→YM); unliking removes it there too. Changes your real account. SoundCloud may reject writes.'
+  },
+  exportLikes: { ru: 'Экспорт лайков', en: 'Export likes' },
+  exporting: { ru: 'Экспорт', en: 'Exporting' },
+  exported: { ru: 'Готово:', en: 'Done:' },
   ymTokenHint: {
     ru: 'Откройте страницу входа Яндекса, авторизуйтесь, затем скопируйте адрес из строки браузера (он содержит access_token) и вставьте сюда. Можно вставить и сам токен. Авто-вход на устройстве появится позже.',
     en: 'Open the Yandex sign-in page, log in, then copy the address bar URL (it contains access_token) and paste it here. The bare token works too. On-device auto sign-in comes later.'

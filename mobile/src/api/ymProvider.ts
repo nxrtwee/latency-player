@@ -30,10 +30,16 @@ function createNativeYM(
   let destroyed = false
   const unsubs: (() => void)[] = []
 
+  // See scProvider: for an OFFLINE track (local /tmp MP3) AVPlayer's computed
+  // duration can be wrong for VBR files (→ "random" lock-screen length). When the
+  // search result already knows the length, trust it and ignore AVPlayer's.
+  const hasMetaDuration = typeof track.durationSec === 'number' && track.durationSec > 0
+
   unsubs.push(native.on('timeUpdate', (d) => {
     if (destroyed) return
     const pos = d?.position as number | undefined
     if (typeof pos === 'number' && pos >= 0) cb.onTime(pos)
+    if (hasMetaDuration) return
     const dur = d?.duration as number | undefined
     if (typeof dur === 'number' && dur > 0) cb.onDuration(dur)
   }))

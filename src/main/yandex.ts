@@ -514,6 +514,48 @@ export async function getMyLikes(limit = 300): Promise<Track[]> {
   }
 }
 
+/**
+ * Like / unlike a track on the signed-in user's Yandex Music account.
+ * `id` is the app-internal id (may carry the `ym:` prefix). Returns whether the
+ * service confirmed the change. Uses the same authorized-POST pattern as rotor
+ * feedback, with a form-encoded `track-ids` body.
+ */
+export async function setLike(id: string, liked: boolean): Promise<boolean> {
+  if (!oauthToken) {
+    console.warn('[ym.setLike] no oauth token — not signed in')
+    return false
+  }
+  if (myUid == null) await getMe()
+  if (myUid == null) {
+    console.warn('[ym.setLike] no myUid (getMe failed)')
+    return false
+  }
+  const trackId = id.replace(/^ym:/, '')
+  if (!trackId) return false
+  const action = liked ? 'add-multiple' : 'remove'
+  const url = `${API}/users/${myUid}/likes/tracks/${action}`
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 10000)
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `track-ids=${encodeURIComponent(trackId)}`,
+        signal: ctrl.signal
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+    console.log(`[ym.setLike] POST likes/tracks/${action} ${trackId} -> ${res.status}`)
+    return res.ok
+  } catch (e) {
+    console.warn('[ym.setLike] failed:', (e as Error)?.message)
+    return false
+  }
+}
+
 export interface YmWave {
   cover?: string
   tracks: Track[]

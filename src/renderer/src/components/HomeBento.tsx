@@ -12,7 +12,8 @@ import {
   PlayIcon,
   PauseIcon,
   ActivityIcon,
-  YandexMusicIcon
+  YandexMusicIcon,
+  RefreshIcon
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
@@ -46,6 +47,10 @@ export function HomeBento(): JSX.Element {
   const playQueue = usePlayer((s) => s.playQueue)
   const mixes = usePlayer((s) => s.mixes)
   const mixesReal = usePlayer((s) => s.mixesReal)
+  const mixesLoading = usePlayer((s) => s.mixesLoading)
+  const mixSource = usePlayer((s) => s.mixSource)
+  const setMixSource = usePlayer((s) => s.setMixSource)
+  const generateMixes = usePlayer((s) => s.generateMixes)
   const showHomeMixes = usePlayer((s) => s.showHomeMixes)
   const scAuth = usePlayer((s) => s.scAuth)
   const ymAuth = usePlayer((s) => s.ymAuth)
@@ -268,7 +273,35 @@ export function HomeBento(): JSX.Element {
         {mixesVisible && mixes.length > 0 && (
           <div className="pg-native">
             <div className="home-section">
-              <h2 className="home-h2">{t('yourMixes')}</h2>
+              <div className="home-h2-row">
+                <h2 className="home-h2">{t('yourMixes')}</h2>
+                {scAuth && (
+                  <>
+                    <div className="mix-toggle">
+                      <button
+                        className={mixSource === 'sc' ? 'active' : ''}
+                        onClick={() => setMixSource('sc')}
+                      >
+                        SoundCloud
+                      </button>
+                      <button
+                        className={mixSource === 'generated' ? 'active' : ''}
+                        onClick={() => setMixSource('generated')}
+                      >
+                        Generated
+                      </button>
+                    </div>
+                    <button
+                      className={`mix-refresh ${mixesLoading ? 'spinning' : ''}`}
+                      title="Refresh mixes"
+                      disabled={mixesLoading}
+                      onClick={() => generateMixes(true)}
+                    >
+                      <RefreshIcon size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="mix-grid">
                 {mixes.slice(0, 6).map((mix) => (
                   <button

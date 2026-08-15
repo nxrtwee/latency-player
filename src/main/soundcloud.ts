@@ -15,6 +15,7 @@ const idFile = (): string => join(app.getPath('userData'), 'soundcloud.json')
 let clientId: string | null = null
 let oauthToken: string | null = null // user's web-session OAuth token (when signed in)
 let myUserId: number | null = null // signed-in user's numeric id
+let appVersion: string | null = null // web player build id, required on write calls
 
 async function loadCache(): Promise<void> {
   try {
@@ -89,6 +90,10 @@ export async function reachable(timeoutMs = 4000): Promise<boolean> {
 async function discoverClientId(): Promise<string> {
   const home = await fetch('https://soundcloud.com/', { headers: { 'User-Agent': UA } })
   const html = await home.text()
+  // The web player build id lives in the homepage; the site appends it as
+  // `app_version` on every api-v2 call and write endpoints reject requests without it.
+  const vm = html.match(/window\.__sc_version\s*=\s*"(\d+)"/)
+  if (vm) appVersion = vm[1]
   const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)]
     .map((m) => m[1])
     .filter((u) => u.startsWith('https'))
@@ -111,6 +116,20 @@ async function getClientId(forceRefresh = false): Promise<string> {
   clientId = await discoverClientId()
   await saveCache()
   return clientId
+}
+
+/** The web player's current build id, needed as `app_version` on write calls.
+ *  Populated by discoverClientId; scraped on demand if the client_id was cached. */
+async function getAppVersion(): Promise<string | null> {
+  if (appVersion) return appVersion
+  try {
+    const html = await (await fetch('https://soundcloud.com/', { headers: { 'User-Agent': UA } })).text()
+    const m = html.match(/window\.__sc_version\s*=\s*"(\d+)"/)
+    if (m) appVersion = m[1]
+  } catch {
+    /* best-effort — the call may still work without it */
+  }
+  return appVersion
 }
 
 /** Run a fetch with the client_id appended; refresh the id once on 401. */
@@ -537,6 +556,175 @@ export async function getMyLikes(limit = 50): Promise<Track[]> {
     }
   }
   return []
+}
+
+// SoundCloud fronts its write endpoints with DataDome bot protection: a plain
+// main-process fetch (even via the signed-in session) gets a 403 captcha
+// interstitial because DataDome fingerprints the client, not just the cookie.
+// To pass it we run the mutation as a same-origin `fetch` inside a real hidden
+// Chromium page loaded on soundcloud.com — it inherits the genuine browser
+// fingerprint and the DataDome clearance cookie the site itself is granted.
+let writeWin: BrowserWindow | null = null
+let writeWinReady: Promise<void> | null = null
+
+async function getWriteContents(): Promise<Electron.WebContents> {
+  if (writeWin && !writeWin.isDestroyed()) {
+    if (writeWinReady) await writeWinReady
+    return writeWin.webContents
+  }
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { partition: 'persist:scauth', contextIsolation: true, sandbox: true }
+  })
+  writeWin = win
+  win.on('closed', () => {
+    if (writeWin === win) {
+      writeWin = null
+      writeWinReady = null
+    }
+  })
+  writeWinReady = new Promise<void>((resolve) => {
+    const done = (): void => resolve()
+    win.webContents.once('did-finish-load', done)
+    // Resolve on failure too — the DataDome cookie is set even if some subresource
+    // fails, and the in-page fetch may still succeed.
+    win.webContents.once('did-fail-load', done)
+    setTimeout(done, 15000)
+  })
+  win.loadURL('https://soundcloud.com/discover')
+  await writeWinReady
+  return win.webContents
+}
+
+// When DataDome escalates (after a burst of writes) it stops auto-clearing and
+// demands a real captcha, which a hidden, never-interacted page can't solve. We
+// then surface the window on soundcloud.com so the user solves the challenge
+// once; that refreshes the clearance cookie for the whole `persist:scauth`
+// session and writes resume. Single-flighted so a batch export shows one window.
+let solving: Promise<boolean> | null = null
+
+/** Show the write window for a one-time manual DataDome captcha solve. `probe`
+ *  re-issues the pending write; resolves true once it stops being challenged. */
+async function passChallenge(probe: () => Promise<number>): Promise<boolean> {
+  if (solving) return solving
+  solving = (async (): Promise<boolean> => {
+    const wc = await getWriteContents()
+    if (!writeWin || writeWin.isDestroyed()) return false
+    console.warn(
+      '[sc.setLike] DataDome captcha — showing SoundCloud window for a one-time manual solve'
+    )
+    writeWin.setTitle('SoundCloud: подтвердите, что вы не робот, затем можно закрыть')
+    writeWin.show()
+    writeWin.focus()
+    // Reloading a normal page makes DataDome render its captcha for the user.
+    wc.loadURL('https://soundcloud.com/')
+    const deadline = Date.now() + 150000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5000))
+      if (!writeWin || writeWin.isDestroyed()) return false
+      const s = await probe()
+      // 403 = still challenged; 0 = page mid-navigation, keep waiting.
+      if (s !== 403 && s !== 0) {
+        writeWin.hide()
+        return s >= 200 && s < 300
+      }
+    }
+    if (writeWin && !writeWin.isDestroyed()) writeWin.hide()
+    return false
+  })().finally(() => {
+    solving = null
+  })
+  return solving
+}
+
+/**
+ * Perform a track_likes mutation as an in-page fetch on soundcloud.com so it
+ * clears DataDome. Returns the HTTP status (0 on transport failure). Retries
+ * once after a short backoff on 403 — DataDome occasionally throttles a burst of
+ * rapid writes, and a brief pause usually clears the challenge.
+ */
+async function scWriteInPage(url: string, method: string): Promise<number> {
+  if (!oauthToken) return 0
+  const wc = await getWriteContents()
+  const js = `
+    fetch(${JSON.stringify(url)}, {
+      method: ${JSON.stringify(method)},
+      headers: { Authorization: ${JSON.stringify('OAuth ' + oauthToken)} },
+      credentials: 'include'
+    }).then(async (r) => {
+      let body = ''
+      if (r.status < 200 || r.status >= 300) {
+        try { body = (await r.text()).slice(0, 300) } catch (e) {}
+      }
+      return { status: r.status, body: body }
+    }).catch((e) => ({ status: 0, body: String(e && e.message || e) }))
+  `
+  const run = async (log: boolean): Promise<{ status: number; body: string }> => {
+    try {
+      const r = (await wc.executeJavaScript(js)) as { status: number; body: string }
+      if (log && r && r.body) {
+        console.warn(`[sc.setLike] ${r.status} body: ${r.body.replace(/\s+/g, ' ')}`)
+      }
+      return r && typeof r.status === 'number' ? r : { status: 0, body: '' }
+    } catch {
+      return { status: 0, body: '' }
+    }
+  }
+  let r = await run(true)
+  // DataDome challenge (interstitial or hard captcha) — surface the window so the
+  // user solves it once, then re-issue our own write on the cleared session.
+  if (r.status === 403 && /captcha-delivery/.test(r.body)) {
+    const cleared = await passChallenge(async () => (await run(false)).status)
+    if (cleared) r = await run(true)
+  } else if (r.status === 403) {
+    // Non-captcha 403 (transient throttle) — brief backoff and one retry.
+    await new Promise((res) => setTimeout(res, 1200))
+    r = await run(true)
+  }
+  return r.status
+}
+
+/**
+ * Like / unlike a track on the signed-in user's SoundCloud account.
+ * `id` is the app-internal id (may carry the `sc:` prefix). Returns whether the
+ * service confirmed the change. The `track_likes/{id}` path (PUT to like, DELETE
+ * to unlike) matches the reads; the mutation is issued from an in-page fetch to
+ * get past DataDome bot protection (see `scWriteInPage`).
+ */
+export async function setLike(id: string, liked: boolean): Promise<boolean> {
+  if (!oauthToken) {
+    console.warn('[sc.setLike] no oauth token — not signed in')
+    return false
+  }
+  if (myUserId == null) await getMe()
+  if (myUserId == null) {
+    console.warn('[sc.setLike] no myUserId (getMe failed)')
+    return false
+  }
+  const trackId = id.replace(/^sc:/, '')
+  if (!/^\d+$/.test(trackId)) {
+    console.warn('[sc.setLike] non-numeric track id:', id)
+    return false
+  }
+  const clientId0 = await getClientId()
+  const ver = await getAppVersion()
+  // PUT to track_likes/{id} is the recognized like verb (POST 404s); the web app
+  // also appends app_version + app_locale, and the write 403s without them.
+  const params = new URLSearchParams({ client_id: clientId0, app_locale: 'en' })
+  if (ver) params.set('app_version', ver)
+  const url = `${API}/users/${myUserId}/track_likes/${trackId}?${params.toString()}`
+  const method = liked ? 'PUT' : 'DELETE'
+  try {
+    // Issue the write from inside a real soundcloud.com page so it carries the
+    // browser fingerprint + DataDome clearance; a main-process fetch gets 403'd.
+    const status = await scWriteInPage(url, method)
+    console.log(`[sc.setLike] ${method} track_likes/${trackId} (v=${ver ?? 'none'}) -> ${status}`)
+    // 200/201 = done; unlike of an already-unliked track 404s, which is fine.
+    return status >= 200 && status < 300 ? true : !liked && status === 404
+  } catch (e) {
+    console.warn(`[sc.setLike] ${method} failed:`, (e as Error)?.message)
+    return false
+  }
 }
 
 export interface ScMix {

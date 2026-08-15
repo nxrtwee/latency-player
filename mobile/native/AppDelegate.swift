@@ -373,7 +373,12 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     // MARK: - Metadata
 
     private func setMetadata(title: String, artist: String, artwork: String?, duration: Double?) {
-        if let d = duration, d.isFinite, d > 0 { currentDuration = d }
+        // A new track: adopt its duration, or CLEAR the previous one if this track
+        // has no known length. Keeping the old value here is what made a track with
+        // a missing/zero duration inherit the previous track's length on the lock
+        // screen (a "random" duration). Transient state pushes (play/pause/seek) go
+        // through updateNowPlayingProgress, which keeps the last good value.
+        if let d = duration, d.isFinite, d > 0 { currentDuration = d } else { currentDuration = 0 }
 
         var info: [String: Any] = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyTitle] = title

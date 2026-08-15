@@ -256,6 +256,14 @@ const dict: Record<string, { en: string; ru: string }> = {
   removeImported: { en: 'Remove imported', ru: 'Убрать импортированные' },
   removing: { en: 'Removing…', ru: 'Удаление…' },
   removed: { en: 'Removed', ru: 'Удалено' },
+  exportLikes: { en: 'Export likes', ru: 'Экспортировать лайки' },
+  exporting: { en: 'Exporting…', ru: 'Экспорт…' },
+  exported: { en: 'Exported', ru: 'Экспортировано' },
+  mirrorLikes: { en: 'Mirror likes to services', ru: 'Зеркалировать лайки в сервисы' },
+  mirrorLikesSub: {
+    en: 'Liking a track in the player also likes it on its own service (SoundCloud → SoundCloud, Yandex → Yandex). Unliking removes it there too. Changes your real account.',
+    ru: 'Лайк трека в плеере ставит лайк и на его сервисе (SoundCloud → SoundCloud, Yandex → Yandex). Снятие лайка убирает его и там. Меняет ваш реальный аккаунт.'
+  },
   removedNone: { en: 'Nothing to remove', ru: 'Нечего убирать' },
   wantRealMixes: { en: 'Want real, accurate mixes?', ru: 'Хотите настоящие точные миксы?' },
   promoSub: {
@@ -315,6 +323,8 @@ const dict: Record<string, { en: string; ru: string }> = {
   lyrics: { en: 'Lyrics', ru: 'Тексты' },
   geniusFallback: { en: 'Genius fallback', ru: 'Запасной Genius' },
   geniusSub: { en: 'Fetch plain lyrics from Genius when LRCLIB has none', ru: 'Брать текст из Genius, если нет в LRCLIB' },
+  karaokeCrumble: { en: 'Crumbling letters', ru: 'Осыпающиеся буквы' },
+  karaokeCrumbleSub: { en: 'Letters tip and fall away as each karaoke line is sung', ru: 'Буквы наклоняются и осыпаются, пока строка караоке поётся' },
   textSize: { en: 'Text size', ru: 'Размер текста' },
   scAccount: { en: 'SoundCloud account', ru: 'Аккаунт SoundCloud' },
   storage: { en: 'Storage', ru: 'Хранилище' },
@@ -409,13 +419,62 @@ const dict: Record<string, { en: string; ru: string }> = {
   checkedSources: { en: 'Checked LRCLIB & Genius', ru: 'Проверено в LRCLIB и Genius' },
   syncManually: { en: 'Sync manually', ru: 'Синхронизировать' },
   editSync: { en: 'Edit sync', ru: 'Изменить синхро' },
-  resetLyrics: { en: 'Reset', ru: 'Сбросить текст' },
+  resetLyrics: { en: 'Reset lyrics', ru: 'Сбросить текст' },
+  removeManualSync: { en: 'Remove manual sync', ru: 'Убрать ручную синхронизацию' },
   manualSynced: { en: 'Manually synced', ru: 'Ручная синхронизация' },
   approxSync: { en: 'approximate sync', ru: 'примерная синхро' },
   plainLyricsNote: {
     en: 'Unsynced lyrics — tap “Sync manually” to time them',
     ru: 'Текст без синхронизации — нажмите «Синхронизировать», чтобы расставить тайминги'
-  }
+  },
+  // hotkeys (settings)
+  hotkeys: { en: 'Hotkeys', ru: 'Горячие клавиши' },
+  hotkeysSub: {
+    en: 'Bind keys or mouse buttons to actions. Keyboard combos work globally, even when the window is in the background.',
+    ru: 'Назначьте клавиши или кнопки мыши на действия. Клавишные комбинации работают глобально, даже когда окно свёрнуто.'
+  },
+  addHotkey: { en: 'Add hotkey', ru: 'Добавить' },
+  noHotkeys: { en: 'No hotkeys yet — tap “+” to add one.', ru: 'Пока нет горячих клавиш — нажмите «+».' },
+  pickAction: { en: 'Choose an action', ru: 'Выберите действие' },
+  searchAction: { en: 'Search actions…', ru: 'Поиск действий…' },
+  pressKeyPrompt: {
+    en: 'Press a key or mouse button…',
+    ru: 'Нажмите клавишу или кнопку мыши…'
+  },
+  pressKeyCancel: { en: 'Esc to cancel', ru: 'Esc — отмена' },
+  hotkeyReassigned: { en: 'Reassigned from', ru: 'Перенесено с' },
+  hotkeyGlobalWarn: {
+    en: 'No modifier — this bind works only while the app is focused (add Ctrl/Alt/Shift to make it work globally in the background).',
+    ru: 'Без модификатора — работает только когда приложение в фокусе (добавьте Ctrl/Alt/Shift, чтобы работало глобально в фоне).'
+  },
+  // hotkey categories
+  hkCatPlayback: { en: 'Playback', ru: 'Воспроизведение' },
+  hkCatSeekVol: { en: 'Seek & volume', ru: 'Перемотка и громкость' },
+  hkCatLibrary: { en: 'Library', ru: 'Библиотека' },
+  hkCatPanels: { en: 'Panels & views', ru: 'Панели и виды' },
+  hkCatNav: { en: 'Navigation', ru: 'Навигация' },
+  // hotkey action labels
+  hkTogglePlay: { en: 'Play / pause', ru: 'Плей / пауза' },
+  hkNext: { en: 'Next track', ru: 'Следующий трек' },
+  hkPrev: { en: 'Previous track', ru: 'Предыдущий трек' },
+  hkShuffle: { en: 'Toggle shuffle', ru: 'Перемешивание' },
+  hkRepeat: { en: 'Cycle repeat', ru: 'Режим повтора' },
+  hkAutopilot: { en: 'Toggle autopilot', ru: 'Автопилот' },
+  hkSeekBack: { en: 'Seek back 5s', ru: 'Назад на 5с' },
+  hkSeekFwd: { en: 'Seek forward 5s', ru: 'Вперёд на 5с' },
+  hkVolUp: { en: 'Volume up', ru: 'Громче' },
+  hkVolDown: { en: 'Volume down', ru: 'Тише' },
+  hkMute: { en: 'Mute / unmute', ru: 'Звук вкл/выкл' },
+  hkLike: { en: 'Like current track', ru: 'Лайкнуть трек' },
+  hkLyrics: { en: 'Fullscreen / lyrics', ru: 'Полный экран / текст' },
+  hkRightPanel: { en: 'Toggle right panel', ru: 'Правая панель' },
+  hkSidebar: { en: 'Toggle sidebar', ru: 'Боковая панель' },
+  hkSettings: { en: 'Toggle settings', ru: 'Настройки' },
+  hkEqualizer: { en: 'Toggle equalizer', ru: 'Эквалайзер' },
+  hkGoHome: { en: 'Go to Home', ru: 'На главную' },
+  hkGoExplore: { en: 'Go to Explore', ru: 'К поиску' },
+  hkGoLikes: { en: 'Go to Likes', ru: 'К любимому' },
+  hkGoRecent: { en: 'Go to Recently played', ru: 'К недавнему' }
 }
 
 export function t(key: string, lang: Lang): string {

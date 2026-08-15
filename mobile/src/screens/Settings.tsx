@@ -43,8 +43,28 @@ export function SettingsScreen({
   const disconnectSC = usePlayer((s) => s.disconnectSoundCloud)
   const ymAuth = usePlayer((s) => s.ymAuth)
   const disconnectYandex = usePlayer((s) => s.disconnectYandex)
+  const mirrorLikes = usePlayer((s) => s.mirrorLikes)
+  const setMirrorLikes = usePlayer((s) => s.setMirrorLikes)
+  const exportLikesToServices = usePlayer((s) => s.exportLikesToServices)
   const [ymConnectOpen, setYmConnectOpen] = useState(false)
+  const [scExport, setScExport] = useState<'idle' | string>('idle')
+  const [ymExport, setYmExport] = useState<'idle' | string>('idle')
   const t = useT()
+
+  const runExport = async (
+    provider: 'soundcloud' | 'yandex',
+    setState: (v: 'idle' | string) => void
+  ): Promise<void> => {
+    try {
+      const n = await exportLikesToServices(provider, (done, total) =>
+        setState(`${t('exporting')} ${done}/${total}`)
+      )
+      setState(`${t('exported')} ${n}`)
+      setTimeout(() => setState('idle'), 2500)
+    } catch {
+      setState('idle')
+    }
+  }
 
   const [accentId, setAccentId] = useState(() => getSavedAccent().id)
   const [cleared, setCleared] = useState<string | null>(null)
@@ -210,7 +230,16 @@ export function SettingsScreen({
               {scAuth.avatar && <img src={scAuth.avatar} alt="" />}
               <span>{scAuth.name}</span>
             </div>
-            <button className="ghost-btn" onClick={() => void disconnectSC()}>{t('disconnect')}</button>
+            <div className="set-account">
+              <button
+                className="ghost-btn"
+                disabled={scExport !== 'idle'}
+                onClick={() => void runExport('soundcloud', setScExport)}
+              >
+                {scExport === 'idle' ? t('exportLikes') : scExport}
+              </button>
+              <button className="ghost-btn" onClick={() => void disconnectSC()}>{t('disconnect')}</button>
+            </div>
           </div>
         ) : (
           <>
@@ -228,7 +257,16 @@ export function SettingsScreen({
               {ymAuth.avatar && <img src={ymAuth.avatar} alt="" />}
               <span>{ymAuth.name}</span>
             </div>
-            <button className="ghost-btn" onClick={() => void disconnectYandex()}>{t('disconnect')}</button>
+            <div className="set-account">
+              <button
+                className="ghost-btn"
+                disabled={ymExport !== 'idle'}
+                onClick={() => void runExport('yandex', setYmExport)}
+              >
+                {ymExport === 'idle' ? t('exportLikes') : ymExport}
+              </button>
+              <button className="ghost-btn" onClick={() => void disconnectYandex()}>{t('disconnect')}</button>
+            </div>
           </div>
         ) : (
           <>
@@ -237,6 +275,19 @@ export function SettingsScreen({
           </>
         )}
       </section>
+
+      {(scAuth || ymAuth) && (
+        <section className="set-block">
+          <div className="set-label">{t('likesSync')}</div>
+          <div className="set-row">
+            <div>
+              <span className="set-row-title">{t('mirrorLikes')}</span>
+              <span className="set-row-sub">{t('mirrorLikesSub')}</span>
+            </div>
+            <Toggle on={mirrorLikes} onChange={setMirrorLikes} />
+          </div>
+        </section>
+      )}
 
       <section className="set-block">
         <div className="set-label">{t('data')}</div>

@@ -32,10 +32,19 @@ function createNative(
   let destroyed = false
   const unsubs: (() => void)[] = []
 
+  // Whether the search result already gave us a trustworthy length. If so, we
+  // ignore AVPlayer's own duration below: for an OFFLINE track (a local /tmp MP3),
+  // AVPlayerItem.duration resolves to a finite number, but for VBR MP3s it's
+  // computed from the first frame's bitrate and can be wildly wrong — which is
+  // what made offline tracks show a "random" length on the lock screen. Streaming
+  // (online) tracks are unaffected because their AVPlayer duration is NaN.
+  const hasMetaDuration = typeof track.durationSec === 'number' && track.durationSec > 0
+
   unsubs.push(native.on('timeUpdate', (d) => {
     if (destroyed) return
     const pos = d?.position as number | undefined
     if (typeof pos === 'number' && pos >= 0) cb.onTime(pos)
+    if (hasMetaDuration) return
     const dur = d?.duration as number | undefined
     if (typeof dur === 'number' && dur > 0) cb.onDuration(dur)
   }))

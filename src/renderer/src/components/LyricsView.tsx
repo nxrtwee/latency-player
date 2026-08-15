@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type CSSProperties, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
@@ -16,6 +16,8 @@ import {
   ChevronDownIcon,
   ImageIcon,
   RefreshIcon,
+  ClockIcon,
+  CloseIcon,
   FilmIcon
 } from './Icons'
 
@@ -39,6 +41,98 @@ function cleanPlain(plain: string): string[] {
   return cleaned
 }
 
+// Deterministic 0..1 pseudo-random from an integer — so each letter's fall tilt /
+// drift stays stable across re-renders (no reshuffle on every position tick).
+function rand01(n: number): number {
+  const x = Math.sin(n * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+// One synced karaoke line, split into per-character spans so a finished line can
+// crumble: the glyphs tip, drift and drop away (via CSS on `.kary-line.past`)
+// instead of the whole line snapping to a dimmed state.
+//
+// Memoized because LyricsView re-renders on every position tick (~5×/s), but a
+// line's spans only need to rebuild when its text or active/past state actually
+// changes — which happens once per line boundary. All props are stable between
+// boundaries (seek is a stable store action; opacity/state derive from
+// activeIndex), so memo skips the per-char work in-between.
+const KaryLine = memo(function KaryLine({
+  text,
+  state,
+  opacity,
+  seed,
+  timeSec,
+  seek,
+  progress,
+  crumble,
+  innerRef
+}: {
+  text: string
+  state: 'active' | 'past' | 'future'
+  opacity: number
+  seed: number
+  timeSec: number
+  seek: (t: number) => void
+  progress?: number
+  crumble: boolean
+  innerRef?: Ref<HTMLParagraphElement>
+}): JSX.Element {
+  const chars = useMemo(() => [...(text || '♪')], [text])
+  // On the active line, letters "spend" (crumble) one after another as the song
+  // moves through the line — driven by `progress` (0..1), not a fixed timer.
+  // We finish the crumble a little BEFORE the line ends (progress hits 1 exactly
+  // when the next line takes over): dividing by 0.85 makes every letter land by
+  // ~85% through the line, so none are left mid-fall when it flips to `.past`
+  // (which would then drop them late, after the next line already appeared).
+  const spentCount =
+    state === 'active' && typeof progress === 'number'
+      ? Math.round(Math.min(1, progress / 0.85) * chars.length)
+      : 0
+  // Crumble disabled (settings toggle off): render the line as plain text — no
+  // per-char spans — so it just dims/scales between states like before.
+  if (!crumble) {
+    return (
+      <p
+        ref={innerRef}
+        className={`kary-line ${state === 'active' ? 'active' : ''} ${state === 'past' ? 'past' : ''}`}
+        style={{ opacity }}
+        onClick={() => seek(timeSec)}
+      >
+        {text || '♪'}
+      </p>
+    )
+  }
+  return (
+    <p
+      ref={innerRef}
+      className={`kary-line ${state === 'active' ? 'active' : ''} ${state === 'past' ? 'past' : ''}`}
+      style={{ opacity }}
+      onClick={() => seek(timeSec)}
+    >
+      {chars.map((ch, i) => {
+        const r = rand01(seed * 131 + i)
+        const r2 = rand01(seed * 131 + i * 7 + 3)
+        return (
+          <span
+            key={i}
+            className={`kary-char ${state === 'active' && i < spentCount ? 'spent' : ''}`}
+            style={
+              {
+                '--ki': i,
+                '--kr': `${(r * 2 - 1) * 26}deg`,
+                '--kx': `${(r2 * 2 - 1) * 0.3}em`
+              } as CSSProperties
+            }
+          >
+            {ch === ' ' ? ' ' : ch}
+          </span>
+        )
+      })}
+    </p>
+  )
+})
+
 export function LyricsView(): JSX.Element {
   const tr = useT()
   const track = usePlayer((s) => (s.currentIndex >= 0 ? s.queue[s.currentIndex] : undefined))
@@ -49,6 +143,7 @@ export function LyricsView(): JSX.Element {
   const next = usePlayer((s) => s.next)
   const prev = usePlayer((s) => s.prev)
   const seek = usePlayer((s) => s.seek)
+  const karaokeCrumble = usePlayer((s) => s.karaokeCrumble)
   const toggleLyrics = usePlayer((s) => s.toggleLyrics)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
   const openArtist = usePlayer((s) => s.openArtist)
@@ -100,6 +195,14 @@ export function LyricsView(): JSX.Element {
       cancelled = true
     }
   }, [customBg, showFsBg])
+
+  // Karaoke wants the whole window. If the app is running in a restored
+  // (windowed) state, maximize it on open — a normal window maximize, never OS
+  // fullscreen (F11). Guarded with `?.` so the mobile shim (no such method) is
+  // unaffected. Idempotent in main: a no-op when already maximized.
+  useEffect(() => {
+    window.api?.windowMaximize?.()
+  }, [])
 
   function requestClose(): void {
     setClosing(true)
@@ -225,6 +328,20 @@ export function LyricsView(): JSX.Element {
     return ans
   }, [karyLines, positionSec])
 
+  // How far we are THROUGH the active line, 0..1 — from its own timestamp to the
+  // next line's (or the track end for the last line). Drives the active line's
+  // letters crumbling away as they're sung, one after another.
+  const activeProgress = useMemo(() => {
+    if (activeIndex < 0 || activeIndex >= karyLines.length) return 0
+    const start = karyLines[activeIndex].timeSec
+    const end =
+      activeIndex + 1 < karyLines.length
+        ? karyLines[activeIndex + 1].timeSec
+        : durationSec || start + 8
+    if (end <= start) return 1
+    return Math.max(0, Math.min(1, (positionSec - start) / (end - start)))
+  }, [activeIndex, karyLines, positionSec, durationSec])
+
   // Block mouse-wheel scrolling inside the lyrics area entirely — wheel-scrolling
   // over the masked karaoke viewport while a backdrop-filter is in the frame
   // freezes Chromium's repaint (the karaoke "freeze" bug). Scrolling here is done
@@ -266,7 +383,10 @@ export function LyricsView(): JSX.Element {
   const fsHasBg = hasKaraokeBg || showFsBg
 
   return (
-    <div className={`fsplayer ${closing ? 'closing' : ''} ${fsHasBg ? 'has-image' : ''}`}>
+    <div
+      className={`fsplayer ${closing ? 'closing' : ''} ${fsHasBg ? 'has-image' : ''}`}
+      style={{ '--fs-glow': palette?.top } as CSSProperties}
+    >
       {/* Opaque gradient base is ALWAYS present so that while the custom image
           decodes there's a neutral backdrop — never a flash of the UI behind. */}
       <div
@@ -306,35 +426,69 @@ export function LyricsView(): JSX.Element {
         <ChevronDownIcon size={22} />
       </button>
 
-      {/* Per-track karaoke background: image / video file. */}
+      {/* Bottom-right corner stack: lyric actions (reset / sync) sit above the
+          per-track background button, all as round icon buttons. */}
       {track && (
-        <div className="fsplayer-kbg" ref={kbgRef}>
-          <button
-            className={`fsplayer-bg-btn kbg-toggle ${hasKaraokeBg ? 'on' : ''}`}
-            title={tr('trackBackground')}
-            onClick={() => setKbgMenu((v) => !v)}
-          >
-            <FilmIcon size={19} />
-          </button>
-          {kbgMenu && (
-            <div className="kbg-menu" onClick={(e) => e.stopPropagation()}>
-              <div className="kbg-menu-head">{tr('trackBackground')}</div>
-              <button className="kbg-opt" onClick={() => { setKaraokeImage(track.id); setKbgMenu(false) }}>
-                {tr('kbgImage')}
-              </button>
-              <button className="kbg-opt" onClick={() => { setKaraokeVideoFile(track.id); setKbgMenu(false) }}>
-                {tr('kbgVideoFile')}
-              </button>
-              {hasKaraokeBg && (
+        <div className="fsplayer-corner">
+          {(status === 'ok' || status === 'none') && (
+            <>
+              {isManual && (
                 <button
-                  className="kbg-opt danger"
-                  onClick={() => { resetKaraokeBg(track.id); setKbgMenu(false) }}
+                  className="fsplayer-bg-btn"
+                  onClick={removeManual}
+                  title={tr('removeManualSync')}
                 >
-                  {tr('kbgReset')}
+                  <CloseIcon size={18} />
                 </button>
               )}
-            </div>
+              <button
+                className="fsplayer-bg-btn"
+                onClick={() => {
+                  forceRef.current = true
+                  setReloadKey((k) => k + 1)
+                }}
+                title={tr('resetLyrics')}
+              >
+                <RefreshIcon size={17} />
+              </button>
+              <button
+                className="fsplayer-bg-btn"
+                onClick={() => setEditing(true)}
+                disabled={!seedText}
+                title={isManual ? tr('editSync') : tr('syncManually')}
+              >
+                <ClockIcon size={18} />
+              </button>
+            </>
           )}
+          <div className="fsplayer-kbg" ref={kbgRef}>
+            <button
+              className={`fsplayer-bg-btn kbg-toggle ${hasKaraokeBg ? 'on' : ''}`}
+              title={tr('trackBackground')}
+              onClick={() => setKbgMenu((v) => !v)}
+            >
+              <FilmIcon size={19} />
+            </button>
+            {kbgMenu && (
+              <div className="kbg-menu" onClick={(e) => e.stopPropagation()}>
+                <div className="kbg-menu-head">{tr('trackBackground')}</div>
+                <button className="kbg-opt" onClick={() => { setKaraokeImage(track.id); setKbgMenu(false) }}>
+                  {tr('kbgImage')}
+                </button>
+                <button className="kbg-opt" onClick={() => { setKaraokeVideoFile(track.id); setKbgMenu(false) }}>
+                  {tr('kbgVideoFile')}
+                </button>
+                {hasKaraokeBg && (
+                  <button
+                    className="kbg-opt danger"
+                    onClick={() => { resetKaraokeBg(track.id); setKbgMenu(false) }}
+                  >
+                    {tr('kbgReset')}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -404,17 +558,18 @@ export function LyricsView(): JSX.Element {
             <div className="kary-viewport" ref={viewportRef}>
               <div className="kary" style={{ transform: `translateY(${offset}px)` }}>
                 {karyLines.map((line, i) => (
-                  <p
+                  <KaryLine
                     key={i}
-                    ref={i === activeIndex ? activeRef : null}
-                    className={`kary-line ${i === activeIndex ? 'active' : ''} ${
-                      i < activeIndex ? 'past' : ''
-                    }`}
-                    style={{ opacity: lineOpacity(i) }}
-                    onClick={() => seek(line.timeSec)}
-                  >
-                    {line.text || '♪'}
-                  </p>
+                    innerRef={i === activeIndex ? activeRef : undefined}
+                    text={line.text}
+                    state={i === activeIndex ? 'active' : i < activeIndex ? 'past' : 'future'}
+                    opacity={lineOpacity(i)}
+                    seed={i}
+                    timeSec={line.timeSec}
+                    seek={seek}
+                    progress={i === activeIndex ? activeProgress : undefined}
+                    crumble={karaokeCrumble}
+                  />
                 ))}
               </div>
             </div>
@@ -463,34 +618,6 @@ export function LyricsView(): JSX.Element {
           </button>
         </div>
       </div>
-
-      {track && (status === 'ok' || status === 'none') && (
-        <div className="sync-corner">
-          {isManual && (
-            <button className="sync-corner-btn ghost" onClick={removeManual} title="Remove manual sync">
-              {tr('remove')}
-            </button>
-          )}
-          <button
-            className="sync-corner-btn ghost"
-            onClick={() => {
-              forceRef.current = true
-              setReloadKey((k) => k + 1)
-            }}
-            title={tr('resetLyrics')}
-          >
-            <RefreshIcon size={15} />
-            <span>{tr('resetLyrics')}</span>
-          </button>
-          <button
-            className="sync-corner-btn"
-            onClick={() => setEditing(true)}
-            disabled={!seedText}
-          >
-            {isManual ? tr('editSync') : tr('syncManually')}
-          </button>
-        </div>
-      )}
 
       {editing && track && (
         <SyncEditor

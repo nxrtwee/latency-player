@@ -163,6 +163,9 @@ interface PlayerState {
   // Per-track karaoke/fullscreen background (independent of the global bg).
   // image/video are media:// urls.
   karaokeBgs: Record<string, KaraokeBg>
+  // Client hotkeys: action id → combo string (see keybindings.ts). Empty by
+  // default; every binding is added by the user. Persisted as lp.keybindings.
+  keybindings: Record<string, string>
   // nextgen floating player bar width, as a percent of the window (45–95).
   playerBarWidth: number
   playerBarHeight: number
@@ -179,6 +182,7 @@ interface PlayerState {
   avPosY: number
   avZoom: number
   compact: boolean
+  karaokeCrumble: boolean
   sidebarCollapsed: boolean
   // search-results visibility for the "Albums & playlists" section
   showSearchAlbums: boolean
@@ -194,6 +198,9 @@ interface PlayerState {
   // preferences
   resumeSession: boolean
   geniusFallback: boolean
+  // Mirror likes out to the track's own service (sc→sc, ym→ym). Opt-in, default
+  // off: it writes to the user's real account with the captured session token.
+  mirrorLikes: boolean
   launchAtStartup: boolean
   // Chromium GPU compositing. Default on; turning it off (needs restart) is the
   // real lever against a weak GPU being driven every frame. Source of truth is
@@ -333,6 +340,7 @@ interface PlayerState {
   setAvatarFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   openAvatarFraming: () => void
   setCompact: (v: boolean) => void
+  setKaraokeCrumble: (v: boolean) => void
   toggleSidebar: () => void
   setShowSearchAlbums: (v: boolean) => void
   setShowSearchPlaylists: (v: boolean) => void
@@ -341,10 +349,13 @@ interface PlayerState {
   setShowSidebarArtists: (v: boolean) => void
   setLyricsSize: (v: 'sm' | 'md' | 'lg') => void
   setLang: (v: 'en' | 'ru') => void
+  setKeybinding: (actionId: string, combo: string) => void
+  clearKeybinding: (actionId: string) => void
 
   // preferences
   setResumeSession: (v: boolean) => void
   setGeniusFallback: (v: boolean) => void
+  setMirrorLikes: (v: boolean) => void
   setLaunchAtStartup: (v: boolean) => Promise<void>
   setHwAccel: (v: boolean) => Promise<void>
   loadPrefs: () => Promise<void>
@@ -354,6 +365,10 @@ interface PlayerState {
   // likes actions
   loadLikes: () => Promise<void>
   toggleLike: (track: Track) => Promise<void>
+  exportLikesToServices: (
+    provider: 'soundcloud' | 'yandex',
+    onProgress?: (done: number, total: number) => void
+  ) => Promise<number>
 
   // offline actions
   loadOffline: () => Promise<void>
@@ -1011,6 +1026,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
   const syncLikedIds = (): void =>
     set({ likedIds: new Set([...get().likes, ...get().scLikes].map((t) => t.id)) })
 
+  // Fire-and-forget: mirror a like/unlike out to the track's own service when the
+  // opt-in toggle is on and that provider is signed in. Local tracks have no
+  // service, so they're skipped. Desktop-only (guarded `?.` — no-op on mobile).
+  const mirrorLike = (track: Track, liked: boolean): void => {
+    if (!get().mirrorLikes) return
+    if (track.providerId === 'soundcloud' && get().scAuth) {
+      window.api?.scSetLike?.(track.id, liked).catch(() => {})
+    } else if (track.providerId === 'yandex' && get().ymAuth) {
+      window.api?.ymSetLike?.(track.id, liked).catch(() => {})
+    }
+  }
+
   // Register the OS media-key / overlay button handlers once at startup.
   bindMediaSessionHandlers()
 
@@ -1141,6 +1168,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
         return {}
       }
     })(),
+    keybindings: (() => {
+      try {
+        const raw = localStorage.getItem('lp.keybindings')
+        const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        return obj && typeof obj === 'object' ? obj : {}
+      } catch {
+        return {}
+      }
+    })(),
     playerBarWidth: Math.min(95, Math.max(45, readNum('lp.playerBarW', 64))),
     playerBarHeight: Math.min(100, Math.max(60, readNum('lp.playerBarH', 100))),
     bgPosX: readNum('lp.bgPosX', 50),
@@ -1153,6 +1189,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     avPosY: readNum('lp.avPosY', 50),
     avZoom: readNum('lp.avZoom', 1),
     compact: localStorage.getItem('lp.compact') === '1',
+    karaokeCrumble: localStorage.getItem('lp.karaokeCrumble') !== '0',
     sidebarCollapsed: localStorage.getItem('lp.sidebarCollapsed') === '1',
     showSearchAlbums: localStorage.getItem('lp.searchAlbums') !== '0',
     showSearchPlaylists: localStorage.getItem('lp.searchPlaylists') === '1',
@@ -1163,6 +1200,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     lang: (localStorage.getItem('lp.lang') as 'en' | 'ru') || 'en',
     resumeSession: localStorage.getItem('lp.resume') !== '0',
     geniusFallback: localStorage.getItem('lp.genius') !== '0',
+    mirrorLikes: localStorage.getItem('lp.mirrorLikes') === '1',
     launchAtStartup: false,
     hwAccel: true,
 
@@ -1248,6 +1286,55 @@ export const usePlayer = create<PlayerState>((set, get) => {
       const likes = await window.api.toggleLike(track)
       set({ likes })
       syncLikedIds()
+      // Reflect the resulting state (added → like, removed → unlike) on the service.
+      mirrorLike(track, likes.some((t) => t.id === track.id))
+    },
+
+    async exportLikesToServices(provider, onProgress) {
+      const authed = provider === 'soundcloud' ? get().scAuth : get().ymAuth
+      if (!authed) return 0
+      const setLike = provider === 'soundcloud' ? window.api?.scSetLike : window.api?.ymSetLike
+      if (!setLike) return 0
+      const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+      const isSc = provider === 'soundcloud'
+      // SoundCloud writes go through DataDome, whose behavioural analysis hard-bans
+      // rapid bursts (a fast batch escalates to a captcha, then a temporary IP
+      // block). So SC exports crawl at a human-like ~15-20s/like with a daily cap;
+      // the plain Yandex API has no such guard and runs fast.
+      const gap = (): number => (isSc ? 15000 + Math.floor(Math.random() * 5000) : 350)
+      // Per-day SC budget so a big library can't re-trigger the ban in one sitting.
+      const SC_DAILY_CAP = 150
+      let dayCount = 0
+      if (isSc) {
+        const today = new Date().toISOString().slice(0, 10)
+        if (localStorage.getItem('lp.scExportDay') !== today) {
+          localStorage.setItem('lp.scExportDay', today)
+          localStorage.setItem('lp.scExportCount', '0')
+        }
+        dayCount = Number(localStorage.getItem('lp.scExportCount') || '0')
+      }
+      const tracks = get().likes.filter((t) => t.providerId === provider)
+      let ok = 0
+      let done = 0
+      for (const t of tracks) {
+        if (isSc && dayCount >= SC_DAILY_CAP) {
+          console.warn(`[export] SoundCloud daily cap (${SC_DAILY_CAP}) reached — stopping`)
+          break
+        }
+        try {
+          if (await setLike(t.id, true)) ok++
+        } catch {
+          /* skip this track, keep going */
+        }
+        done++
+        onProgress?.(done, tracks.length)
+        if (isSc) {
+          dayCount++
+          localStorage.setItem('lp.scExportCount', String(dayCount))
+        }
+        await delay(gap())
+      }
+      return ok
     },
 
     async loadOffline() {
@@ -1274,7 +1361,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (get().offlineIds.includes(track.id) || get().downloading.includes(track.id)) return
       set({ downloading: [...get().downloading, track.id] })
       try {
-        const ok = await window.api.offlineDownload(track)
+        const stored = await window.api.offlineDownload(track)
+        const ok = !!stored
         if (ok) {
           const url = await window.api.offlineLocalUrl(track.id)
           if (url) offlineUrls.set(track.id, url)
@@ -1282,7 +1370,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
         set((s) => ({
           downloading: s.downloading.filter((id) => id !== track.id),
           offlineIds: ok ? [...s.offlineIds, track.id] : s.offlineIds,
-          offlineTracks: ok ? [track, ...s.offlineTracks] : s.offlineTracks,
+          offlineTracks: ok ? [stored as Track, ...s.offlineTracks] : s.offlineTracks,
           error: ok ? s.error : 'Download failed (HLS-only or network error)'
         }))
       } catch {
@@ -1969,6 +2057,34 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     },
 
+    setKeybinding(actionId, combo) {
+      // One combo maps to exactly one action — drop it from whoever held it
+      // before (Discord-style reassignment), then assign it here.
+      const next: Record<string, string> = {}
+      for (const [a, c] of Object.entries(get().keybindings)) {
+        if (c !== combo) next[a] = c
+      }
+      next[actionId] = combo
+      set({ keybindings: next })
+      try {
+        localStorage.setItem('lp.keybindings', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    clearKeybinding(actionId) {
+      const next = { ...get().keybindings }
+      if (!(actionId in next)) return
+      delete next[actionId]
+      set({ keybindings: next })
+      try {
+        localStorage.setItem('lp.keybindings', JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+
     async setTabCover(tabKey) {
       if (!tabKey) return
       // Same image picker as track covers/backgrounds (media:// on desktop, data:
@@ -2125,6 +2241,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ compact: v })
       localStorage.setItem('lp.compact', v ? '1' : '0')
     },
+    setKaraokeCrumble(v) {
+      set({ karaokeCrumble: v })
+      localStorage.setItem('lp.karaokeCrumble', v ? '1' : '0')
+    },
 
     toggleSidebar() {
       const v = !get().sidebarCollapsed
@@ -2150,6 +2270,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
     setGeniusFallback(v) {
       set({ geniusFallback: v })
       localStorage.setItem('lp.genius', v ? '1' : '0')
+    },
+
+    setMirrorLikes(v) {
+      set({ mirrorLikes: v })
+      localStorage.setItem('lp.mirrorLikes', v ? '1' : '0')
     },
 
     async setLaunchAtStartup(v) {

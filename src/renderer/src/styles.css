@@ -320,6 +320,8 @@ aside.sidebar.collapsed {
 .sidebar.collapsed .nav-item,
 .sidebar.collapsed .sidebar-settings,
 .sidebar.collapsed .pl-row,
+.sidebar.collapsed .mix-item,
+.sidebar.collapsed .artist-mini,
 .sidebar.collapsed .sidebar-collapse {
   width: 46px;
   height: 46px;
@@ -337,6 +339,8 @@ aside.sidebar.collapsed {
 .sidebar.collapsed .nav-item:hover,
 .sidebar.collapsed .sidebar-settings:hover,
 .sidebar.collapsed .pl-row:hover,
+.sidebar.collapsed .mix-item:hover,
+.sidebar.collapsed .artist-mini:hover,
 .sidebar.collapsed .sidebar-collapse:hover {
   background: var(--row-hover);
   color: var(--text);
@@ -345,6 +349,25 @@ aside.sidebar.collapsed {
 .sidebar.collapsed .nav-item.active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+/* Collapsed rail: Made For You / Recent Artists render as icon-only entries
+   (thumbnail / round avatar); the label text is hidden like every other rail
+   item, the full name lives in the button title tooltip. */
+.sidebar.collapsed .mix-title,
+.sidebar.collapsed .artist-mini-name {
+  display: none;
+}
+.sidebar.collapsed .mix-thumb {
+  width: 34px;
+  height: 34px;
+}
+.sidebar.collapsed .artist-mini-av {
+  width: 34px;
+  height: 34px;
+}
+.sidebar.collapsed .mix-item.active,
+.sidebar.collapsed .artist-mini.active {
+  background: var(--accent-soft);
 }
 .sidebar.collapsed .nav-item.active::before {
   display: none;
@@ -2001,6 +2024,150 @@ aside.sidebar.collapsed {
 }
 .set-input:focus {
   border-color: var(--accent);
+}
+
+/* Hotkeys */
+.hotkey-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+}
+.hotkey-row-label {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+.kbd {
+  padding: 3px 9px;
+  min-width: 34px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.kbd.sm {
+  padding: 2px 7px;
+  font-size: 11px;
+  min-width: 0;
+}
+.hotkey-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+.hotkey-warn {
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.4;
+}
+.hotkey-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hotkey-picker-backdrop,
+.hotkey-capture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+.hotkey-capture-backdrop {
+  z-index: 80;
+}
+.hotkey-picker {
+  width: 420px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.hotkey-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+}
+.hotkey-picker-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.hotkey-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hotkey-picker-cat {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted-2);
+  padding: 2px 4px;
+}
+.hotkey-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  font-size: 14px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.hotkey-picker-item:hover {
+  background: var(--accent-soft);
+}
+.hotkey-capture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 40px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.hotkey-capture-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.hotkey-capture-sub {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 /* Switch */
@@ -3968,7 +4135,10 @@ button:disabled {
   right: 0;
   top: 0;
   transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
-  padding: 0 10px;
+  /* Right slack so the active line — scaled up from its left edge (1.05, or 1.09
+     in nextgen) — grows into empty space instead of overflowing the viewport's
+     `overflow: hidden` and getting clipped on long/wrapped lines. */
+  padding: 0 10% 0 14px;
 }
 .kary-line {
   margin: 0;
@@ -3990,12 +4160,32 @@ button:disabled {
   color: var(--accent);
   transform: scale(1.05);
 }
-.kary-line.past {
-  /* No CSS `filter` here: the line under the wheel cursor having a filter while a
-     backdrop-filter (custom-bg glass) is in the frame suppresses repaint during
-     wheel-scroll → karaoke freeze. The "past" softening is carried by opacity
-     (lineOpacity) + this small lift. See scroll-freeze notes. */
-  transform: translateY(-4px);
+/* Per-letter "fall": each glyph is its own inline-block, so a finished line can
+   crumble — the letters tip on their top edge, drift sideways, shrink and drop
+   away, staggered left→right — rather than the whole line snapping to a dimmed
+   state. Transforms + opacity only (NO persistent `filter`): a filter on a line
+   while the custom-bg backdrop-filter is in frame reignites the karaoke repaint
+   freeze (see scroll-freeze notes). Wheel-scroll is already blocked in this area. */
+.kary-char {
+  display: inline-block;
+  white-space: pre;
+  transform-origin: 50% 0;
+  transition:
+    transform 0.6s cubic-bezier(0.36, 0, 0.22, 1),
+    opacity 0.6s ease;
+}
+.kary-line.past .kary-char {
+  transform: translateY(0.62em) translateX(var(--kx, 0)) rotate(var(--kr, 0deg)) scale(0.86);
+  opacity: 0.4;
+  transition-delay: calc(var(--ki, 0) * 15ms);
+}
+/* Active line: letters crumble away one-by-one as they're sung. `spent` is toggled
+   per glyph by the JS in step with the line's progress, so the fall is driven by
+   the music (no CSS delay) and lands on the same pose the `.past` state rests at —
+   no jump when the finished line then flips to past. */
+.kary-line.active .kary-char.spent {
+  transform: translateY(0.62em) translateX(var(--kx, 0)) rotate(var(--kr, 0deg)) scale(0.86);
+  opacity: 0.3;
 }
 .kary-line:hover {
   color: var(--text);
@@ -4644,9 +4834,7 @@ button:disabled {
     linear-gradient(180deg, rgba(6, 8, 7, 0.55) 0%, rgba(6, 8, 7, 0.3) 35%, rgba(6, 8, 7, 0.78) 100%);
 }
 .fsplayer-bg-btn {
-  position: absolute;
-  right: 24px;
-  bottom: 26px;
+  position: relative;
   z-index: 3;
   width: 42px;
   height: 42px;
@@ -4661,10 +4849,14 @@ button:disabled {
   backdrop-filter: blur(8px);
   transition: all 0.15s ease;
 }
-.fsplayer-bg-btn:hover {
+.fsplayer-bg-btn:hover:not(:disabled) {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent);
+}
+.fsplayer-bg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ===== Per-track karaoke background (video / image / youtube) ===== */
@@ -4679,12 +4871,20 @@ button:disabled {
   pointer-events: none; /* never steal clicks from the player UI */
   animation: fadeIn 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-/* The track-background button (the only fullscreen bg control now). */
-.fsplayer-kbg {
+/* Bottom-right corner: a vertical stack of round icon buttons — lyric actions
+   (reset / sync) on top, the per-track background button at the bottom. */
+.fsplayer-corner {
   position: absolute;
   right: 24px;
   bottom: 26px;
   z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.fsplayer-kbg {
+  position: relative;
 }
 .fsplayer-kbg .fsplayer-bg-btn {
   position: static; /* the wrapper is the positioned anchor */

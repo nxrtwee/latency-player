@@ -120,8 +120,9 @@ export async function downloadTrack(track: Track): Promise<void> {
     const st = await plugin.stat({ path: entry.path, directory: DIR })
     entry.size = st.size || 0
     if (!entry.size) throw new Error('offline download produced an empty file')
-    // Best-effort: cache the cover locally too, so the media notification never
-    // has to fetch the remote artwork (which crashes natively when offline).
+    // Best-effort: cache the cover locally too, so both the media notification
+    // and the in-app UI (Downloads list, Now Playing) show a cover offline —
+    // fetching the remote artwork natively with no network crashes the app.
     const conv = cap()?.convertFileSrc
     if (track.artwork && conv) {
       try {
@@ -129,6 +130,8 @@ export async function downloadTrack(track: Track): Promise<void> {
         const { uri: artDest } = await plugin.getUri({ path: artPath, directory: DIR })
         await transfer.downloadFile({ url: track.artwork, path: artDest })
         entry.artLocal = conv(artDest)
+        // Point the stored track at the local cover so it renders without network.
+        entry.track = { ...track, artwork: entry.artLocal }
       } catch {
         /* cover is optional */
       }

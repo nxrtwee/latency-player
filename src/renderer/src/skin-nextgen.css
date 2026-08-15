@@ -737,7 +737,10 @@
    ============================================================ */
 [data-skin='nextgen'] .fsplayer-art {
   border-radius: 22px;
-  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.95), 0 0 60px -22px var(--accent);
+  /* Glow tracks the cover's own palette (--fs-glow, set by LyricsView), not the
+     client theme accent — matches how the oldgen backdrop reads. Falls back to
+     the accent before the palette has been extracted. */
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.95), 0 0 60px -22px var(--fs-glow, var(--accent));
 }
 [data-skin='nextgen'] .fsplayer-title {
   font-size: 34px;

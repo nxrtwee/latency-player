@@ -6,6 +6,7 @@ import { ColorPicker } from './ColorPicker'
 import { OverlayScrollbar } from './OverlayScrollbar'
 import { grabScroll } from '../grabScroll'
 import { CloseIcon, RealSoundCloudIcon, RealYandexMusicIcon } from './Icons'
+import { HotkeysSettings } from './HotkeysSettings'
 
 const THEMES = [
   { id: 'crimson', label: 'Crimson', color: '#ff2e54' },
@@ -40,6 +41,8 @@ export function Settings(): JSX.Element {
   const [ymImport, setYmImport] = useState<'idle' | 'busy' | string>('idle')
   const [scRemove, setScRemove] = useState<'idle' | 'busy' | string>('idle')
   const [ymRemove, setYmRemove] = useState<'idle' | 'busy' | string>('idle')
+  const [scExport, setScExport] = useState<'idle' | 'busy' | string>('idle')
+  const [ymExport, setYmExport] = useState<'idle' | 'busy' | string>('idle')
   const t2 = useT()
   async function runImport(
     fn: () => Promise<number>,
@@ -63,6 +66,27 @@ export function Settings(): JSX.Element {
     s === 'busy' ? t2('importing') : s === 'idle' ? t2('importLikes') : s
   const removeLabel = (s: 'idle' | 'busy' | string): string =>
     s === 'busy' ? t2('removing') : s === 'idle' ? t2('removeImported') : s
+  // Export current local likes for one provider out to its service. Counts only
+  // that provider's successes from the combined result.
+  async function runExport(
+    provider: 'soundcloud' | 'yandex',
+    setState: (v: 'idle' | 'busy' | string) => void
+  ): Promise<void> {
+    setState('busy')
+    try {
+      // SC exports crawl (~15-20s/like) to stay under DataDome — show live
+      // progress so the long-running button doesn't look frozen.
+      const n = await exportLikesToServices(provider, (done, total) =>
+        setState(`${t2('exporting')} ${done}/${total}`)
+      )
+      setState(`${t2('exported')} ${n}`)
+    } catch {
+      setState(t2('exportLikes'))
+    }
+    setTimeout(() => setState('idle'), 4000)
+  }
+  const exportLabel = (s: 'idle' | 'busy' | string): string =>
+    s === 'busy' ? t2('exporting') : s === 'idle' ? t2('exportLikes') : s
 
   const theme = usePlayer((s) => s.theme)
   const setTheme = usePlayer((s) => s.setTheme)
@@ -110,6 +134,11 @@ export function Settings(): JSX.Element {
   const setCrossfadeSec = usePlayer((s) => s.setCrossfadeSec)
   const geniusFallback = usePlayer((s) => s.geniusFallback)
   const setGeniusFallback = usePlayer((s) => s.setGeniusFallback)
+  const karaokeCrumble = usePlayer((s) => s.karaokeCrumble)
+  const setKaraokeCrumble = usePlayer((s) => s.setKaraokeCrumble)
+  const mirrorLikes = usePlayer((s) => s.mirrorLikes)
+  const setMirrorLikes = usePlayer((s) => s.setMirrorLikes)
+  const exportLikesToServices = usePlayer((s) => s.exportLikesToServices)
   const launchAtStartup = usePlayer((s) => s.launchAtStartup)
   const setLaunchAtStartup = usePlayer((s) => s.setLaunchAtStartup)
   const hwAccel = usePlayer((s) => s.hwAccel)
@@ -502,6 +531,13 @@ export function Settings(): JSX.Element {
               <Toggle checked={geniusFallback} onChange={setGeniusFallback} />
             </div>
             <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('karaokeCrumble')}</span>
+                <span className="set-row-sub">{t('karaokeCrumbleSub')}</span>
+              </div>
+              <Toggle checked={karaokeCrumble} onChange={setKaraokeCrumble} />
+            </div>
+            <div className="set-row">
               <span className="set-row-title">{t('textSize')}</span>
               <div className="mix-toggle">
                 {(['sm', 'md', 'lg'] as const).map((s) => (
@@ -557,6 +593,13 @@ export function Settings(): JSX.Element {
                   >
                     {removeLabel(scRemove)}
                   </button>
+                  <button
+                    className="sync-btn ghost"
+                    disabled={scExport !== 'idle'}
+                    onClick={() => runExport('soundcloud', setScExport)}
+                  >
+                    {exportLabel(scExport)}
+                  </button>
                 </div>
               </>
             ) : (
@@ -601,6 +644,13 @@ export function Settings(): JSX.Element {
                 >
                   {removeLabel(ymRemove)}
                 </button>
+                <button
+                  className="sync-btn ghost"
+                  disabled={ymExport !== 'idle'}
+                  onClick={() => runExport('yandex', setYmExport)}
+                >
+                  {exportLabel(ymExport)}
+                </button>
               </div>
             ) : (
               <button
@@ -614,6 +664,20 @@ export function Settings(): JSX.Element {
             )}
             <div className="set-hint">{t('ymPlusHint')}</div>
           </section>
+
+          {/* Likes sync — only meaningful when a service is connected */}
+          {(scAuth || ymAuth) && (
+            <section className="set-block">
+              <div className="set-label">{t('mirrorLikes')}</div>
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('mirrorLikes')}</span>
+                  <span className="set-row-sub">{t('mirrorLikesSub')}</span>
+                </div>
+                <Toggle checked={mirrorLikes} onChange={setMirrorLikes} />
+              </div>
+            </section>
+          )}
 
           {/* Storage */}
           <section className="set-block">
@@ -691,6 +755,17 @@ export function Settings(): JSX.Element {
               </div>
             )}
           </section>
+
+          {/* Hotkeys — desktop only (global shortcuts + mouse side-buttons). */}
+          {typeof window.api?.setGlobalHotkeys === 'function' && (
+            <section className="set-block">
+              <div className="set-label">{t('hotkeys')}</div>
+              <div className="set-row col">
+                <span className="set-row-sub">{t('hotkeysSub')}</span>
+              </div>
+              <HotkeysSettings />
+            </section>
+          )}
 
           <section className="set-block">
             <div className="set-label">{t('discord')}</div>

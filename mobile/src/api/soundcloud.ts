@@ -35,7 +35,11 @@ let clientId: string | null = (() => {
  * The native branch is dead code in the browser, so this stays buildable without
  * @capacitor/core installed (the global is only present on device).
  */
-async function scFetch(url: string, headers?: Record<string, string>): Promise<Response> {
+async function scFetch(
+  url: string,
+  headers?: Record<string, string>,
+  method = 'GET'
+): Promise<Response> {
   // Always present a desktop browser UA (caller headers win on conflict).
   const merged: Record<string, string> = { 'User-Agent': UA, ...(headers || {}) }
   const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; Plugins?: Record<string, unknown> } })
@@ -47,14 +51,21 @@ async function scFetch(url: string, headers?: Record<string, string>): Promise<R
         status: number
       }>
     }
-    const res = await http.request({ url, method: 'GET', headers: merged })
+    const res = await http.request({ url, method, headers: merged })
     const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
     return new Response(body, { status: res.status })
   }
   // Browser dev: the proxy fetches server-side and already defaults the UA, but
   // forward the merged headers so any auth header (and the UA) are applied.
+  // Non-GET verbs (likes write) ride out-of-band via x-sc-method, like ymFetch.
   const proxied = '/__scfetch?url=' + encodeURIComponent(url)
-  const init: RequestInit = { headers: { 'x-sc-headers': JSON.stringify(merged) } }
+  const init: RequestInit = {
+    method: method === 'GET' ? 'GET' : 'POST',
+    headers: {
+      'x-sc-headers': JSON.stringify(merged),
+      ...(method === 'GET' ? {} : { 'x-sc-method': method })
+    }
+  }
   return fetch(proxied, init)
 }
 
@@ -430,7 +441,33 @@ export async function getMyLikes(limit = 50): Promise<Track[]> {
   return []
 }
 
-/** Hydrate id-only track stubs (from mix selections) into full Tracks. */
+// Mirror a like/unlike back to the SoundCloud account. Same OAuth token used for
+// reads authorizes writes. NOTE: SoundCloud fronts its write endpoints with
+// DataDome bot-protection, which on mobile we cannot work around (desktop runs
+// the write inside a hidden soundcloud.com BrowserWindow to inherit the browser
+// fingerprint + clearance cookie — no such surface exists here). So this often
+// 403s on device; kept "на свой риск" per the user's choice. Fire-and-forget at
+// the call site, so a 403 is a silent no-op.
+export async function setLike(id: string, liked: boolean): Promise<boolean> {
+  if (!oauthToken) return false
+  const trackId = id.replace(/^sc:/, '')
+  if (!/^\d+$/.test(trackId)) return false
+  if (myUserId == null) await getMe()
+  if (myUserId == null) return false
+  try {
+    const cid = await getClientId()
+    const url = `${API}/users/${myUserId}/track_likes/${trackId}?client_id=${cid}&app_locale=en`
+    const res = await scFetch(
+      url,
+      { ...authHeaders(), Origin: 'https://soundcloud.com', Referer: 'https://soundcloud.com/' },
+      liked ? 'PUT' : 'DELETE'
+    )
+    // 404 on unlike = already absent = success.
+    return res.ok || (!liked && res.status === 404)
+  } catch {
+    return false
+  }
+}
 async function hydrateTrackIds(ids: number[]): Promise<Track[]> {
   if (!ids.length) return []
   const out: Track[] = []

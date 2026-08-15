@@ -182,6 +182,10 @@ const api = {
   // through CapacitorHttp / the dev proxy, so assume reachable.
   scReachable: async (): Promise<boolean> => true,
   scMyLikes: (): Promise<Track[]> => sc.getMyLikes(),
+  // Mirror a like/unlike back to the SoundCloud account (writes ride the same
+  // OAuth token). SC fronts writes with DataDome bot-protection we can't defeat
+  // on mobile, so this may 403 — the store treats it as fire-and-forget.
+  scSetLike: (id: string, liked: boolean): Promise<boolean> => sc.setLike(id, liked),
   scPersonalMixes: (): Promise<
     { title: string; subtitle?: string; cover?: string; tracks: Track[] }[]
   > => sc.getPersonalMixes(),
@@ -218,6 +222,9 @@ const api = {
   ymIsAuthed: async (): Promise<boolean> => ym.isAuthed(),
   ymReachable: async (): Promise<boolean> => true,
   ymMyLikes: (): Promise<Track[]> => ym.getMyLikes(),
+  // Mirror a like/unlike back to the Yandex account (authorized POST, no bot
+  // protection — reliable, unlike SC).
+  ymSetLike: (id: string, liked: boolean): Promise<boolean> => ym.setLike(id, liked),
   ymMyWave: (queueId?: string): Promise<{ cover?: string; tracks: Track[] }> =>
     ym.getMyWave(queueId),
   ymStationWave: (

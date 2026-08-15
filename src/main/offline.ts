@@ -20,6 +20,7 @@ const indexFile = (): string => join(dir(), 'index.json')
 interface OfflineEntry {
   track: Track
   file: string // absolute path to the downloaded audio
+  cover?: string // absolute path to the downloaded cover art, when the track had one
   size: number
   savedAt: number
 }
@@ -31,6 +32,11 @@ async function ensureDir(): Promise<void> {
   if (ready) return
   await fs.mkdir(dir(), { recursive: true })
   ready = true
+}
+
+/** media:// URL that serves a cached local file (audio or cover). */
+function mediaLocal(absPath: string): string {
+  return 'media://local/' + absPath.replace(/\\/g, '/').replace(/^\//, '')
 }
 
 export async function init(): Promise<void> {
@@ -83,45 +89,69 @@ export function isCached(trackId: string): boolean {
 export function localUrl(trackId: string): string | null {
   const entry = index[trackId]
   if (!entry) return null
-  return 'media://local/' + entry.file.replace(/\\/g, '/').replace(/^\//, '')
+  return mediaLocal(entry.file)
 }
 
 /**
  * Download a SoundCloud or Yandex Music track for offline use. Resolves the
- * source to a single MP3 URL, fetches the bytes, and records it. Returns true on
- * success. Safe to call again — already-cached tracks short-circuit to true.
+ * source to a single MP3 URL, fetches the bytes, and records it. Also caches the
+ * cover art locally and rewrites the stored track's `artwork` to a media:// URL,
+ * so the offline library shows a cover with no network. Returns the stored track
+ * (with local artwork) on success, or null on failure. Safe to call again —
+ * already-cached tracks short-circuit to their stored track.
  */
-export async function download(track: Track): Promise<boolean> {
-  if (index[track.id]) return true
+export async function download(track: Track): Promise<Track | null> {
+  if (index[track.id]) return index[track.id].track
   try {
     await ensureDir()
     let streamUrl: string
     if (track.providerId === 'soundcloud') {
       // HLS streams aren't downloadable as a single file here.
-      if (track.uri.includes('/stream/hls')) return false
+      if (track.uri.includes('/stream/hls')) return null
       streamUrl = await soundcloud.resolveStream(track.uri)
     } else if (track.providerId === 'yandex') {
       // track.uri is the bare Yandex track id; resolveStream signs a CDN MP3 URL.
       streamUrl = await yandex.resolveStream(track.uri)
     } else {
-      return false
+      return null
     }
     const res = await net.fetch(streamUrl)
-    if (!res.ok) return false
+    if (!res.ok) return null
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.length === 0) return false
-    const name = createHash('sha1').update(track.id).digest('hex') + '.mp3'
-    const file = join(dir(), name)
+    if (buf.length === 0) return null
+    const base = createHash('sha1').update(track.id).digest('hex')
+    const file = join(dir(), base + '.mp3')
     await fs.writeFile(file, buf)
-    index[track.id] = { track, file, size: buf.length, savedAt: Date.now() }
+
+    // Best-effort cover download, so the track keeps its art offline.
+    let cover: string | undefined
+    const stored: Track = { ...track }
+    if (track.artwork && /^https?:\/\//.test(track.artwork)) {
+      try {
+        const coverRes = await net.fetch(track.artwork)
+        if (coverRes.ok) {
+          const coverBuf = Buffer.from(await coverRes.arrayBuffer())
+          if (coverBuf.length > 0) {
+            const ext = /\.png(\?|$)/i.test(track.artwork) ? '.png' : '.jpg'
+            cover = join(dir(), base + ext)
+            await fs.writeFile(cover, coverBuf)
+            stored.artwork = mediaLocal(cover)
+          }
+        }
+      } catch {
+        /* cover is optional — keep the remote artwork URL */
+      }
+    }
+
+    index[track.id] = { track: stored, file, cover, size: buf.length, savedAt: Date.now() }
     await persist()
-    return true
+    return stored
   } catch {
-    return false
+    return null
   }
 }
 
-/** Remove a cached track (deletes the file + index entry). */
+/** Remove a cached track (deletes the audio + cover files + index entry). */
 export async function remove(trackId: string): Promise<void> {
   const entry = index[trackId]
   if (!entry) return
@@ -129,6 +159,13 @@ export async function remove(trackId: string): Promise<void> {
     await fs.unlink(entry.file)
   } catch {
     /* already gone */
+  }
+  if (entry.cover) {
+    try {
+      await fs.unlink(entry.cover)
+    } catch {
+      /* already gone */
+    }
   }
   delete index[trackId]
   await persist()

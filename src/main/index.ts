@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, net } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
 import { pathToFileURL } from 'url'
@@ -38,6 +38,10 @@ function readPrefs(): { hwAccel?: boolean } {
 // the GPU from being driven every frame (cuts load / keeps weak cards from
 // revving to max clocks), at the cost of more CPU for software compositing.
 if (readPrefs().hwAccel === false) app.disableHardwareAcceleration()
+
+// The primary window, tracked so global-shortcut callbacks can target it even
+// when it is not the focused window (the whole point of a global shortcut).
+let mainWindow: BrowserWindow | null = null
 
 // Dev-only: expose a CDP endpoint for screenshot/inspection tooling.
 if (!app.isPackaged && process.env.LP_CDP) {
@@ -82,6 +86,11 @@ function createWindow(): void {
   win.on('maximize', sendMaximized)
   win.on('unmaximize', sendMaximized)
 
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
+
   if (process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -110,6 +119,15 @@ function registerMediaProtocol(): void {
     const headers = new Headers(res.headers)
     headers.set('Access-Control-Allow-Origin', '*')
     headers.set('Access-Control-Expose-Headers', '*')
+    // Local files fetched via file:// often come back without a Content-Type;
+    // set one from the extension so cached cover art decodes as an image.
+    if (url.host !== 'remote' && !headers.has('Content-Type')) {
+      const p = target.toLowerCase()
+      if (p.endsWith('.jpg') || p.endsWith('.jpeg')) headers.set('Content-Type', 'image/jpeg')
+      else if (p.endsWith('.png')) headers.set('Content-Type', 'image/png')
+      else if (p.endsWith('.webp')) headers.set('Content-Type', 'image/webp')
+      else if (p.endsWith('.mp3')) headers.set('Content-Type', 'audio/mpeg')
+    }
     return new Response(res.body, {
       status: res.status,
       statusText: res.statusText,
@@ -201,12 +219,23 @@ function registerIpc(): void {
     likes.removeByProvider(providerId)
   )
 
+  // Mirror a like/unlike out to the track's own service (opt-in; renderer gates
+  // on the mirrorLikes toggle + auth). Returns whether the service confirmed it.
+  ipcMain.handle('sc:setLike', (_e, id: string, liked: boolean) => soundcloud.setLike(id, liked))
+  ipcMain.handle('ym:setLike', (_e, id: string, liked: boolean) => yandex.setLike(id, liked))
+
   ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
   ipcMain.on('window:toggleMaximize', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (!win) return
     if (win.isMaximized()) win.unmaximize()
     else win.maximize()
+  })
+  // Maximize only (idempotent — no-op if already maximized). Used when karaoke
+  // opens: it wants the whole window, but never OS fullscreen.
+  ipcMain.on('window:maximize', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win && !win.isMaximized()) win.maximize()
   })
   ipcMain.on('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
   ipcMain.handle('window:isMaximized', (e) =>
@@ -308,6 +337,29 @@ function registerIpc(): void {
   ipcMain.handle('playlists:removeTrack', (_e, id: string, trackId: string) =>
     playlists.removeTrack(id, trackId)
   )
+
+  // Client hotkeys — register the renderer's keyboard combos as OS-global
+  // shortcuts so they fire even when the window is unfocused. To avoid a
+  // double-trigger (the renderer's own DOM keydown ALSO fires when focused), the
+  // global callback forwards to the renderer ONLY when the window is not focused;
+  // the focused case is handled entirely in the renderer. Mouse-button binds are
+  // never sent here (globalShortcut is keyboard-only).
+  ipcMain.handle('hotkeys:register', (_e, list: { accel: string; id: string }[]) => {
+    globalShortcut.unregisterAll()
+    for (const { accel, id } of list) {
+      try {
+        globalShortcut.register(accel, () => {
+          // Always forward — globalShortcut intercepts the accelerator system-wide,
+          // so the focused renderer never sees these keydowns. The DOM listener
+          // skips accelerator combos to avoid double-firing (see App.tsx dispatch).
+          mainWindow?.webContents.send('hotkey:trigger', id)
+        })
+      } catch {
+        // Accelerator already owned by another app / invalid — skip it; the bind
+        // still works in-app via the renderer's DOM listener.
+      }
+    }
+  })
 }
 
 app.whenReady().then(async () => {
@@ -329,4 +381,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })

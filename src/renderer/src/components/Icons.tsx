@@ -118,6 +118,20 @@ export const CloseIcon = (p: IconProps): JSX.Element => (
   </Svg>
 )
 
+export const KeyboardIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+  </Svg>
+)
+
+export const MouseIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <rect x="6" y="3" width="12" height="18" rx="6" />
+    <path d="M12 7v4" />
+  </Svg>
+)
+
 export const SearchIcon = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <circle cx="11" cy="11" r="8" />

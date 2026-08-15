@@ -251,10 +251,10 @@ export const Sidebar = forwardRef<
         )}
       </div>
 
-      {!collapsed && showSidebarMixes && mixes.length > 0 && (
+      {showSidebarMixes && mixes.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('madeForYou')}</div>
-          {mixes.slice(0, 5).map((mix) => (
+          {mixes.slice(0, collapsed ? 6 : 5).map((mix) => (
             <button
               key={mix.id}
               className={`mix-item ${source === 'mix' && selectedMixId === mix.id ? 'active' : ''}`}
@@ -270,7 +270,7 @@ export const Sidebar = forwardRef<
         </div>
       )}
 
-      {!collapsed && showSidebarArtists && recentArtists.length > 0 && (
+      {showSidebarArtists && recentArtists.length > 0 && (
         <div className="nav-group">
           <div className="nav-label">{t('recentArtists')}</div>
           {recentArtists.map((a) => (
