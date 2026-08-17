@@ -1,0 +1,1903 @@
+/* ============================================================
+   PORTRAIT — the phone adaptation layer.
+   ------------------------------------------------------------
+   The mobile bundle imports the DESKTOP stylesheets verbatim
+   (styles.css → skin-nextgen.css → visual-universal.css →
+   perf.css) and then this file, LAST. Nothing in the desktop
+   sheets is edited: the finished desktop look is the source of
+   truth, and every phone-shaped deviation lives here.
+
+   Scope: every rule is prefixed `html.m` (the class mobile/src/
+   main.tsx puts on <html>). Two reasons:
+     1. specificity — `html.m .playerbar` (0,2,1) outranks
+        `[data-skin='nextgen'] .playerbar` (0,2,0), so overrides
+        land without !important;
+     2. containment — if this file ever reaches the desktop
+        bundle it is inert.
+
+   Layout model (phones only; tablets are out of scope for now):
+     .app-body    → single column, no side panels
+     .sidebar     → slide-over drawer + scrim
+     .content     → full-bleed glass panel, own top bar
+     .playerbar   → nextgen capsule, docked above the tab bar
+     .m-tabbar    → five bottom tabs
+   ============================================================ */
+
+html.m {
+  /* Notch / home-indicator insets, resolved once so every rule below can
+     compose with them. --m-tabbar-h and --m-bar-h are the two chrome heights
+     the scrollers must clear. */
+  --m-safe-top: env(safe-area-inset-top, 0px);
+  --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --m-gutter: 8px;
+  /* Distance from the screen edge to page content. THE size knob for the whole
+     app: every page root is `.tracklist` (+ a modifier), and nextgen pads it
+     34px — a tenth of a 375px screen on each side, on top of the scroller's own
+     gutter. Everything that must line up with the page edge reads this. */
+  --m-edge: 13px;
+  --m-topbar-h: 52px;
+  --m-tabbar-h: 58px;
+  /* One row of [art | title | transport] + the 3px progress line: the capsule is
+     as tall as its 42px art plus breathing room, the way the old mobile build's
+     mini-player was. */
+  --m-bar-h: 60px;
+  --m-drawer-w: min(300px, 84vw);
+  /* Total chrome the page scroller has to clear at the bottom. */
+  --m-bottom-chrome: calc(
+    var(--m-tabbar-h) + var(--m-safe-bottom) + var(--m-bar-h) + 10px
+  );
+}
+
+/* Touch scrolling: momentum on, overscroll chaining off so a bounce at the end
+   of a list never drags the whole page. */
+html.m,
+html.m body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Type. The desktop asks for 'Segoe UI' first, which no phone has — so it would
+   silently land on the generic system-ui anyway. Name the platform faces instead
+   (SF on iOS, Roboto on Android) and turn on subpixel smoothing, which is the
+   one thing that makes the desktop's tight tracking read cleanly at phone DPI. */
+html.m body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The dock is a behavioural wrapper only (mobile/src/shell/PlayerDock.tsx: tap
+   the capsule → fullscreen player). It must not become a box: `.playerbar` is
+   fixed and has to keep resolving against the viewport. */
+html.m .m-dock {
+  display: contents;
+}
+
+/* ---------- 1. Desktop-only chrome that has no phone meaning ---------- */
+
+/* The window titlebar, the panel resizers, the right panel and the two custom
+   scrollbar skins are all desktop pointer affordances. MobileApp doesn't render
+   the titlebar/resizers/right panel at all; these rules are the safety net for
+   the ones that come along inside reused components.
+   `.folders` used to be hidden here as well — it listed watched folders, which a
+   sandboxed WebView can't have. It now carries the phone's import block instead
+   (the touch branch in Sidebar.tsx), so it stays visible; §4 sizes it. */
+html.m .titlebar,
+html.m .resizer,
+html.m .rightpanel,
+html.m .cscroll-ovl,
+html.m .cscroll-bar,
+html.m .sidebar-collapse {
+  display: none !important;
+}
+
+/* Two Settings sliders that cannot bite here. The capsule is docked between two
+   fixed insets, so its width pref has nothing to move; and its height is pinned
+   to `--m-bar-h` while the pref itself must stay <=72, because that threshold is
+   what keeps nextgen's seek row a draggable slider rather than the 96-bar
+   waveform (PlayerBar's `compactSeek`). See the hooks in Settings.tsx. */
+html.m .set-row-barw,
+html.m .set-row-barh {
+  display: none;
+}
+
+/* Native momentum scrolling everywhere the desktop drew its own bar. */
+html.m .cscroll-view,
+html.m .sidebar,
+html.m .modal-body {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+html.m .cscroll-view::-webkit-scrollbar,
+html.m .sidebar::-webkit-scrollbar,
+html.m .modal-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ---------- 2. Shell ---------- */
+
+/* 100vh lies on mobile browsers (it excludes the collapsing URL bar); 100dvh is
+   correct where supported, and the 100vh line above is the fallback. */
+html.m .app {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Single column: no sidebar in flow (it's a drawer), no right panel, no gaps. */
+html.m .app-body {
+  padding: 0;
+  gap: 0;
+  display: block;
+  position: relative;
+}
+
+/* The content panel goes full-bleed. On a 390px viewport the nextgen floating
+   slab would spend ~5% of the width on gutters and rounding, which is exactly
+   the width a track row needs for its title. The nextgen identity survives
+   because it lives in the glass fill + accent aura of `.content::before`, not in
+   the rounding. Column order inside: .m-topbar / .error-banner / .cscroll. */
+html.m .content {
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  display: flex;
+  flex-direction: column;
+}
+html.m .content::before {
+  border-radius: 0;
+}
+
+/* The page scroller must clear the fixed bottom chrome (capsule + tab bar) and
+   start below the status bar inset. nextgen already pads 104px at the bottom for
+   its capsule; phone chrome is taller, so it is recomputed here. */
+html.m .cscroll,
+html.m .cscroll-view {
+  min-height: 0;
+}
+html.m .cscroll-view {
+  /* Horizontal inset is owned by `.tracklist` below, so the two can't stack. */
+  padding: 0 0 var(--m-bottom-chrome);
+}
+
+/* Page edge inset — the single rule that retunes every screen at once. Each page
+   component (HomePage / ExplorePage / ArtistPage / … / TrackList) roots itself in
+   `.tracklist`, so the desktop's 34px page margin is replaced here rather than
+   page by page. The `.home` variant is spelled out because nextgen pads it through
+   `[data-skin='nextgen'] .tracklist.home` (0,3,0), which outranks a bare
+   `html.m .tracklist` (0,2,1). */
+html.m .tracklist,
+html.m .tracklist.home {
+  padding: 12px var(--m-edge) 8px;
+}
+
+/* Entrance animation: the desktop `ngViewIn` blurs a 10px filter over the whole
+   page on every navigation. On phone GPUs that is a visible hitch on the first
+   frame, so the phone keeps the fade + rise and drops the blur. */
+html.m .cscroll {
+  animation: mViewIn 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes mViewIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- 3. Top bar (phone-only chrome) ---------- */
+
+/* Sits inside `main.content` as its first flex child, so it never scrolls and
+   never gets a backdrop-filter on a scroll ancestor (see the scroll-freeze note
+   in styles.css). Carries: brand/page title, then the icon rail (the desktop's
+   collapsed sidebar, moved up here — activity / comments / downloads / My Wave /
+   search / library-drawer / settings). */
+html.m .m-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--m-topbar-h) + var(--m-safe-top));
+  padding: var(--m-safe-top) 6px 0;
+  border-bottom: 1px solid var(--border-2);
+  position: relative;
+  z-index: 2;
+}
+
+/* Seven 38px buttons would eat the whole row; 34 + a 1px rail gap keeps the
+   effective target ~36px (they are separated by their own padding, not by dead
+   space) and still leaves the title ~110px. */
+html.m .m-tb-rail {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+html.m .m-tb-btn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, transform 0.16s;
+}
+html.m .m-tb-btn:active {
+  background: var(--surface-2, rgba(255, 255, 255, 0.08));
+  color: var(--text);
+  transform: scale(0.93);
+}
+html.m .m-tb-btn.active {
+  color: var(--accent);
+}
+
+html.m .m-tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-left: 4px;
+}
+html.m .m-tb-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 4. Sidebar as a slide-over drawer ---------- */
+
+/* The desktop Sidebar is reused whole — profile, Discover, Your Music, Made For
+   You, Recent Artists, Sources, Playlists, Settings — only its box changes.
+   z-index 38 keeps it over the capsule (30) and the tab bar (31) while staying
+   under the fullscreen player (40), the modals (60) and the splash (4000). */
+html.m .m-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  pointer-events: none;
+}
+html.m .m-drawer.open {
+  pointer-events: auto;
+}
+
+html.m .m-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 3, 10, 0.6);
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.m .m-drawer.open .m-scrim {
+  opacity: 1;
+}
+
+html.m .m-drawer .sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--m-drawer-w) !important;
+  max-width: none;
+  flex: none !important;
+  border-radius: 0 22px 22px 0;
+  border-left: 0;
+  padding: calc(var(--m-safe-top) + 14px) 10px calc(var(--m-safe-bottom) + 14px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform: translateX(-103%);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  box-shadow: 22px 0 60px -28px rgba(0, 0, 0, 0.9);
+}
+html.m .m-drawer.open .sidebar {
+  transform: none;
+}
+
+/* The panel is OPAQUE on a phone. nextgen fills the sidebar with a 50%-alpha
+   gradient over a 46%-alpha `--sidebar`, and deliberately runs no backdrop-filter
+   (see the scroll-freeze note in styles.css) — fine on desktop, where a solid app
+   background sits behind it. A drawer slides over the live page instead, so that
+   same fill let track rows read straight through the nav. The skin's tint layers
+   are kept verbatim and simply backed by the opaque `--bg`, so themes still
+   drive the colour. */
+html.m .m-drawer .sidebar,
+html.m .app.has-bg .m-drawer .sidebar {
+  /* Two image layers over an opaque colour: only the last layer of the
+     `background` shorthand may carry a colour, so `--sidebar` (a colour token) is
+     re-expressed as a flat gradient. */
+  background-color: var(--bg);
+  background-image: linear-gradient(180deg, rgba(24, 20, 40, 0.55), rgba(12, 10, 22, 0.72)),
+    linear-gradient(var(--sidebar), var(--sidebar));
+}
+
+/* Rows wear the desktop COLLAPSED rail's button language (styles.css:331-392 +
+   skin-nextgen.css:180-204): a 46px frameless button, radius 13, 22px glyph,
+   accent-soft + accent glyph when active with nextgen's outer glow and inset
+   accent hairline. The labels stay — the phone has the width for them — so the
+   drawer reads as that rail unrolled rather than as a desktop 236px sidebar
+   stretched to a thumb. */
+html.m .m-drawer .nav-item,
+html.m .m-drawer .sidebar-settings,
+html.m .m-drawer .pl-row,
+html.m .m-drawer .mix-item,
+html.m .m-drawer .artist-mini {
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: 13px;
+  gap: 12px;
+}
+html.m .m-drawer .nav-item {
+  font-size: 14.5px;
+}
+html.m .m-drawer .nav-item > svg,
+html.m .m-drawer .sidebar-settings > svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+/* Touch has no hover, so the pressed state carries the whole affordance. */
+html.m .m-drawer .nav-item:active,
+html.m .m-drawer .sidebar-settings:active,
+html.m .m-drawer .pl-row:active,
+html.m .m-drawer .mix-item:active,
+html.m .m-drawer .artist-mini:active {
+  background: var(--row-hover);
+  color: var(--text);
+}
+html.m .m-drawer .nav-item.active {
+  box-shadow:
+    0 0 18px -8px var(--accent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+/* The rail drops the desktop's 3px left accent bar — the glow is the marker. */
+html.m .m-drawer .nav-item.active::before {
+  display: none;
+}
+/* Rail thumbnails: mixes and artists match the collapsed rail's 34px art. */
+html.m .m-drawer .mix-thumb,
+html.m .m-drawer .artist-mini-av,
+html.m .m-drawer .pl-thumb {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+html.m .m-drawer .sidebar-profile {
+  padding: 8px 10px;
+  border-radius: 13px;
+}
+/* Delete/close affordances are hover-revealed on desktop; a touch device has no
+   hover, so they stay visible. */
+html.m .m-drawer .pl-del,
+html.m .m-drawer .pl-row .icon-btn {
+  opacity: 1;
+}
+
+/* Library import (the phone's stand-in for the desktop's folder list — see the
+   touch branch in Sidebar.tsx). Taller targets, and the destructive "forget"
+   button reads as secondary: solid muted frame instead of the dashed "add" one. */
+html.m .m-drawer .add-folder {
+  padding: 12px;
+  font-size: 14px;
+}
+html.m .m-drawer .add-folder.ghost {
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--muted-2);
+  font-weight: 500;
+}
+html.m .m-drawer .add-folder:active:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+html.m .m-drawer .add-folder:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- 5. Bottom tab bar (phone-only chrome) ---------- */
+
+html.m .m-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 31;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: stretch;
+  height: calc(var(--m-tabbar-h) + var(--m-safe-bottom));
+  padding-bottom: var(--m-safe-bottom);
+  background: rgba(10, 8, 18, 0.82);
+  -webkit-backdrop-filter: var(--ng-glass, blur(28px) saturate(1.35));
+  backdrop-filter: var(--ng-glass, blur(28px) saturate(1.35));
+  border-top: 1px solid var(--border-2);
+}
+
+html.m .m-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-2, var(--muted));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  cursor: pointer;
+  transition: color 0.16s;
+}
+html.m .m-tab svg {
+  width: 21px;
+  height: 21px;
+}
+html.m .m-tab.active {
+  color: var(--accent);
+}
+html.m .m-tab:active {
+  transform: scale(0.94);
+}
+
+/* ---------- 6. Player bar → docked phone capsule ---------- */
+
+/* Desktop nextgen makes this a floating capsule of `clamp(820px, 64%, 1120px)`
+   with a 1.3fr / 1.5fr / 1.3fr three-column split — 820px of hard minimum on a
+   390px screen. PlayerBar also writes `width` and `max-width` as INLINE style
+   (it's a user-tunable pref), which no selector can outrank, hence !important
+   on exactly those two properties.
+
+   The phone capsule keeps the same glass, radius and controls but re-flows to a
+   SINGLE row: [ now | transport ], with the progress as a 3px line clipped to the
+   capsule's bottom edge (PlayerBar draws `.pb-seek.line` on touch — no timestamps,
+   no visualizer). That re-flow is done by promoting `.pb-center`'s children into
+   the capsule's own grid with `display: contents` — no DOM change, no PlayerBar
+   edit. */
+html.m .playerbar {
+  position: fixed;
+  /* Same inset as page content (`.tracklist`), so the capsule's edge continues the
+     one vertical line the whole app is aligned to. */
+  left: var(--m-edge);
+  right: var(--m-edge);
+  bottom: calc(var(--m-tabbar-h) + var(--m-safe-bottom) + 6px);
+  width: auto !important;
+  max-width: none !important;
+  margin: 0;
+  z-index: 30;
+  height: var(--m-bar-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 6px;
+  padding: 0 8px;
+  border-radius: 20px;
+  /* Clips the progress line to the rounded corners. Safe on a fixed element: it
+     clips descendants, not the capsule's own glow (an outer box-shadow is never
+     clipped by the element's own overflow). */
+  overflow: hidden;
+}
+
+/* oldgen has no capsule of its own: the base `.playerbar` paints
+   `background: var(--bar)`, and NOTHING in the project defines `--bar` — so the
+   declaration is invalid at computed-value time and the background resolves to
+   transparent. On desktop that is invisible (the bar is docked over an opaque
+   app column); floating over scrolling content on a phone, the track rows run
+   straight through it. Give the oldgen capsule the skin's own flat panel surface
+   — same geometry as nextgen's glass, none of its glow — and swap the base's
+   `border-top` (a stray line across the top of a rounded capsule) for a full
+   border. */
+html.m[data-skin='oldgen'] .playerbar {
+  background-color: color-mix(in srgb, var(--panel) 88%, #000);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+html.m .pb-center {
+  display: contents;
+}
+html.m .pb-now {
+  grid-area: 1 / 1;
+  min-width: 0;
+  gap: 9px;
+}
+html.m .pb-controls {
+  grid-area: 1 / 2;
+  gap: 1px;
+}
+
+html.m .pb-art {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+}
+html.m .pb-meta {
+  min-width: 0;
+}
+html.m .pb-title {
+  font-size: 13.5px;
+}
+html.m .pb-artist {
+  font-size: 11.5px;
+}
+/* The now-playing block is a DISPLAY, not a menu. On desktop its title opens the
+   comments page and every artist name is its own link — three tap targets packed
+   into ~150px, right where a thumb lands when reaching for "expand". Made inert,
+   so all of it counts as capsule dead space and one tap opens the fullscreen
+   player (where the same links exist at full size).
+
+   The like heart is the exception, restored from the old build's capsule: it is not
+   navigation, it is the one thing worth doing without opening the player, and it
+   sits at the meta's right edge where nothing competes with it — so it opts back
+   into pointer events on its own. */
+html.m .pb-now {
+  pointer-events: none;
+}
+html.m .pb-like {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+/* Transport: shuffle (first) and repeat (last) are dropped from the capsule —
+   five buttons plus the track meta do not fit 360px, and both live one tap away
+   in the fullscreen player. prev / play / next stay: they are the only three
+   things on the capsule that a finger is allowed to hit. */
+html.m .pb-controls > *:first-child,
+html.m .pb-controls > *:last-child {
+  display: none;
+}
+html.m .pb-controls .icon-btn {
+  width: 36px;
+  height: 36px;
+}
+html.m .pb-controls .play-btn {
+  width: 42px;
+  height: 42px;
+}
+
+/* `.pb-right` is autopilot, comments, queue, volume and expand — a phone needs
+   none of them here: volume belongs to the hardware keys, the queue and comments
+   are pages of their own, and "expand" is what tapping the capsule already does.
+   Dropping the cluster entirely (it used to keep its last child) also buys the
+   track title ~46px of width. */
+html.m .pb-right {
+  display: none;
+}
+
+/* Seek: the old mobile build's hairline, pinned along the capsule's bottom edge
+   and out of the grid flow — which is what lets the capsule be one row tall. It is
+   decorative: seeking on a 3px strip under a thumb is a mis-seek waiting to
+   happen, and the fullscreen player (one tap on the capsule) has the real
+   waveform. `.pb-line` — the accent fill — is styled in styles.css. */
+html.m .pb-seek.line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0;
+  border-radius: 0;
+  pointer-events: none;
+}
+/* Range inputs are a 4px-tall box, which is under half a fingertip. Grow the BOX
+   to 20px and clip the (inline, value-driven) gradient back to the 4px content
+   box, so the track looks identical while the hit area triples. The !important is
+   required because Slider writes `background` inline as a shorthand, which would
+   otherwise reset background-clip to border-box. */
+html.m .slider {
+  box-sizing: border-box;
+  height: 20px;
+  padding: 8px 0;
+  background-clip: content-box !important;
+}
+html.m .slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- 7. Page headers ---------- */
+
+/* `.ph` (the shared page hero used by TrackList / Album / Mix / Comments, and by
+   the artist and profile pages through `.artist-head` / `.pf-head`) is a
+   landscape flex row: a 210px cover with a 66px title bottom-aligned beside it.
+
+   It USED to stack on a phone — cover above, text below — which read fine but
+   left the whole strip to the right of the cover empty (a 124px cover in a 349px
+   column wastes 225px) and pushed the first track ~300px down the page. So the
+   desktop row comes back, just scaled to portrait: a 112px cover with the label,
+   title, counters, description and action buttons packed into the ~225px column
+   beside it. The action buttons stay on one line as icons (see `.ph-actions`
+   below), and `.ph` centres its items rather than bottom-aligning them — the text
+   column is now the taller of the two. */
+html.m .ph {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+html.m .ph-cover {
+  width: 112px;
+  height: 112px;
+  border-radius: 14px;
+}
+html.m .ph-cover-glyph {
+  font-size: 34px;
+}
+html.m .ph-info {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-bottom: 0;
+}
+html.m .ph-label {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+}
+html.m .ph-title {
+  font-size: 21px;
+  line-height: 1.08;
+  letter-spacing: -0.5px;
+  margin: 4px 0 7px;
+}
+html.m .ph-meta,
+html.m .ph-desc {
+  font-size: 12px;
+}
+/* Three "N tracks • 41 min • ★ 4.8" groups do not fit 225px on one line. */
+html.m .ph-meta {
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 1px;
+}
+html.m .ph-desc {
+  -webkit-line-clamp: 2;
+  margin-top: 6px;
+}
+/* [Play] [import] [shuffle] [download all] [⋯] in a ~225px column. Four buttons at
+   desktop size want ~250px, so the row used to wrap in halves — the play pill on
+   its own line, the round buttons under it. That reads as two rows of chrome above
+   every list, and the ⋯ still ended up looking stray.
+   One line instead, and the play pill gives up its label rather than the row
+   giving up its shape: a 36px accent circle, same size as its neighbours. Worst
+   case is the local-files header with five buttons — 5 × 36 + 4 × 6 = 204px — and
+   it fits. The label was never load-bearing; a filled accent play triangle among
+   outlined circles is the most legible button on the page. */
+html.m .ph-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+html.m .ph-actions .btn-play {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 50%;
+  justify-content: center;
+}
+html.m .ph-actions .btn-play span {
+  display: none;
+}
+/* Buttons are flex rows, so an icon with no explicit basis is shrinkable. */
+html.m .ph-actions .btn-play svg,
+html.m .ph-actions .btn-round svg {
+  flex: 0 0 auto;
+}
+/* 42px round buttons and a 22px-padded play pill would wrap one-per-line in the
+   narrower column. */
+html.m .btn-play {
+  padding: 9px 15px;
+  font-size: 14px;
+  gap: 6px;
+}
+html.m .btn-round {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+/* The remaining page titles, in the same proportion. */
+html.m .home-greet {
+  font-size: 30px;
+  letter-spacing: -0.8px;
+}
+html.m .ex-title {
+  font-size: 27px;
+  letter-spacing: -0.7px;
+}
+html.m .wave-title {
+  font-size: 26px;
+}
+html.m .comments-title {
+  font-size: 25px;
+}
+html.m .pg-hero-title {
+  font-size: 21px;
+}
+html.m .splash-word {
+  font-size: 30px;
+}
+html.m .home-h2 {
+  font-size: 17px;
+  margin-bottom: 10px;
+}
+html.m .home-sub {
+  font-size: 13.5px;
+  margin-top: 10px;
+}
+
+/* ---------- 8. Card grids → a fixed two-column phone grid ---------- */
+
+/* Every desktop card grid is `repeat(auto-fill, minmax(150…186px, 1fr))`. At
+   374px of usable width the 150px ones happen to land on two columns, but the
+   170px mix grid and nextgen's 186px one fall back to ONE full-width column —
+   a wall of giant tiles. Pinning two columns keeps the desktop proportions and
+   is deterministic at every phone width. */
+html.m .home-quick,
+html.m .mix-grid,
+html.m .act-stats,
+html.m .profile-tracks {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+/* …except the home card grid ("Jump back in", playlists), which is a grid of
+   square covers: two columns make each cover 170px, so six cards are 700px of
+   artwork and the section alone is two screens tall. Three columns put the cover
+   back at a thumbnail's size, which is what it is. */
+html.m .home-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+html.m .home-grid .home-card-title {
+  font-size: 12px;
+}
+html.m .home-grid .home-card-sub {
+  font-size: 11px;
+}
+html.m .home-grid .home-card-art {
+  margin-bottom: 4px;
+  font-size: 24px;
+}
+
+/* Horizontal card rails.
+   `.similar-row` (an artist's albums and similar artists, and the search page's
+   album results) is `flex-wrap: wrap` on desktop, where a 1200px canvas puts four
+   150px cards on a line. In a 349px column it wrapped to two per line and left a
+   ragged ~39px gutter on the right — which is what made the album results read as
+   shifted left — and ten of them became six rows of artwork above the tracks. It
+   becomes one nowrap scroller instead, exactly like the `.profile-row` above it:
+   a half-card peeking past the edge signals the scroll, and the section stays one
+   row tall whatever the result count. */
+html.m .similar-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* `overflow-x: auto` computes overflow-y to `auto` as well, which would clip the
+     nextgen cover's drop shadow (~16px below the box) — hence the roomier bottom. */
+  padding: 4px 2px 16px;
+}
+html.m .similar-row,
+html.m .profile-row {
+  gap: 10px;
+  scroll-snap-type: x proximity;
+}
+html.m .similar-row > *,
+html.m .profile-row > * {
+  scroll-snap-align: start;
+}
+/* An album card is 150px of which 24px is padding on desktop, where it sits in a
+   grid. In a rail the gap already separates the cards, so the padding only costs
+   cover size: 120px card = 120px cover, and ~2.9 of them fit across the screen. */
+html.m .album-card {
+  width: 120px;
+  padding: 0;
+}
+html.m .album-title {
+  max-width: 120px;
+  font-size: 12.5px;
+}
+html.m .album-year {
+  font-size: 11px;
+}
+/* The chips are a rail of round avatars, and at the desktop's 130px width (a 64px
+   avatar in it) two neighbouring avatars sat 76px apart — the row read as gaps
+   with faces in them. Narrower chip, tighter gap: 42px between avatars. */
+html.m .profile-chip {
+  width: 96px;
+  padding: 12px 6px;
+}
+html.m .profile-name {
+  font-size: 12px;
+}
+html.m .profile-sub {
+  font-size: 10.5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 9. Page-specific hero geometry ---------- */
+
+/* Sized to match `.ph-cover` above — the artist hero is the same row. */
+html.m .artist-avatar {
+  width: 112px;
+  height: 112px;
+  font-size: 38px;
+}
+/* The artist head gets the `.pf-head` treatment (see below): `.ph-info` dissolves
+   so the "◎ Артист" label can take a full-width row of its own ABOVE the avatar
+   instead of being squeezed into the text column, which buys the name and the
+   follower count the whole 225px. The avatar spans what is left. */
+html.m .artist-head {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+html.m .artist-head .ph-info {
+  display: contents;
+}
+html.m .artist-head .ph-label {
+  grid-area: 1 / 1 / 2 / 3;
+  margin-bottom: 6px;
+}
+html.m .artist-head .artist-avatar {
+  grid-area: 2 / 1 / 5 / 2;
+}
+/* Title / counters / buttons auto-place down column 2 — nothing else to pin. */
+html.m .artist-head .ph-title {
+  margin: 0 0 2px;
+}
+/* One line for the followers and the track count; the total duration is dropped
+   (ArtistPage marks it). Clipped rather than wrapped, so a seven-figure listener
+   count can't push the row past the screen edge. */
+html.m .artist-head .ph-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+html.m .ph-dur {
+  display: none;
+}
+html.m .album-cover {
+  /* Fills its (now 120px) card — see the rail block in §8. The previous 104px left
+     22px of slack inside a 126px content box, so every cover sat left of its own
+     title. */
+  width: 120px;
+  height: 120px;
+  font-size: 30px;
+}
+html.m .profile-avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+}
+/* The profile page's own avatar is 172px — nearly half a phone's width, and it
+   pushed the name/actions below the fold. */
+html.m .pf-avatar {
+  width: 112px;
+  height: 112px;
+  font-size: 42px;
+}
+
+/* The profile head carries up to four labelled buttons ("Изменить имя",
+   "Сменить фото", "Настроить кадр", …), and in the ~210px column beside the avatar
+   every one of them landed on a line of its own: a 273px-tall header of stacked
+   buttons. They need the full width — but they are nested inside `.ph-info`, so
+   `display: contents` dissolves that wrapper and lets `.ph` place its
+   grandchildren directly: avatar in column 1, the label/name/handle in column 2,
+   and the button row across both, under everything.
+
+   `.ph-info` always has exactly four children (label, name — h1 or the rename
+   input — meta, actions; ProfilePage.tsx), so the three auto-placed ones fill
+   column 2 by themselves and only the two ends need explicit slots. */
+html.m .pf-head {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+html.m .pf-head .ph-info {
+  display: contents;
+}
+html.m .pf-head .pf-avatar {
+  grid-area: 1 / 1 / 4 / 2;
+}
+html.m .pf-head .ph-actions {
+  grid-area: 4 / 1 / 5 / 3;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+/* Labels are the point here (there is no icon to fall back on, and these buttons
+   are not "play"), so they keep the desktop pill shape and wrap onto a second line
+   instead — undoing §7's icon-only treatment. */
+html.m .pf-head .ph-actions .btn-play {
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  padding: 9px 15px;
+  gap: 6px;
+  border-radius: 22px;
+}
+html.m .pf-head .ph-actions .btn-play span {
+  display: inline;
+}
+html.m .pf-head .sync-btn {
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+/* The account cards are a nowrap row [icon] [title + description] [button]. The
+   button will not shrink, so on a phone it took 205px of a 300px card and left
+   the description a 35px column — one word per line, 175px tall. The button gets
+   its own full-width row instead. */
+html.m .profile-account {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 14px;
+}
+html.m .profile-account .pa-icon {
+  grid-area: 1 / 1 / 2 / 2;
+}
+html.m .profile-account .pa-text {
+  grid-area: 1 / 2 / 2 / 3;
+}
+html.m .profile-account .sync-btn {
+  grid-area: 2 / 1 / 3 / 3;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px 10px;
+}
+html.m .pa-title {
+  font-size: 14px;
+}
+html.m .pa-sub {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Activity/profile stat cards: two per row at this width, so 16px of padding
+   around a 26px number wastes a third of the screen height on four of them. */
+html.m .stat-card {
+  padding: 12px;
+  gap: 4px;
+  border-radius: 14px;
+}
+html.m .stat-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  margin-bottom: 2px;
+}
+html.m .stat-icon svg {
+  width: 17px;
+  height: 17px;
+}
+html.m .stat-value {
+  font-size: 20px;
+}
+html.m .stat-value-sm {
+  font-size: 15px;
+}
+html.m .stat-label {
+  font-size: 11.5px;
+}
+/* Activity's vertical rhythm was tuned for a 1200px canvas: 22px under the hero
+   and 26px under the source line push the feed itself off the first screen. */
+html.m .act-header {
+  margin-bottom: 14px;
+}
+html.m .act-split {
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+
+/* The service info card carries a 40px inset of its own on top of the page's —
+   53px before a word starts, on a 375px screen. */
+html.m .info-hero {
+  padding: 18px 16px 22px;
+  border-radius: 18px;
+}
+html.m .info-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+}
+html.m .info-icon svg {
+  width: 34px;
+  height: 34px;
+}
+html.m .info-tagline {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+html.m .info-bullets {
+  margin-bottom: 20px;
+}
+
+/* My Wave: the orbit disc is 400px wide in nextgen — wider than the screen. */
+html.m .wave-disc {
+  width: min(74vw, 240px);
+  height: min(74vw, 240px);
+}
+html.m .wave-disc.has-orbit {
+  width: min(86vw, 320px);
+  height: min(86vw, 320px);
+  margin-bottom: 18px;
+}
+
+/* Search box: desktop caps it at 360px inside a wide toolbar; on phone it takes
+   the full row. */
+html.m .search-box {
+  max-width: none;
+  width: 100%;
+}
+html.m .tl-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- 10. Track rows ---------- */
+
+/* Desktop `.trow` is a six-column grid: 36px index | title | artist | 44px like
+   | 58px time | 64px more, with 14px gaps — 272px of fixed furniture before the
+   title gets a pixel. On a phone the same cells re-flow into two lines:
+       [cover] title ................  3:42 [♥] [⋯]
+              artist ...............
+   Nothing is invented: the artist line is simply indented by the cover width so
+   it aligns under the title.
+
+   The cover is taken OUT of the grid (absolute, centred on the row) instead of
+   riding inside `.c-title`. Left in flow it lives in row 1 only, so a 40px cover
+   sits opposite a title+artist pair whose own centre is ~11px lower — the text
+   visibly sags next to the artwork, which is exactly the "текст съезжает" bug.
+   Now both rows are `auto` and `align-content: center` centres the pair as a
+   block against a cover centred by `translateY(-50%)`: one shared centre line.
+   `padding-left` = cover (8 + 40) + 8px gap, and `.c-artist` drops its own
+   indent, so title and artist share one left edge.
+
+   The 64px height is NOT free-form — TrackList's windowing does its spacer math
+   from ROW_H, so `src/renderer/src/touch.ts` feeds the same 64 to the JS side on
+   coarse-pointer devices. Change one and you must change the other. */
+html.m .trow,
+html.m .trow.with-plays {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) 36px 32px 56px;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 2px;
+  height: 64px;
+  padding: 0 4px 0 56px;
+}
+html.m .thumb-wrap {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* The index column is a mouse affordance (row number that swaps to a play
+   button on hover) and the play-count column is decoration; both go. The active
+   row's equalizer lived in the index column, so the now-playing cue moves to an
+   inset accent bar, which also survives at a glance while scrolling. */
+html.m .c-index,
+html.m .c-plays,
+html.m .tl-head {
+  display: none;
+}
+html.m .trow.active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+html.m .c-title {
+  grid-area: 1 / 1 / 2 / 2;
+  gap: 10px;
+}
+html.m .t-title {
+  font-size: 14px;
+}
+html.m .c-artist {
+  grid-area: 2 / 1 / 3 / 2;
+  padding-left: 0;
+  font-size: 11.5px;
+  line-height: 1;
+}
+/* Duration and both buttons span the two text rows, so they centre on the same
+   line as the cover instead of hanging off one row. */
+html.m .c-time {
+  grid-area: 1 / 2 / 3 / 3;
+  font-size: 11px;
+  line-height: 1;
+}
+html.m .c-like {
+  grid-area: 1 / 3 / 3 / 4;
+}
+html.m .c-more {
+  grid-area: 1 / 4 / 3 / 5;
+  gap: 0;
+}
+
+/* Row affordances are `opacity: 0` until hover on desktop. A finger has no
+   hover, so they are always visible here. */
+html.m .row-dl,
+html.m .row-like,
+html.m .row-add,
+html.m .pl-del {
+  opacity: 1;
+}
+
+/* …and they were mouse-sized: 19x19 for the download glyph, 32x18 for the heart.
+   The glyphs keep their desktop size; only the button box grows to fill the 40px
+   grid row, so the three sit shoulder to shoulder with no dead space between
+   them and a thumb cannot land between two of them. */
+html.m .row-like,
+html.m .row-dl,
+html.m .row-add {
+  height: 40px;
+  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* ---------- 11. Universal bento home ---------- */
+
+/* The bento needs the least work of anything here: visual-universal.css already
+   collapses its 4-column grid to 2 at <=1100px, and every span (hero 2x2, wave
+   and stats span-2, native sections 1/-1) then reads as a correct portrait
+   stack. Only the desktop-sized paddings and the 128px row floor are retuned. */
+html.m .pg-home {
+  padding: 4px 0 0;
+}
+html.m .pg-bento {
+  gap: 10px;
+  grid-auto-rows: minmax(104px, auto);
+}
+html.m .pg-hero-inner {
+  padding: 16px;
+}
+html.m .pg-hero-sub {
+  font-size: 12.5px;
+}
+html.m .pg-hero-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.m .pg-tile-quick {
+  padding: 12px;
+}
+html.m .pg-quick-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+html.m .pg-quick-label {
+  font-size: 13px;
+}
+html.m .pg-quick-sub {
+  top: 12px;
+  right: 12px;
+  font-size: 17px;
+}
+html.m .pg-tile-wave {
+  gap: 12px;
+  padding: 14px;
+}
+html.m .pg-wave-disc {
+  width: 52px;
+  height: 52px;
+}
+html.m .pg-wave-core {
+  width: 46px;
+  height: 46px;
+}
+html.m .pg-tile-stats {
+  gap: 10px;
+  padding: 14px;
+}
+html.m .pg-stat-value {
+  font-size: 18px;
+}
+
+/* ---------- 12. Fullscreen player + karaoke ---------- */
+
+/* One screen, two views (LyricsView's `touchLyrics`):
+
+     .fs-player-mode  the DEFAULT on a phone — big art, title, visualizer,
+                      transport, and the queue always on screen below them. This
+                      screen is the phone's player; the capsule is only a handle.
+     .fs-immersive    the karaoke text. Everything else becomes a fading overlay
+                      over it and drops out after a few idle seconds
+                      (`.fs-chrome-off`), so what is left is the text.
+
+   Desktop gets neither class: it keeps the two-column art + lyrics layout below,
+   which is also what a phone shows inside `.fs-immersive`.
+
+   Desktop splits `.fsplayer-inner` into a 300px art column and a flexible lyrics
+   column, 56px apart, inside `padding: 30px 8vw`. Portrait stacks the two. */
+html.m .fsplayer-inner {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding: calc(var(--m-safe-top) + 52px) 14px 0;
+}
+html.m .fsplayer-side {
+  width: 100%;
+  flex-shrink: 1;
+  align-items: center;
+  text-align: center;
+}
+/* Cover: as wide as the screen allows minus a breath at each edge, and capped
+   against the viewport HEIGHT too — on a short phone a 340px square would leave
+   the queue two rows tall. */
+html.m .fsplayer-art {
+  width: min(86vw, 340px, 40vh);
+  height: min(86vw, 340px, 40vh);
+  border-radius: 18px;
+  font-size: 54px;
+}
+html.m .fsplayer-title {
+  margin-top: 12px;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+/* The like heart, in the cover's top-right corner exactly as the desktop right
+   panel draws it (`.np-like`, styles.css) — reused verbatim so the two match; only
+   the box grows to a fingertip. `.cover-edit` lives in the opposite bottom corner,
+   so they never overlap. */
+html.m .fsplayer-art .np-like {
+  width: 38px;
+  height: 38px;
+  top: 10px;
+  right: 10px;
+}
+html.m .fsplayer-artist {
+  font-size: 13.5px;
+  /* The desktop pins the artist line to the left of its 300px column
+     (`align-self: flex-start`), which a parent `align-items: center` cannot undo
+     — so the centred title sat above a left-hugging artist. */
+  align-self: center;
+}
+html.m .fsplayer-lyrics {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+html.m .kary {
+  padding: 0 4px;
+}
+/* Beats both `[data-skin='nextgen'] .kary-line` and `[data-lyrics='lg']`. */
+html.m .kary-line {
+  font-size: 20px;
+  padding: 7px 0;
+}
+html.m .kary-line.static {
+  font-size: 16px;
+}
+
+/* Desktop lays the four children out as one row: [0:08] [wave] [3:42] [transport].
+   Stacking them into a column put one timestamp above the wave and the other
+   below it, which reads as two unrelated numbers. A 3-column grid keeps the
+   desktop reading — times flanking the wave — and drops only the transport onto
+   its own centred row. The child list is fixed (see `.fsplayer-controls` in
+   LyricsView.tsx), so the positional selectors are stable. */
+html.m .fsplayer-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 9px;
+  row-gap: 6px;
+  padding: 10px 14px calc(var(--m-safe-bottom) + 14px);
+}
+html.m .fsplayer-controls > .pb-time:nth-child(1) {
+  grid-area: 1 / 1;
+  text-align: left;
+}
+html.m .fsplayer-controls > .pb-time:nth-child(3) {
+  grid-area: 1 / 3;
+  text-align: right;
+}
+html.m .fsplayer-controls > .pb-time {
+  font-size: 11px;
+  min-width: 32px;
+}
+html.m .fsplayer-wave {
+  grid-area: 1 / 2;
+  width: 100%;
+  flex: 0 0 auto;
+  height: 34px;
+}
+/* The waveform is a fixed ~120 bars of `flex: 1; min-width: 2px` with a 2px gap —
+   4px of hard minimum each, so it wants 480px and overflowed a 347px phone
+   column. Everything past the clip was invisible, which also made the played
+   portion read as less progress than it was. Dropping every other bar halves the
+   bar count instead of the bar width: the peaks are simply downsampled, the
+   played/unplayed ratio is untouched (it is a per-bar class), and seeking is
+   unaffected (it maps the tap against the container, not the bars). */
+html.m .fsplayer-wave .wave-bar:nth-child(even) {
+  display: none;
+}
+html.m .fsplayer-wave .wave-bar {
+  border-radius: 2px;
+}
+html.m .fsplayer-transport {
+  grid-area: 2 / 1 / 3 / 4;
+  justify-self: center;
+  margin-left: 0;
+  gap: 18px;
+}
+
+/* Chrome: close top-right under the notch, the background/karaoke controls move
+   from the bottom-right corner (where the stacked transport now lives) to the
+   opposite top corner. */
+html.m .fsplayer-close {
+  top: calc(var(--m-safe-top) + 8px);
+  right: 10px;
+}
+html.m .fsplayer-corner {
+  top: calc(var(--m-safe-top) + 8px);
+  left: 10px;
+  right: auto;
+  bottom: auto;
+  flex-direction: row;
+  gap: 8px;
+}
+html.m .fsplayer-bg-btn {
+  width: 38px;
+  height: 38px;
+}
+/* The switch into the karaoke text (touch only) joins that same row, first, so
+   the four buttons read as one group. `.on` marks the text view as active — the
+   same cue `.kbg-toggle.on` already uses. */
+html.m .fs-lyrics-btn.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---- the phone's player view (default) ---- */
+
+/* The art + title block sizes itself and the queue takes the rest; without this
+   the desktop `flex: 1` on `.fsplayer-inner` would eat the whole screen and the
+   queue would be squeezed to nothing.
+
+   The top padding is the base 52px plus the 44px the old `.fs-extras` row used to
+   occupy above the queue: the art block drops by exactly what that row gave back,
+   so the queue's head stays on the same line it was on and the player above it
+   sits lower, clear of the notch and the two corner buttons. Karaoke mode keeps
+   the base value (`.fs-immersive` overrides it) — there is no queue there to
+   trade height with. */
+html.m .fsplayer.fs-player-mode .fsplayer-inner {
+  flex: 0 0 auto;
+  padding-top: calc(var(--m-safe-top) + 96px);
+}
+/* The visualizer and the transport sit directly under the title, and the queue
+   follows — so this row gives up the bottom padding it needs when it is the last
+   thing on the screen. */
+html.m .fsplayer.fs-player-mode .fsplayer-controls {
+  padding: 6px 14px 4px;
+}
+
+/* The queue, always on screen under the transport. It is the LAST child of
+   `.fsplayer` (not of `.fsplayer-inner`), so it owns the bottom of the screen and
+   scrolls internally while the player above it stays put. */
+html.m .fs-queue {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px calc(var(--m-safe-bottom) + 8px);
+}
+/* The desktop stacks these as `.np-controls` + `.np-volume` under a 300px-wide
+   art; the phone has no room for a second control row, so the like heart moved to
+   the cover's top-right corner (the right panel's own `.np-like`) and shuffle /
+   repeat to the two ends of the transport. The 44px this row used to take
+   (36px + the queue's 8px gap) went into `.fsplayer-inner`'s top padding, so the
+   queue starts at exactly the same height as before. */
+/* Desktop `.icon-btn`s are ~24px of glyph with no box — fine for a cursor, half a
+   fingertip here. Same 36px/11px box as the top-bar rail (§3). */
+html.m .fsplayer-transport .icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  justify-content: center;
+}
+/* The card frame goes: inside a full-screen player it is a border around nothing,
+   and the queue reads better as a plain list running off the bottom edge — which
+   is also how the previous mobile builds drew it. */
+html.m .fs-queue .rp-card {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.m .fs-queue .rp-head {
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+html.m .fs-queue .q-filter {
+  height: 36px;
+  margin-bottom: 6px;
+}
+/* No `type` attribute, so the blanket `input[type='text']` rule in §16 misses it
+   — and under 16px iOS zooms the page on focus. */
+html.m .fs-queue .q-filter input {
+  font-size: 16px;
+}
+/* `.q-item` height is NOT touched: it is the stride the windowing math in
+   FsQueue/useVirtualRows counts on (50px + 2px margin). Only the remove button
+   changes — it is `opacity: 0` until `:hover` on desktop, which on touch means
+   invisible forever. */
+html.m .q-remove {
+  opacity: 1;
+  padding: 7px;
+}
+/* Long-press reorder (FsQueue): the held row follows the finger, so it must not
+   also be a hit-test target — `elementFromPoint` has to report the row UNDER it,
+   which is how the drop index is found. The desktop's `opacity: .45` ghost is
+   wrong here: on touch the moving row is the one you are looking at, so it gets
+   lifted instead (shadow + a hair of scale), and the row it would land on keeps
+   the desktop's accent line. `transition: none` because the shared rule in
+   styles.css animates `transform` for 0.16s — a finger would outrun it. */
+html.m .q-item.dragging {
+  opacity: 1;
+  pointer-events: none;
+  transition: none;
+  z-index: 3;
+  position: relative;
+  /* Rows are transparent by default, and a translucent row floating over its
+     neighbours shows their text through itself. `--bg` is the only opaque surface
+     token both skins define, with the hover tint painted on top of it. */
+  background: var(--bg) linear-gradient(var(--row-hover), var(--row-hover));
+  border-color: var(--accent);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  scale: 1.02;
+}
+/* The whole list stops animating background changes while a drag is live: the
+   drop target moves with the finger and a 0.16s fade reads as lag. */
+html.m .q-list.dnd .q-item {
+  transition: none;
+}
+
+/* ---- immersive karaoke ---- */
+
+/* The text gets the whole screen: the art is gone, and the title strip and the
+   transport become overlays ON the text rather than rows that steal height from
+   it. `.kary-viewport`'s own mask already fades the top and bottom 24%, so lines
+   pass under both overlays instead of colliding with them. */
+html.m .fsplayer.fs-immersive .fsplayer-art,
+html.m .fsplayer.fs-immersive .sync-badge.side {
+  display: none;
+}
+html.m .fsplayer.fs-immersive .fsplayer-side {
+  position: absolute;
+  top: calc(var(--m-safe-top) + 54px);
+  left: 14px;
+  right: 14px;
+  /* `width: 100%` above is 100% of `.fsplayer-inner`, i.e. the full screen, which
+     an absolute box anchored 14px from the left then hangs 14px past the right
+     edge — enough to pull the centred title off centre. */
+  width: auto;
+  z-index: 2;
+}
+html.m .fsplayer.fs-immersive .fsplayer-title {
+  margin-top: 0;
+  font-size: 16px;
+}
+html.m .fsplayer.fs-immersive .fsplayer-artist {
+  font-size: 12px;
+}
+html.m .fsplayer.fs-immersive .fsplayer-inner {
+  padding-top: calc(var(--m-safe-top) + 46px);
+  padding-bottom: 0;
+}
+html.m .fsplayer.fs-immersive .fsplayer-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(to top, rgba(6, 8, 7, 0.9), rgba(6, 8, 7, 0));
+}
+
+/* Idle: everything but the text fades out, and stops taking taps so the first tap
+   can only mean "bring it back" (LyricsView's `.fs-tap-catch` catches it). */
+html.m .fsplayer.fs-immersive .fsplayer-side,
+html.m .fsplayer.fs-immersive .fsplayer-controls,
+html.m .fsplayer.fs-immersive .fsplayer-close,
+html.m .fsplayer.fs-immersive .fsplayer-corner {
+  transition: opacity 0.4s ease;
+}
+html.m .fsplayer.fs-chrome-off .fsplayer-side,
+html.m .fsplayer.fs-chrome-off .fsplayer-controls,
+html.m .fsplayer.fs-chrome-off .fsplayer-close,
+html.m .fsplayer.fs-chrome-off .fsplayer-corner {
+  opacity: 0;
+  pointer-events: none;
+}
+html.m .fs-tap-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+/* Sync editor (components/SyncEditor.tsx) — an absolute overlay INSIDE the
+   fullscreen player, so it belongs to this section rather than §13's modals.
+   Desktop puts the whole toolbar on one line: a 22px title with a one-line hint
+   beside `[play] [0:42] [Cancel] [Save sync]`, inside `padding: 24px 8vw`. At
+   375px that leaves the title block ~40px after the actions have taken their
+   width, so the hint shredded into a six-line column and pushed the list off the
+   screen. Here the head stacks — heading over actions — and the two buttons split
+   the leftover width so both are thumb-sized.
+
+   The backdrop blur goes for the same reason as §13: this covers the player
+   completely, so it is a full-screen GPU pass nobody can see. Without the blur
+   the alpha has to carry the whole cover, and 0.92 let the karaoke text ghost
+   through between the rows, so it goes up to 0.985. */
+html.m .sync-editor {
+  padding: calc(var(--m-safe-top) + 12px) 12px calc(var(--m-safe-bottom) + 8px);
+  background: rgba(7, 10, 9, 0.985);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.m .sync-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+html.m .sync-title {
+  font-size: 17px;
+}
+html.m .sync-sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+html.m .sync-actions {
+  gap: 8px;
+}
+html.m .sync-actions .sync-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 8px;
+  font-size: 13.5px;
+}
+html.m .sync-time {
+  font-size: 11.5px;
+  width: 36px;
+}
+html.m .sync-seek {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* One line per lyric line, as on desktop — but the desktop order is
+   [time] [+ ×] [text], which on a phone puts two 22px glyphs between the
+   timestamp and the words. Grid moves them to the right edge (source order is
+   untouched, so the tab order still runs time → buttons → text) and grows them:
+   they are `opacity: 0.5` until `:hover` on desktop, and a finger never hovers. */
+html.m .sync-line {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 2px 1px 6px;
+  border-radius: 10px;
+}
+html.m .sync-stamp {
+  width: auto;
+  font-size: 12px;
+  padding: 6px 0;
+}
+html.m .sync-text-input {
+  grid-area: 1 / 2 / 2 / 3;
+  padding: 7px 2px;
+}
+html.m .sync-row-ctrls {
+  grid-area: 1 / 3 / 2 / 4;
+  gap: 0;
+}
+html.m .sync-row-btn {
+  opacity: 1;
+  padding: 8px;
+}
+
+/* The stamping button is the whole touch story (there is no Space key), so it
+   takes the full width at the bottom of the sheet, where a thumb rests. */
+html.m .sync-footer {
+  padding-top: 8px;
+}
+html.m .sync-tap {
+  width: 100%;
+  padding: 13px 0;
+  border-radius: 16px;
+  font-size: 15px;
+}
+
+/* ---------- 13. Modals → full-screen sheets ---------- */
+
+/* `.modal` is a 460px (settings: 520px) centred card. On a phone a centred card
+   with 4vw of backdrop showing around it is the classic "desktop dialog squeezed
+   onto a phone" tell, so it becomes a full-bleed sheet instead. The backdrop's
+   blur is dropped: the sheet covers it completely, so the blur would be a
+   full-screen GPU pass nobody can see. */
+html.m .modal-backdrop {
+  align-items: stretch;
+  justify-content: stretch;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.m .modal,
+html.m .settings-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* Opaque: nextgen fills the card at 95-97% alpha, which is invisible behind a
+     small centred dialog but lets a whole page read through a full-screen sheet.
+     The skin's tint is kept and simply backed by `--bg`. */
+  background-color: var(--bg);
+  background-image: linear-gradient(180deg, rgba(24, 20, 40, 0.95), rgba(12, 10, 22, 0.97));
+}
+html.m .modal-head {
+  padding: calc(var(--m-safe-top) + 14px) 14px 14px;
+}
+html.m .modal-head h2 {
+  font-size: 18px;
+}
+html.m .modal-body {
+  padding: 14px 14px calc(var(--m-safe-bottom) + 26px);
+  gap: 18px;
+}
+/* Label + control on one line down to ~320px, wrapping instead of squashing the
+   control when a translated label runs long. */
+html.m .set-row {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Paste-a-token sign-in (shell/TokenSheet.tsx). It reuses `.set-input`, which is
+   sized for a one-line <input>; as a <textarea> holding a 200-char OAuth token it
+   needs to wrap and not be draggable (a resize grabber is a mouse affordance). */
+html.m .m-token-input {
+  resize: none;
+  line-height: 1.45;
+  padding: 10px 12px;
+  font-variant-numeric: normal;
+  /* A token is an opaque string — proportional type makes 0/O and 1/l ambiguous
+     when the user is checking a paste. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+html.m .m-token-bad {
+  color: #ff8a8a;
+}
+/* The Yandex "open sign-in page" affordance is an <a>, not a <button>, so it
+   misses the flex centring `.sync-btn` assumes. */
+html.m .m-token .sync-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+
+/* ---------- 14. Touch behaviour ---------- */
+
+/* Sticky :hover. A tap leaves the hover state applied until the next tap
+   elsewhere, so every hover LIFT freezes mid-air — the single most obvious
+   "this is a desktop app" artefact on a touchscreen. Colour and background
+   hovers are kept (they read as a selection cue); only the transforms go. */
+@media (hover: none) {
+  html.m .mix-card:not(.skeleton):hover,
+  html.m .stat-card:hover,
+  html.m .quick-tile:hover,
+  html.m .ex-chip:hover,
+  html.m .pg-tile:hover,
+  html.m .nav-item:hover,
+  html.m .artist-mini:hover,
+  html.m .lyric-hit:hover,
+  html.m .cp-preset:hover,
+  html.m .home-card:hover .home-card-art,
+  html.m .home-card:hover .home-card-art img,
+  html.m .album-card:hover .album-cover,
+  html.m .album-card:hover .album-cover img,
+  html.m .pa-artist:hover .pa-artist-av {
+    transform: none;
+  }
+}
+
+/* Press feedback replaces hover feedback: the whole row/card dips on touch. */
+html.m .trow:active,
+html.m .mix-card:active,
+html.m .home-card:active,
+html.m .album-card:active,
+html.m .pg-tile:active,
+html.m .quick-tile:active,
+html.m .nav-item:active,
+html.m .pl-row:active {
+  transform: scale(0.985);
+}
+
+/* Long-press text selection and the iOS callout menu are never wanted on
+   controls; inputs keep both. */
+html.m .trow,
+html.m .m-tab,
+html.m .m-tabbar,
+html.m .playerbar,
+html.m .sidebar,
+html.m .m-topbar,
+html.m .pg-tile,
+html.m .mix-card,
+html.m .home-card {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---------- 15. Explore / search ---------- */
+
+/* The hero's 36px top inset and the 22px under the subtitle are desktop breathing
+   room; on a phone they push the search field itself past the halfway line. */
+html.m .ex-hero {
+  padding: 16px 0 20px;
+}
+html.m .ex-title {
+  margin-top: 12px;
+}
+html.m .ex-sub {
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+/* The provider picker is `width: fit-content` on desktop; three labels ("Авто",
+   "SoundCloud", "Яндекс Музыка") in 349px wrap onto two lines. Make it a real
+   full-width segmented control instead: equal thirds, nowrap, tighter type. */
+html.m .ex-source {
+  width: 100%;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 10px;
+}
+html.m .ex-source-auto,
+html.m .ex-source-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+html.m .ex-source-auto svg,
+html.m .ex-source-btn svg {
+  flex: 0 0 auto;
+}
+
+html.m .ex-modes {
+  margin-bottom: 12px;
+}
+
+html.m .ex-search {
+  max-width: none;
+  padding: 5px 5px 5px 14px;
+  gap: 8px;
+}
+html.m .ex-search-btn {
+  padding: 10px 16px;
+  font-size: 14px;
+}
+html.m .ex-chips {
+  max-width: none;
+  margin-top: 12px;
+  gap: 7px;
+}
+
+/* ---------- 16. Leftovers ---------- */
+
+/* The banner sits inside `.content`, under the top bar — pull it in to the
+   panel's phone padding. */
+html.m .error-banner {
+  margin: 8px var(--m-gutter) 0;
+  border-radius: 12px;
+  font-size: 12.5px;
+}
+
+/* iOS zooms the page when a focused input's text is under 16px. Every text field
+   is pinned to 16px to suppress that — it is the one place where the desktop
+   type scale cannot be honoured. */
+html.m input[type='text'],
+html.m input[type='search'],
+html.m input[type='number'],
+html.m input[type='password'],
+html.m textarea,
+html.m select {
+  font-size: 16px;
+}
+
+/* The interface background is fixed and full-viewport on mobile too; only its
+   scrim needs to survive the notch area, which it does by being inset:0. */
+html.m .app-bg img,
+html.m .app-bg video {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- 17. Wide screens (tablets) — a stopgap ---------- */
+
+/* The phone layout is applied by CLASS (`html.m`), not by width, so a tablet — or
+   just the mobile build open in a desktop browser window — gets it at any size.
+   Almost everything here scales harmlessly, because it is sized in px or capped
+   with `min()`. The card grids are the exception: §8 pins them to a COLUMN COUNT
+   (2, or 3 for the home grid) because that is what is deterministic on a phone, so
+   on a wide screen every extra pixel goes straight into the artwork — 413px
+   "Вернуться к" covers and a 622px profile-track cover at 1280px.
+   Until the tablet layout is designed for real, the grids go back to being
+   width-driven, as they are on the desktop: the column count grows with the
+   screen and a cover stays the size of a cover. 640px is above every phone in
+   portrait (the widest is ~430px) and below an iPad, so no phone sees this. */
+@media (min-width: 640px) {
+  html.m .home-quick,
+  html.m .mix-grid,
+  html.m .act-stats,
+  html.m .profile-tracks {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+  /* Square covers, so this one keeps the tighter minimum §8 gives it. */
+  html.m .home-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  html.m .home-grid .home-card-title {
+    font-size: 13px;
+  }
+  html.m .home-grid .home-card-sub {
+    font-size: 12px;
+  }
+  /* The hero cover is the other count-free thing that grows: `.ph` is a row, so it
+     is already px-pinned — but the fullscreen art is `min(86vw, …, 40vh)`, and on
+     a tall tablet 40vh clears the 340px cap. Left alone on purpose: 340px of art
+     on an iPad is still a modest cover. */
+}
+

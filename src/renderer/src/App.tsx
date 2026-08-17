@@ -174,10 +174,14 @@ export function App(): JSX.Element {
     void img.decode?.().catch(() => {})
   }, [customBg, bgKind])
 
-  // The interface background video keeps decoding even while the fullscreen player
-  // is open — but the player fully covers it and renders its OWN background, so two
-  // video layers decode at once (the FPS drop after adding video backgrounds). Pause
-  // the (invisible) interface clip while lyrics are open; resume on close.
+  // The interface background video keeps decoding whenever a video bg is selected —
+  // even when nothing is looking at it. Two cases waste a whole video decode:
+  //   1. the fullscreen player is open — it fully covers the interface and renders
+  //      its OWN background, so two video layers decode at once (the FPS drop after
+  //      adding video backgrounds);
+  //   2. the window is minimized / hidden to the tray — decoding for an off-screen
+  //      surface just burns CPU/GPU.
+  // Pause the (invisible) interface clip in both, resume when it's visible again.
   //
   // Also self-heal: Chromium can spontaneously pause a background <video> during
   // heavy compositing — whenever it pauses and we didn't ask for it, resume.
@@ -185,13 +189,19 @@ export function App(): JSX.Element {
   useEffect(() => {
     const v = bgVideoRef.current
     if (!v) return
+    const shouldPause = (): boolean => usePlayer.getState().lyricsOpen || document.hidden
     const sync = (): void => {
-      if (usePlayer.getState().lyricsOpen) v.pause()
+      if (shouldPause()) v.pause()
       else v.play().catch(() => {})
     }
     sync()
     v.addEventListener('pause', sync)
-    return () => v.removeEventListener('pause', sync)
+    // Minimize/hide/restore flips document.hidden and fires visibilitychange.
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      v.removeEventListener('pause', sync)
+      document.removeEventListener('visibilitychange', sync)
+    }
   }, [lyricsOpen, customBg, bgKind])
 
   // Freeze watchdog. The self-heal above only catches an explicit `pause`. But a
@@ -223,7 +233,7 @@ export function App(): JSX.Element {
     if (hasRvfc) rvfc = vf.requestVideoFrameCallback!(onFrame)
 
     const watchdog = window.setInterval(() => {
-      if (v.paused || usePlayer.getState().lyricsOpen) {
+      if (v.paused || usePlayer.getState().lyricsOpen || document.hidden) {
         lastFrame = performance.now()
         lastTime = v.currentTime
         return

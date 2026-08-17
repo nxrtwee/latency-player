@@ -1,256 +1,244 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePlayer } from '@renderer/store'
-import { TabBar, type TabId } from './components/TabBar'
-import { MiniPlayer } from './components/MiniPlayer'
-import { HomeScreen } from './screens/Home'
-import { SearchScreen } from './screens/Search'
-import { LibraryScreen } from './screens/Library'
-import { ProfileScreen } from './screens/Profile'
-import { NowPlaying } from './screens/NowPlaying'
-import { DownloadsScreen } from './screens/Downloads'
-import { ListView } from './screens/ListView'
-import { ActivityScreen } from './screens/Activity'
-import { LocalScreen } from './screens/Local'
-import { SettingsScreen } from './screens/Settings'
-import { ArtistScreen } from './screens/Artist'
-import { AlbumScreen } from './screens/Album'
-import { WaveScreen } from './screens/Wave'
-import { useT } from './i18n'
+import { CustomScroll } from '@renderer/components/CustomScroll'
+import { TrackList } from '@renderer/components/TrackList'
+import { HomePage } from '@renderer/components/HomePage'
+import { ExplorePage } from '@renderer/components/ExplorePage'
+import { ActivityPage } from '@renderer/components/ActivityPage'
+import { ArtistPage } from '@renderer/components/ArtistPage'
+import { AlbumPage } from '@renderer/components/AlbumPage'
+import { MixPage } from '@renderer/components/MixPage'
+import { WavePage } from '@renderer/components/WavePage'
+import { InfoPage } from '@renderer/components/InfoPage'
+import { ProfilePage } from '@renderer/components/ProfilePage'
+import { CommentsPage } from '@renderer/components/CommentsPage'
+import { LyricsView } from '@renderer/components/LyricsView'
+import { Settings } from '@renderer/components/Settings'
+import { BgFraming } from '@renderer/components/BgFraming'
+import { Splash } from '@renderer/components/Splash'
+import { TopBar } from './shell/TopBar'
+import { Drawer } from './shell/Drawer'
+import { BottomTabs } from './shell/BottomTabs'
+import { PlayerDock } from './shell/PlayerDock'
+import { TokenSheet } from './shell/TokenSheet'
 import { installMediaSession } from './api/mediaSession'
 import { installResolvePrefetch } from './api/resolveCache'
 import { installNativeLevels } from './api/nativeLevels'
 import { installStatusBar } from './api/statusBar'
-import { Splash } from '@renderer/components/Splash'
-import type { Album, Artist, Track } from '@shared/types'
 
-/** A pushed detail view over the tab content. List kinds resolve to a ListView;
- *  activity/local/artist are their own screens. */
-export type Detail =
-  | { kind: 'likes' }
-  | { kind: 'recent' }
-  | { kind: 'playlist'; id: string }
-  | { kind: 'mix'; id: string }
-  | { kind: 'activity' }
-  | { kind: 'local' }
-  | { kind: 'artist'; track?: Track; artist?: Artist }
-  | { kind: 'album'; album: Album }
-  | { kind: 'sclikes' }
-  | { kind: 'downloads' }
-  | { kind: 'wave' }
-
-/** Track-count label, language-aware (RU pluralization / EN tracks). */
-function tracksLabel(n: number, lang: string): string {
-  if (lang !== 'ru') return `${n} ${n === 1 ? 'track' : 'tracks'}`
-  const a = Math.abs(n) % 100
-  const b = a % 10
-  let word = 'треков'
-  if (!(a > 10 && a < 20)) {
-    if (b === 1) word = 'трек'
-    else if (b > 1 && b < 5) word = 'трека'
-  }
-  return `${n} ${word}`
-}
-
+/**
+ * The phone shell.
+ *
+ * It renders the DESKTOP components and the desktop DOM — same `.app` /
+ * `.app-body` / `main.content` / `CustomScroll` skeleton, same page router keyed
+ * off the shared store's `source`, same PlayerBar, same fullscreen player, same
+ * Settings modal. Nothing here re-implements a screen; the phone-shaped
+ * deviations are three pieces of chrome the desktop has no use for (TopBar,
+ * Drawer, BottomTabs) plus the portrait.css layer.
+ *
+ * Deliberately NOT rendered: TitleBar (no OS window), Resizer (no pointer),
+ * RightPanel (no room — its queue lives in the fullscreen player) and Equalizer
+ * (only reachable from the right panel, and the mobile audio path has no EQ).
+ */
 export function MobileApp(): JSX.Element {
-  const [tab, setTab] = useState<TabId>('home')
-  const [npOpen, setNpOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [splashDone, setSplashDone] = useState(false)
-  // Detail screens form a back stack so "back" returns to the previous screen
-  // (e.g. Liked → artist → back lands on Liked), not always the tab root.
-  const [detailStack, setDetailStack] = useState<Detail[]>([])
-  const detail = detailStack[detailStack.length - 1] ?? null
-  const pushDetail = (d: Detail): void => setDetailStack((s) => [...s, d])
-  const popDetail = (): void => setDetailStack((s) => s.slice(0, -1))
-  // custom background (data URL persisted locally) — applied app-wide
-  const [customBg, setCustomBg] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('lp.m.bg')
-    } catch {
-      return null
-    }
-  })
-  const [bgFrame, setBgFrame] = useState(() => {
-    try {
-      const raw = localStorage.getItem('lp.m.bg.frame')
-      if (raw) return JSON.parse(raw) as { posX: number; posY: number; zoom: number }
-    } catch {
-      /* default */
-    }
-    return { posX: 50, posY: 50, zoom: 1 }
-  })
-  const changeBg = (url: string | null): void => {
-    setCustomBg(url)
-    try {
-      if (url) localStorage.setItem('lp.m.bg', url)
-      else localStorage.removeItem('lp.m.bg')
-    } catch {
-      /* quota — non-fatal */
-    }
-  }
-  const changeBgFrame = (f: { posX: number; posY: number; zoom: number }): void => {
-    setBgFrame(f)
-    try {
-      localStorage.setItem('lp.m.bg.frame', JSON.stringify(f))
-    } catch {
-      /* non-fatal */
-    }
-  }
 
+  const source = usePlayer((s) => s.source)
+  const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
+  const selectedArtistId = usePlayer((s) => s.selectedArtist?.id)
+  const selectedAlbumId = usePlayer((s) => s.selectedAlbum?.id)
+  const selectedMixId = usePlayer((s) => s.selectedMix?.id)
+  const infoService = usePlayer((s) => s.infoService)
+  const error = usePlayer((s) => s.error)
+
+  const lyricsOpen = usePlayer((s) => s.lyricsOpen)
+  const settingsOpen = usePlayer((s) => s.settingsOpen)
+  const framingOpen = usePlayer((s) => s.framingOpen)
+
+  const theme = usePlayer((s) => s.theme)
+  const skin = usePlayer((s) => s.skin)
+  const visual = usePlayer((s) => s.visual)
+  const graphics = usePlayer((s) => s.graphics)
+  const lyricsSize = usePlayer((s) => s.lyricsSize)
+  const compact = usePlayer((s) => s.compact)
+  const customAccent = usePlayer((s) => s.customAccent)
+
+  const customBg = usePlayer((s) => s.customBg)
+  const bgKind = usePlayer((s) => s.bgKind)
+  const bgPosX = usePlayer((s) => s.bgPosX)
+  const bgPosY = usePlayer((s) => s.bgPosY)
+  const bgZoom = usePlayer((s) => s.bgZoom)
+  const bgScope = usePlayer((s) => s.bgScope)
+  const showInterfaceBg = !!customBg && bgScope !== 'fullscreen'
+
+  const loadLibrary = usePlayer((s) => s.loadLibrary)
   const loadLikes = usePlayer((s) => s.loadLikes)
+  const loadOffline = usePlayer((s) => s.loadOffline)
   const loadPlaylists = usePlayer((s) => s.loadPlaylists)
+  const restoreQueue = usePlayer((s) => s.restoreQueue)
   const generateMixes = usePlayer((s) => s.generateMixes)
-  const likes = usePlayer((s) => s.likes)
-  const recent = usePlayer((s) => s.recentlyPlayed)
-  const playlists = usePlayer((s) => s.playlists)
-  const mixes = usePlayer((s) => s.mixes)
-  const scLikes = usePlayer((s) => s.scLikes)
   const loadScAuth = usePlayer((s) => s.loadScAuth)
   const loadYmAuth = usePlayer((s) => s.loadYmAuth)
-  const playbackError = usePlayer((s) => s.error)
-  const lang = usePlayer((s) => s.lang)
-  const t = useT()
-  const label = (n: number): string => tracksLabel(n, lang)
+  const loadMyWave = usePlayer((s) => s.loadMyWave)
+  const probeAvailability = usePlayer((s) => s.probeAvailability)
+  const resumeSession = usePlayer((s) => s.resumeSession)
 
-  // Bootstrap persisted/derived data once on mount.
+  // Same attribute matrix the desktop sets (App.tsx), minus the two flags that
+  // describe an Electron window: `data-hwaccel` is pinned to 1 (a phone browser
+  // always composites on the GPU) and there is no window to relaunch anyway.
   useEffect(() => {
-    void loadLikes()
+    const root = document.documentElement
+    root.setAttribute('data-theme', theme)
+    root.setAttribute('data-skin', skin)
+    root.setAttribute('data-visual', visual)
+    root.setAttribute('data-graphics', graphics)
+    root.setAttribute('data-hwaccel', '1')
+    root.setAttribute('data-compact', compact ? '1' : '0')
+    root.setAttribute('data-lyrics', lyricsSize)
+    if (theme === 'custom') root.style.setProperty('--accent', customAccent)
+    else root.style.removeProperty('--accent')
+  }, [theme, skin, visual, graphics, compact, lyricsSize, customAccent])
+
+  // Bootstrap. The desktop's loaders (they all go through window.api, which the
+  // mobile shim implements) plus the four native installs that only exist here:
+  // lock-screen transport, neighbour stream prefetch, the native level tap that
+  // drives the visualizer, and the status-bar style.
+  const booted = useRef(false)
+  useEffect(() => {
+    if (booted.current) return
+    booted.current = true
+    void loadLibrary()
     void loadPlaylists()
-    void loadScAuth() // restore a saved SoundCloud token → real mixes/likes
-    void loadYmAuth() // restore a saved Yandex token → My Wave / likes import
-    void generateMixes()
+    void loadOffline().then(() => {
+      if (resumeSession) restoreQueue()
+    })
+    void loadYmAuth().then(() => loadMyWave())
+    void Promise.all([loadLikes(), loadScAuth()]).then(() => {
+      void generateMixes()
+      void probeAvailability()
+    })
     installMediaSession()
-    installResolvePrefetch() // keep neighbour stream URLs resolved for lock-screen skips
-    installNativeLevels() // real visualizer from the iOS native audio tap
+    installResolvePrefetch()
+    installNativeLevels()
     installStatusBar()
-  }, [loadLikes, loadPlaylists, loadScAuth, loadYmAuth, generateMixes])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const openTab = (id: TabId): void => {
-    setDetailStack([])
-    setTab(id)
-  }
-  // tap an artist anywhere → push their page onto the back stack
-  const openArtist = (track: Track): void => pushDetail({ kind: 'artist', track })
+  // Warm the decode cache for the wallpaper so the fullscreen player shows it
+  // without a first-open flash (desktop does the same).
+  useEffect(() => {
+    if (!customBg || bgKind === 'video') return
+    const img = new Image()
+    img.src = customBg
+    void img.decode?.().catch(() => {})
+  }, [customBg, bgKind])
 
-  // Resolve the active detail to a concrete track list + heading.
-  let detailView: JSX.Element | null = null
-  if (detail) {
-    if (detail.kind === 'likes') {
-      // global likes = app likes + SoundCloud likes (deduped by id)
-      const merged = [...likes, ...scLikes].filter(
-        (tr, i, a) => a.findIndex((x) => x.id === tr.id) === i
-      )
-      detailView = (
-        <ListView title={t('liked')} subtitle={label(merged.length)} tracks={merged} onClose={popDetail} onArtist={openArtist} coverKey="likes" />
-      )
-    } else if (detail.kind === 'recent') {
-      detailView = (
-        <ListView title={t('recent')} subtitle={label(recent.length)} tracks={recent} onClose={popDetail} onArtist={openArtist} coverKey="recent" />
-      )
-    } else if (detail.kind === 'activity') {
-      detailView = <ActivityScreen onClose={popDetail} />
-    } else if (detail.kind === 'local') {
-      detailView = <LocalScreen onClose={popDetail} />
-    } else if (detail.kind === 'downloads') {
-      detailView = <DownloadsScreen onClose={popDetail} onArtist={openArtist} />
-    } else if (detail.kind === 'sclikes') {
-      detailView = (
-        <ListView title={t('mySCLikes')} subtitle={label(scLikes.length)} tracks={scLikes} onClose={popDetail} onArtist={openArtist} />
-      )
-    } else if (detail.kind === 'wave') {
-      detailView = <WaveScreen onClose={popDetail} onArtist={openArtist} />
-    } else if (detail.kind === 'album') {
-      detailView = <AlbumScreen album={detail.album} onClose={popDetail} onArtist={openArtist} />
-    } else if (detail.kind === 'artist') {
-      detailView = (
-        <ArtistScreen
-          from={{ track: detail.track, artist: detail.artist }}
-          onClose={popDetail}
-          onOpenDetail={pushDetail}
-        />
-      )
-    } else if (detail.kind === 'mix') {
-      const mix = mixes.find((m) => m.id === detail.id)
-      detailView = (
-        <ListView
-          title={mix?.title || 'Mix'}
-          subtitle={mix?.subtitle || label(mix?.tracks.length ?? 0)}
-          tracks={mix?.tracks ?? []}
-          onClose={popDetail}
-          onArtist={openArtist}
-        />
-      )
-    } else {
-      const pl = playlists.find((p) => p.id === detail.id)
-      detailView = (
-        <ListView
-          title={pl?.name || t('playlists')}
-          subtitle={label(pl?.tracks.length ?? 0)}
-          tracks={pl?.tracks ?? []}
-          onClose={popDetail}
-          coverKey={detail.id}
-        />
-      )
+  // A video wallpaper is the only thing here that keeps a decoder running, and
+  // there are two moments when nobody can see it: the fullscreen player covers it
+  // (it draws its own copy), and the app is in the background. On a phone the
+  // second one is most of the day, so this is battery, not just CPU. Same logic
+  // and the same `pause` self-heal as the desktop's App.tsx.
+  const bgVideoRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const v = bgVideoRef.current
+    if (!v) return
+    const sync = (): void => {
+      if (usePlayer.getState().lyricsOpen || document.hidden) v.pause()
+      else v.play().catch(() => {})
     }
-  }
+    sync()
+    v.addEventListener('pause', sync)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      v.removeEventListener('pause', sync)
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [lyricsOpen, customBg, bgKind, showInterfaceBg])
+
+  const viewKey =
+    source === 'playlist'
+      ? `pl-${selectedPlaylistId}`
+      : source === 'artist'
+        ? `ar-${selectedArtistId}`
+        : source === 'album'
+          ? `al-${selectedAlbumId}`
+          : source === 'mix'
+            ? `mix-${selectedMixId}`
+            : source === 'info'
+              ? `in-${infoService}`
+              : source
+
+  const page = (
+    <CustomScroll key={viewKey}>
+      {source === 'home' ? (
+        <HomePage />
+      ) : source === 'explore' ? (
+        <ExplorePage />
+      ) : source === 'activity' ? (
+        <ActivityPage />
+      ) : source === 'artist' ? (
+        <ArtistPage />
+      ) : source === 'album' ? (
+        <AlbumPage />
+      ) : source === 'mix' ? (
+        <MixPage />
+      ) : source === 'wave' ? (
+        <WavePage />
+      ) : source === 'info' ? (
+        <InfoPage />
+      ) : source === 'profile' ? (
+        <ProfilePage />
+      ) : source === 'comments' ? (
+        <CommentsPage />
+      ) : (
+        <TrackList />
+      )}
+    </CustomScroll>
+  )
 
   return (
-    <div className={'app' + (customBg ? ' has-bg' : '')}>
-      {playbackError && (
-        <div
-          className="global-error-banner"
-          onClick={() => usePlayer.setState({ error: null })}
-        >
-          {playbackError}
-        </div>
-      )}
-      {customBg && (
+    <div className={`app ${showInterfaceBg ? 'has-bg' : ''}`}>
+      {showInterfaceBg && (
         <div className="app-bg">
-          <img
-            src={customBg}
-            alt=""
-            style={{
-              objectPosition: `${bgFrame.posX}% ${bgFrame.posY}%`,
-              transform: `scale(${bgFrame.zoom})`
-            }}
-          />
+          {bgKind === 'video' ? (
+            <video ref={bgVideoRef} src={customBg!} autoPlay loop muted playsInline />
+          ) : (
+            <img
+              src={customBg!}
+              alt=""
+              style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+            />
+          )}
           <div className="app-bg-scrim" />
         </div>
       )}
-      <main className="screen" key={detail ? 'detail-' + detailStack.length : tab}>
-        {detail ? (
-          detailView
-        ) : (
-          <>
-            {tab === 'home' && <HomeScreen onOpenDetail={pushDetail} onOpenTab={openTab} />}
-            {tab === 'search' && <SearchScreen onArtist={openArtist} onOpenDetail={pushDetail} />}
-            {tab === 'library' && <LibraryScreen onOpenDetail={pushDetail} onArtist={openArtist} />}
-            {tab === 'profile' && <ProfileScreen onOpenDetail={pushDetail} />}
-            {tab === 'settings' && (
-              <SettingsScreen
-                customBg={customBg}
-                onChangeBg={changeBg}
-                bgFrame={bgFrame}
-                onChangeBgFrame={changeBgFrame}
-              />
-            )}
-          </>
-        )}
-      </main>
-      <MiniPlayer onExpand={() => setNpOpen(true)} />
-      <TabBar active={tab} onChange={openTab} />
-      {npOpen && (
-        <NowPlaying
-          onClose={() => setNpOpen(false)}
-          onArtist={(track) => {
-            setNpOpen(false)
-            openArtist(track)
-          }}
-          onOpenArtist={(artist) => {
-            setNpOpen(false)
-            pushDetail({ kind: 'artist', artist })
-          }}
-        />
-      )}
+
+      <div className="app-body">
+        <main className="content">
+          <TopBar onMenu={() => setDrawerOpen(true)} />
+          {error && (
+            <div className="error-banner" onClick={() => usePlayer.setState({ error: null })}>
+              {error}
+            </div>
+          )}
+          {page}
+        </main>
+      </div>
+
+      {/* Root-level chrome: `.app > .app-body` is a z-index:1 stacking context,
+          so anything that must paint over the page (capsule 30, tabs 31, drawer
+          38, fullscreen player 40, modals 60) has to be a sibling of it. */}
+      <PlayerDock />
+      <BottomTabs />
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      {lyricsOpen && <LyricsView />}
+      {settingsOpen && <Settings />}
+      {framingOpen && <BgFraming />}
+      {/* Paste-a-token sign-in: driven imperatively by the shim's scLogin /
+          ymLogin, so it renders nothing until a connect button asks. */}
+      <TokenSheet />
       {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
     </div>
   )

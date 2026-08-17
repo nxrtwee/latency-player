@@ -11,24 +11,25 @@
 // providers run unchanged.
 
 import type { Album, Artist, LibraryState, Playlist, Track } from '@shared/types'
+// Type-only (erased at build time — it must never pull `electron` into the phone
+// bundle): the desktop preload's own inferred surface, used for the contract
+// assertion at the bottom of this file.
+import type { Api } from '../../../src/preload'
 import * as sc from './soundcloud'
 import * as ym from './yandex'
 import * as lyrics from './lyrics'
+import * as offline from './offline'
 import { offlineSrcForUri } from './offline'
+import { clearLocal, getKnownLocal, importFiles, pickAudioFiles } from './localfiles'
+import { pickFile } from './picker'
+import { pickVideoFile } from './wallpaper'
+import { requestToken } from './tokenRequest'
 import { getFreshResolve, putResolve } from './resolveCache'
 
-// The shared store derives initial volume from Number(localStorage['lp.volume']).
-// Since Number(null) === 0 passes its 0..1 range check, a fresh install would
-// start at volume 0 (silent) — there's no volume slider on mobile to recover.
-// Seed a sane default here; this module is imported before the store evaluates.
-try {
-  if (localStorage.getItem('lp.volume') === null) localStorage.setItem('lp.volume', '0.85')
-  // Default the mobile UI to Russian (the app shipped Russian); the store's own
-  // default is 'en'. Seed before the store evaluates.
-  if (localStorage.getItem('lp.lang') === null) localStorage.setItem('lp.lang', 'ru')
-} catch {
-  /* private mode — store falls back to its own default */
-}
+// The store's own pref seeding (volume, language, visual, …) lives in
+// mobile/src/defaults.ts, which main.tsx imports before this module — the store
+// reads every pref at module evaluation and this file pulls it in transitively
+// (via ./resolveCache), so seeding here would already be too late.
 
 // --- tiny localStorage helpers -------------------------------------------------
 function read<T>(key: string, fallback: T): T {
@@ -53,42 +54,18 @@ const PLAYLISTS_KEY = 'lp.m.playlists'
 /**
  * Open a native file dialog and resolve to a data: URL for the chosen image
  * (null if cancelled). data: (not blob:) so the chosen cover/background survives
- * a reload. Must be triggered from a user gesture (it is — covers/bg are picked
- * from a tap). Mirrors the desktop dialog:pickImage IPC the shared store calls.
+ * a reload — an image is small enough for localStorage, unlike a video, which
+ * goes to app storage instead (see wallpaper.ts). Mirrors the desktop
+ * dialog:pickImage IPC the shared store calls.
  */
-function pickImage(): Promise<string | null> {
+async function pickImage(): Promise<string | null> {
+  const file = await pickFile('image/*')
+  if (!file) return null
   return new Promise((resolve) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.style.position = 'fixed'
-    input.style.left = '-9999px'
-    let settled = false
-    const finish = (v: string | null): void => {
-      if (settled) return
-      settled = true
-      input.remove()
-      resolve(v)
-    }
-    input.onchange = (): void => {
-      const file = input.files?.[0]
-      if (!file) return finish(null)
-      const reader = new FileReader()
-      reader.onload = () => finish(typeof reader.result === 'string' ? reader.result : null)
-      reader.onerror = () => finish(null)
-      reader.readAsDataURL(file)
-    }
-    // If the dialog is dismissed without a pick, there's no reliable cancel event;
-    // a focus-based fallback resolves null so the promise never hangs forever.
-    const onFocus = (): void => {
-      window.removeEventListener('focus', onFocus)
-      setTimeout(() => {
-        if (!input.files?.length) finish(null)
-      }, 500)
-    }
-    window.addEventListener('focus', onFocus)
-    document.body.appendChild(input)
-    input.click()
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
   })
 }
 
@@ -133,15 +110,29 @@ function newId(): string {
   return 'pl_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)
 }
 
-const EMPTY_LIBRARY: LibraryState = { folders: [], tracks: [] }
+// A WebView can't walk the filesystem, so "the library" is whatever the user has
+// imported through the picker (see localfiles.ts). `folders` stays empty — there
+// is nothing to watch or rescan — and the Sidebar's touch branch renders an
+// "import tracks" button in place of the folder list.
+const localLibrary = (): LibraryState => ({ folders: [], tracks: getKnownLocal() })
+
+/** Sentinel `removeFolder` argument for "forget every imported track". */
+const CLEAR_LOCAL = '*'
 
 // --- the bridge ----------------------------------------------------------------
 const api = {
-  // library — local files need native file access (Step 2+); empty for now.
-  getLibrary: async (): Promise<LibraryState> => EMPTY_LIBRARY,
-  rescan: async (): Promise<LibraryState> => EMPTY_LIBRARY,
-  addFolder: async (): Promise<LibraryState> => EMPTY_LIBRARY,
-  removeFolder: async (): Promise<LibraryState> => EMPTY_LIBRARY,
+  // library — imported files (no folder scan on a phone; see localLibrary above).
+  getLibrary: async (): Promise<LibraryState> => localLibrary(),
+  rescan: async (): Promise<LibraryState> => localLibrary(),
+  addFolder: async (): Promise<LibraryState> => {
+    const files = await pickAudioFiles()
+    if (files.length) await importFiles(files)
+    return localLibrary()
+  },
+  removeFolder: async (folder: string): Promise<LibraryState> => {
+    if (folder === CLEAR_LOCAL) await clearLocal()
+    return localLibrary()
+  },
 
   // SoundCloud — public endpoints are real (via the dev proxy / CapacitorHttp).
   scSearch: (query: string): Promise<Track[]> => sc.search(query),
@@ -172,11 +163,27 @@ const api = {
     putResolve(transcodingUrl, url)
     return url
   },
-  // Authenticated (OAuth web-session) features — driven by a user-pasted token
-  // (auto-capture needs a native WKWebView; see ios-notes). Once the token is
-  // set, the same store flows as desktop light up (real mixes, your likes).
+  // Authenticated (OAuth web-session) features. Desktop opens an Electron OAuth
+  // window; a phone can't, so `scLogin` asks the user to paste a web-session
+  // token (shell/TokenSheet.tsx) and then resolves the same `Artist | null` the
+  // desktop contract promises — so the shared ProfilePage connect button works
+  // unchanged. Once the token is set, the same store flows as desktop light up
+  // (real mixes, your likes).
   scSetToken: (token: string): void => sc.setToken(token),
-  scLogin: async (): Promise<Artist | null> => sc.getMe(),
+  scLogin: async (): Promise<Artist | null> => {
+    if (sc.isAuthed()) {
+      const known = await sc.getMe()
+      if (known) return known
+      sc.setToken('') // stored token went stale — fall through and re-ask
+    }
+    const accepted = await requestToken('sc', async (raw) => {
+      sc.setToken(raw)
+      if (await sc.getMe()) return true
+      sc.setToken('') // keep isAuthed() honest after a bad paste
+      return false
+    })
+    return accepted ? sc.getMe() : null
+  },
   scLogout: async (): Promise<void> => sc.logout(),
   scMe: (): Promise<Artist | null> => sc.getMe(),
   scIsAuthed: async (): Promise<boolean> => sc.isAuthed(),
@@ -215,10 +222,24 @@ const api = {
     putResolve(trackId, url)
     return url
   },
-  // Auth — driven by a user-pasted OAuth token (or redirect URL). Auto-capture
-  // needs a native WebView; see ios-notes / android-notes.
+  // Auth — same paste-a-token flow as SoundCloud above (yandex.setToken also
+  // accepts a full redirect URL carrying #access_token=…, which is what the
+  // sheet's "open sign-in page" link produces).
   ymSetToken: (token: string): void => ym.setToken(token),
-  ymLogin: async (): Promise<Artist | null> => ym.getMe(),
+  ymLogin: async (): Promise<Artist | null> => {
+    if (ym.isAuthed()) {
+      const known = await ym.getMe()
+      if (known) return known
+      ym.setToken('')
+    }
+    const accepted = await requestToken('ym', async (raw) => {
+      ym.setToken(raw)
+      if (await ym.getMe()) return true
+      ym.setToken('')
+      return false
+    })
+    return accepted ? ym.getMe() : null
+  },
   ymLogout: async (): Promise<void> => ym.logout(),
   ymMe: (): Promise<Artist | null> => ym.getMe(),
   ymIsAuthed: async (): Promise<boolean> => ym.isAuthed(),
@@ -274,18 +295,60 @@ const api = {
         p.id === id ? { ...p, tracks: p.tracks.filter((t) => t.id !== trackId) } : p
       )
     ),
+  addTracksToPlaylist: async (id: string, tracks: Track[]): Promise<Playlist[]> =>
+    savePlaylists(
+      getPlaylists().map((p) => {
+        if (p.id !== id) return p
+        const have = new Set(p.tracks.map((t) => t.id))
+        return { ...p, tracks: [...p.tracks, ...tracks.filter((t) => !have.has(t.id))] }
+      })
+    ),
+
+  // offline downloads — the store owns the UI state (offlineIds/offlineTracks)
+  // and reaches for it through these five; ./offline.ts owns the files.
+  offlineList: async (): Promise<string[]> => offline.getDownloads().map((e) => e.track.id),
+  offlineTracks: async (): Promise<Track[]> => offline.downloadedTracks(),
+  offlineDownload: async (track: Track): Promise<Track | null> => {
+    await offline.downloadTrack(track)
+    return offline.getDownloads().find((e) => e.track.id === track.id)?.track ?? null
+  },
+  offlineRemove: (trackId: string): Promise<void> => offline.removeDownload(trackId),
+  offlineClear: (): Promise<void> => offline.removeAll(),
+  offlineSize: async (): Promise<number> => offline.totalBytes(),
+  // Deliberately null: on desktop this is a media:// URL the local provider
+  // plays instead of streaming. Mobile does the same swap one level lower — the
+  // sc/ym resolvers already return a local blob: URL for a downloaded track (see
+  // offlineSrcForUri above) — so handing the store a URL here would route
+  // playback through the local provider for no gain.
+  offlineLocalUrl: async (): Promise<string | null> => null,
 
   // window chrome — desktop-only, no-ops on mobile.
   windowMinimize: (): void => undefined,
+  windowMaximize: (): void => undefined,
   windowToggleMaximize: (): void => undefined,
   windowClose: (): void => undefined,
   windowIsMaximized: async (): Promise<boolean> => false,
   onWindowMaximized: (_cb: (maximized: boolean) => void): (() => void) => () => undefined,
 
+  // Desktop integrations with no phone counterpart. Discord RPC and the
+  // ~/.latency now-playing file are Electron-main features, but the store pushes
+  // to both on every track change (store.ts `updatePresence`), so they have to
+  // exist as no-ops. Their *config* pair (discordGetConfig/discordSetConfig) is
+  // deliberately absent instead — Settings gates the whole Discord block on it,
+  // which is how the phone hides a section it cannot implement. Same trick for
+  // the System block (launch-at-startup / hardware acceleration / relaunch): see
+  // `DesktopOnly` at the bottom of this file.
+  discordUpdate: (): void => undefined,
+  nowPlayingUpdate: (): void => undefined,
+
   // image picker — opens a file dialog and returns a data: URL (so it survives
   // reloads, unlike a blob:). Unlocks the shared cover/background actions
   // (setTrackCover / setCustomBg / setKaraokeImage). null = "no image chosen".
   pickBackground: (): Promise<string | null> => pickImage(),
+  // video wallpapers — the picked clip is copied into app storage and played from
+  // the app's own local server, so it survives a restart without stuffing tens of
+  // megabytes of base64 into localStorage (see wallpaper.ts).
+  pickVideo: (): Promise<string | null> => pickVideoFile(),
 
   // lyrics — LRCLIB + Genius via the proxy / CapacitorHttp, cached locally.
   getLyrics: (title: string, artist: string, durationSec?: number, useGenius?: boolean) =>
@@ -301,13 +364,37 @@ const api = {
     lines: { timeSec: number; text: string }[]
   ): Promise<void> => lyrics.saveManualSync(title, artist, durationSec, lines),
   deleteManualSync: async (title: string, artist: string, durationSec?: number): Promise<void> =>
-    lyrics.deleteManualSync(title, artist, durationSec),
-
-  // startup toggle — meaningless on mobile.
-  getLaunchAtStartup: async (): Promise<boolean> => false,
-  setLaunchAtStartup: async (): Promise<void> => undefined
+    lyrics.deleteManualSync(title, artist, durationSec)
 }
 
 ;(window as unknown as { api: typeof api }).api = api
+
+/**
+ * Compile-time proof that this bridge still covers the desktop contract.
+ *
+ * `window.api` is installed by a cast (there is no Electron preload here), so
+ * nothing would otherwise notice a desktop method that never got a mobile
+ * counterpart — which is exactly how a missing `discordGetConfig` shipped as a
+ * runtime crash inside the shared Settings component. Assigning to
+ * `Omit<Api, DesktopOnly>` makes tsc list every gap instead.
+ *
+ * Every key below is absent ON PURPOSE: each one gates a desktop-only Settings
+ * section via `typeof window.api?.x === 'function'`, so implementing one here
+ * would make that section appear on a phone. Add to this union only together
+ * with such a gate.
+ */
+type DesktopOnly =
+  | 'discordGetConfig' // Discord RPC block (Settings)
+  | 'discordSetConfig'
+  | 'getLaunchAtStartup' // System block (Settings): OS login item…
+  | 'setLaunchAtStartup'
+  | 'getHardwareAcceleration' // …Chromium switch…
+  | 'setHardwareAcceleration'
+  | 'relaunchApp' // …and the relaunch that block gates on
+  | 'setGlobalHotkeys' // Hotkeys block (Settings) + App.tsx's global listener
+  | 'onHotkeyTrigger'
+
+const contract: Omit<Api, DesktopOnly> = api
+void contract
 
 export type MobileApi = typeof api

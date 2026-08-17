@@ -15,41 +15,54 @@ npm run dev:mobile        # → http://127.0.0.1:5273
 ```
 
 Open in Chrome → DevTools (F12) → toggle the **device toolbar** (Ctrl+Shift+M) →
-pick an iPhone. The whole UI + (later) SoundCloud logic is developed and
-debugged here, with live reload, exactly like the desktop renderer.
+pick an iPhone. The whole UI + SoundCloud/Yandex logic is developed and debugged
+here, with live reload, exactly like the desktop renderer.
 
-On a wide desktop window the app is capped to a phone-width column and centered.
+Preview at a phone viewport, not a wide window: the phone chrome (capsule, tab
+bar, drawer) is `position: fixed` against the viewport, so it can't be corralled
+into a centred phone-width column the way the old shell was.
+
+```bash
+npm run typecheck:mobile   # tsc over mobile/src + every desktop source it reuses
+npm run build:mobile       # → mobile/dist (what Capacitor syncs)
+```
 
 ## Status
 
-- **Step 1 (done):** Capacitor target scaffold, mobile shell — bottom tab bar
-  (Главная / Поиск / Библиотека / Профиль), mini-player, screens styled to the
-  concept. `window.api` shim: SoundCloud stubbed; likes/playlists in
-  `localStorage`; window-chrome no-ops.
-- **Step 2:** real SoundCloud via dev proxy (browser) / CapacitorHttp (device);
-  wire screens to the shared zustand store.
-- **Step 3:** full screen redesign per concept (incl. fullscreen player).
-- **Step 4:** native background audio + lock-screen controls.
-- **Step 5:** `.ipa` via GitHub Actions (cloud macOS) + sideload from Windows
-  (AltStore / Sideloadly).
-- **Step 6 (Android):** same web bundle on Android via Capacitor — manifest
+- **Step 1 (done):** Capacitor target scaffold, mobile shell, `window.api` shim.
+- **Step 2 (done):** real SoundCloud + Yandex Music via dev proxy (browser) /
+  CapacitorHttp (device), wired to the shared zustand store.
+- **Step 3 (done):** native background audio + lock-screen controls.
+- **Step 4 (done):** `.ipa` via GitHub Actions (cloud macOS) + sideload from
+  Windows (AltStore / Sideloadly).
+- **Step 5 (Android, done):** same web bundle on Android via Capacitor — manifest
   permissions + icon via `scripts/patch-android.sh`; debug `.apk` built on a
   Linux GitHub Actions runner (`.github/workflows/android.yml`), installs
   directly on any phone (no Mac, no signing secrets, no 7-day limit). The
   WebView's native Media Session drives the notification, so Android needs less
   native code than iOS — see `android-notes.md`.
+- **Step 6 (current): desktop-parity visual.** The bespoke phone screens are
+  gone. The phone now renders the *desktop* components and the desktop DOM
+  (nextgen skin + universal visual), and `src/portrait.css` — loaded last, every
+  rule scoped to `html.m` — is the entire phone adaptation. Adding a screen means
+  adding it on the desktop; the phone gets it for free.
 
 ## Layout
 
 ```
 mobile/
-  index.html            entry
+  index.html            entry (viewport-fit=cover)
   vite.config.ts        runs on the already-installed Vite; @renderer/@shared aliases
   src/
-    main.tsx            installs window.api shim, mounts MobileApp
-    MobileApp.tsx       shell: screen stack + mini-player + tab bar
-    mobile.css          concept theme (dark + magenta)
-    api/shim.ts         mobile window.api (stubs + localStorage)
-    components/         TabBar, MiniPlayer
-    screens/           Home, Search, Library, Profile
+    main.tsx            shim → prefs → provider overrides → desktop CSS → portrait.css
+    defaults.ts         seeds/migrates the shared store's localStorage prefs
+    MobileApp.tsx       desktop DOM + the desktop page router, plus phone chrome
+    portrait.css        THE phone adaptation — the only place a mobile-only rule lives
+    shell/              phone-only chrome: TopBar, Drawer, BottomTabs, PlayerDock,
+                        TokenSheet (paste-a-token sign-in; desktop uses an OAuth window)
+    api/shim.ts         mobile window.api (same interface as ../src/preload)
+    api/                soundcloud, yandex, lyrics, offline, mediaSession, …
 ```
+
+Everything else — pages, lists, settings, fullscreen player, karaoke — is
+imported from `../src/renderer/src` unchanged.

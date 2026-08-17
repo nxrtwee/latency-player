@@ -634,39 +634,11 @@ aside.sidebar.collapsed {
 .pf-name-input:focus {
   outline: none;
 }
-/* Editable vanity stats in the meta row */
+/* The profile's meta row (just the handle now — the invented follower/play/rating
+   chips are gone; the computed numbers live in `.act-stats`). */
 .pf-meta {
   flex-wrap: wrap;
   row-gap: 4px;
-}
-.stat-chip {
-  background: none;
-  border: none;
-  padding: 2px 6px;
-  margin: 0 -2px;
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.stat-chip:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.stat-edit {
-  width: 84px;
-  background: var(--panel-2);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  padding: 2px 6px;
-}
-.stat-edit:focus {
-  outline: none;
 }
 /* "See all" inline link-button */
 .see-all {
@@ -2651,6 +2623,23 @@ aside.sidebar.collapsed {
 .pb-wave {
   flex: 1;
   height: 18px;
+}
+/* Coarse-pointer seek: a hairline instead of timestamps + visualizer (see
+   PlayerBar). The phone shell re-pins it to the capsule's bottom edge
+   (portrait.css §6); these are the defaults for any other touch client, so the
+   row is never left blank. */
+.pb-seek.line {
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+.pb-line {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  /* Position ticks about four times a second, so a hard width jump reads as a
+     stutter; a short linear ease makes it a crawl. */
+  transition: width 0.25s linear;
 }
 
 .pb-right {

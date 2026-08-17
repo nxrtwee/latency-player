@@ -3,6 +3,7 @@ import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
 import { useCover } from '../cover'
+import { COARSE_POINTER } from '../touch'
 import { Slider } from './Slider'
 import { Waveform } from './Waveform'
 import {
@@ -74,7 +75,21 @@ export function PlayerBar(): JSX.Element {
       : undefined
   // Below this height the visualizer is too cramped to read — swap it for a slim
   // progress bar (same look as the volume slider).
-  const compactSeek = skin === 'nextgen' && playerBarHeight <= 72
+  //
+  // …except on touch: the phone shell pins the height pref low on purpose (the
+  // capsule has to clear the tab bar, see mobile/src/defaults.ts), which would
+  // leave a phone with only the slim bar. The capsule gets the visualizer at any
+  // height instead — portrait.css gives it its own height and makes it
+  // decorative (pointer-events: none), so a stray tap expands the player rather
+  // than seeking.
+  const compactSeek = skin === 'nextgen' && playerBarHeight <= 72 && !COARSE_POINTER
+  // Touch gets neither: the bar is a phone capsule ~350px wide, and there the two
+  // timestamps and the visualizer only ever fit by taking the width the track
+  // title needed. Both exist full-size one tap deeper (the fullscreen player), so
+  // the capsule carries the progress as a hairline instead — the shape the old
+  // mobile build used. It also drops the visualizer's rAF loop from the one
+  // component that is mounted for the whole session.
+  const progressPct = durationSec > 0 ? Math.min(100, (positionSec / durationSec) * 100) : 0
 
   return (
     <footer className="playerbar" style={barStyle}>
@@ -133,7 +148,13 @@ export function PlayerBar(): JSX.Element {
               title={liked ? 'Unlike' : 'Like'}
               onClick={() => toggleLike(track)}
             >
-              {liked ? <HeartFilledIcon size={16} /> : <HeartIcon size={16} />}
+              {/* A hair bigger on a phone: the rest of `.pb-now` is inert there, so
+                  this heart is the capsule's only small target (portrait.css §6). */}
+              {liked ? (
+                <HeartFilledIcon size={COARSE_POINTER ? 19 : 16} />
+              ) : (
+                <HeartIcon size={COARSE_POINTER ? 19 : 16} />
+              )}
             </button>
           </>
         ) : (
@@ -163,29 +184,37 @@ export function PlayerBar(): JSX.Element {
             {repeat === 'one' ? <RepeatOneIcon size={18} /> : <RepeatIcon size={18} />}
           </button>
         </div>
-        <div className={`pb-seek${compactSeek ? ' compact' : ''}`}>
-          <span className="pb-time">{formatTime(positionSec)}</span>
-          {compactSeek ? (
-            <Slider
-              className="pb-seek-slider"
-              value={positionSec}
-              max={durationSec || 1}
-              step={0.1}
-              onChange={seek}
-              ariaLabel="Seek"
-            />
+        <div
+          className={`pb-seek${compactSeek ? ' compact' : ''}${COARSE_POINTER ? ' line' : ''}`}
+        >
+          {COARSE_POINTER ? (
+            <span className="pb-line" style={{ width: `${progressPct}%` }} />
           ) : (
-            <Waveform
-              className="pb-wave"
-              seed={track?.id ?? 'latency'}
-              positionSec={positionSec}
-              durationSec={durationSec}
-              onSeek={seek}
-              bars={96}
-              reactivity={0.75}
-            />
+            <>
+              <span className="pb-time">{formatTime(positionSec)}</span>
+              {compactSeek ? (
+                <Slider
+                  className="pb-seek-slider"
+                  value={positionSec}
+                  max={durationSec || 1}
+                  step={0.1}
+                  onChange={seek}
+                  ariaLabel="Seek"
+                />
+              ) : (
+                <Waveform
+                  className="pb-wave"
+                  seed={track?.id ?? 'latency'}
+                  positionSec={positionSec}
+                  durationSec={durationSec}
+                  onSeek={seek}
+                  bars={96}
+                  reactivity={0.75}
+                />
+              )}
+              <span className="pb-time">{formatTime(durationSec)}</span>
+            </>
           )}
-          <span className="pb-time">{formatTime(durationSec)}</span>
         </div>
       </div>
 

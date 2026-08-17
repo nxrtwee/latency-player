@@ -10,6 +10,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "noEmit": true,
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@renderer/*": ["../src/renderer/src/*"],
@@ -17,5 +18,11 @@
       "@mobile/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "../src/shared/**/*"]
+  // ../src/preload/index.d.ts is what declares `window.api`. Without it every
+  // shared renderer component the phone reuses (and the shim itself) failed to
+  // typecheck, which is why this project's tsc run was previously red and unused.
+  // The mobile bridge is api/shim.ts, not the preload — but they implement the
+  // same interface by contract, so checking against the desktop declaration is
+  // exactly the check that catches a missing shim method.
+  "include": ["src/**/*", "../src/shared/**/*", "../src/preload/index.d.ts"]
 }

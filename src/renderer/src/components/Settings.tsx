@@ -158,11 +158,14 @@ export function Settings(): JSX.Element {
   const bodyRef = useRef<HTMLDivElement>(null)
 
   // Discord Rich Presence config lives in the main process (a small JSON file).
+  // Desktop-only: the mobile bridge omits `discordGetConfig`, which is what hides
+  // the section below — so the read has to be optional, not just the render.
+  const hasDiscord = typeof window.api?.discordGetConfig === 'function'
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [discordAppId, setDiscordAppId] = useState('')
   useEffect(() => {
     window.api
-      .discordGetConfig()
+      .discordGetConfig?.()
       .then((c) => {
         setDiscordEnabled(c.enabled)
         setDiscordAppId(c.clientId)
@@ -299,7 +302,10 @@ export function Settings(): JSX.Element {
             </div>
 
             {skin === 'nextgen' && (
-              <div className="set-row">
+              /* `set-row-barw` is a styling hook, not a variant: the phone build
+                 docks the capsule between two fixed insets, so this slider has
+                 nothing to move and portrait.css hides the row by that class. */
+              <div className="set-row set-row-barw">
                 <div>
                   <span className="set-row-title">{t('playerBarWidth')}</span>
                   <span className="set-row-sub">{t('playerBarWidthSub')}</span>
@@ -319,7 +325,10 @@ export function Settings(): JSX.Element {
             )}
 
             {skin === 'nextgen' && (
-              <div className="set-row">
+              /* Same hook, stronger reason: the phone pins the capsule height and
+                 relies on this pref staying <=72 (that is what keeps the seek row
+                 a draggable slider instead of nextgen's unseekable waveform). */
+              <div className="set-row set-row-barh">
                 <div>
                   <span className="set-row-title">{t('playerBarHeight')}</span>
                   <span className="set-row-sub">{t('playerBarHeightSub')}</span>
@@ -728,38 +737,42 @@ export function Settings(): JSX.Element {
             </div>
           </section>
 
-          {/* System */}
-          <section className="set-block">
-            <div className="set-label">{t('system')}</div>
-            <div className="set-row">
-              <div>
-                <span className="set-row-title">{t('launchStartup')}</span>
-                <span className="set-row-sub">{t('launchSub')}</span>
-              </div>
-              <Toggle checked={launchAtStartup} onChange={setLaunchAtStartup} />
-            </div>
-            <div className="set-row">
-              <div>
-                <span className="set-row-title">{t('hwAccel')}</span>
-                <span className="set-row-sub">{t('hwAccelSub')}</span>
-              </div>
-              <Toggle
-                checked={hwAccel}
-                onChange={(v) => {
-                  setHwAccel(v)
-                  setHwChanged(true)
-                }}
-              />
-            </div>
-            {hwChanged && (
+          {/* System — desktop only: an OS login item, a Chromium switch and a
+              process relaunch have no phone counterpart, so the mobile bridge
+              omits `relaunchApp` and this whole block disappears there. */}
+          {typeof window.api?.relaunchApp === 'function' && (
+            <section className="set-block">
+              <div className="set-label">{t('system')}</div>
               <div className="set-row">
-                <span className="set-row-sub">{t('restartNeeded')}</span>
-                <button className="sync-btn primary" onClick={() => window.api.relaunchApp()}>
-                  {t('restartNow')}
-                </button>
+                <div>
+                  <span className="set-row-title">{t('launchStartup')}</span>
+                  <span className="set-row-sub">{t('launchSub')}</span>
+                </div>
+                <Toggle checked={launchAtStartup} onChange={setLaunchAtStartup} />
               </div>
-            )}
-          </section>
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('hwAccel')}</span>
+                  <span className="set-row-sub">{t('hwAccelSub')}</span>
+                </div>
+                <Toggle
+                  checked={hwAccel}
+                  onChange={(v) => {
+                    setHwAccel(v)
+                    setHwChanged(true)
+                  }}
+                />
+              </div>
+              {hwChanged && (
+                <div className="set-row">
+                  <span className="set-row-sub">{t('restartNeeded')}</span>
+                  <button className="sync-btn primary" onClick={() => window.api.relaunchApp()}>
+                    {t('restartNow')}
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Hotkeys — desktop only (global shortcuts + mouse side-buttons). */}
           {typeof window.api?.setGlobalHotkeys === 'function' && (
@@ -772,35 +785,39 @@ export function Settings(): JSX.Element {
             </section>
           )}
 
-          <section className="set-block">
-            <div className="set-label">{t('discord')}</div>
-            <div className="set-row">
-              <div>
-                <span className="set-row-title">{t('discordRpc')}</span>
-                <span className="set-row-sub">{t('discordSub')}</span>
-              </div>
-              <Toggle
-                checked={discordEnabled}
-                onChange={(v) => applyDiscord(v, discordAppId)}
-              />
-            </div>
-            {discordEnabled && (
-              <div className="set-row col">
-                <span className="set-row-title">{t('discordAppId')}</span>
-                <input
-                  className="set-input"
-                  placeholder="000000000000000000"
-                  value={discordAppId}
-                  onChange={(e) => setDiscordAppId(e.target.value.replace(/[^0-9]/g, ''))}
-                  onBlur={() => applyDiscord(discordEnabled, discordAppId)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') applyDiscord(discordEnabled, discordAppId)
-                  }}
+          {/* Discord RPC — desktop only (the presence handshake lives in the
+              Electron main process); `hasDiscord` is false on the phone build. */}
+          {hasDiscord && (
+            <section className="set-block">
+              <div className="set-label">{t('discord')}</div>
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('discordRpc')}</span>
+                  <span className="set-row-sub">{t('discordSub')}</span>
+                </div>
+                <Toggle
+                  checked={discordEnabled}
+                  onChange={(v) => applyDiscord(v, discordAppId)}
                 />
-                <span className="set-row-sub">{t('discordAppIdHint')}</span>
               </div>
-            )}
-          </section>
+              {discordEnabled && (
+                <div className="set-row col">
+                  <span className="set-row-title">{t('discordAppId')}</span>
+                  <input
+                    className="set-input"
+                    placeholder="000000000000000000"
+                    value={discordAppId}
+                    onChange={(e) => setDiscordAppId(e.target.value.replace(/[^0-9]/g, ''))}
+                    onBlur={() => applyDiscord(discordEnabled, discordAppId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyDiscord(discordEnabled, discordAppId)
+                    }}
+                  />
+                  <span className="set-row-sub">{t('discordAppIdHint')}</span>
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="set-block">
             <div className="set-label">{t('about')}</div>

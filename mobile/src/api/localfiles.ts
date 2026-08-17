@@ -1,9 +1,19 @@
 // Local files on mobile. There's no filesystem scan in a sandboxed WebView, so
-// the user imports tracks via a file picker. We keep the File objects in memory
-// (per session) keyed by a stable id, read tags lazily, and hand the player a
-// blob: URL — which is same-origin, so the Web Audio analyser (and thus the live
-// waveform) works for local playback, unlike cross-origin SoundCloud.
+// the user imports tracks via a file picker (see pickAudioFiles below, wired to
+// window.api.addFolder in shim.ts — the desktop's "add music folder" button).
+//
+// Two layers, because a WebView loses everything on reload:
+//   • session — the picked File's blob: URL, kept in a Map by track id. Same-origin,
+//     so the Web Audio analyser (and the live waveform) works, unlike cross-origin
+//     SoundCloud.
+//   • device — on a native build the bytes are COPIED into Directory.Data/local,
+//     so the library is still there (and still playable) after a restart. In a
+//     desktop browser there is no Filesystem plugin: only the metadata persists and
+//     the tracks come back flagged unavailable until re-imported.
 import type { Track } from '@shared/types'
+import { base64ToBlob, blobToBase64, DATA_DIR, fsPlugin, isNative } from './capfs'
+import { md5 } from './md5'
+import { pickFiles } from './picker'
 
 // id -> object URL for the current session's imported files
 const blobs = new Map<string, string>()
@@ -13,6 +23,7 @@ export function getBlobUrl(id: string): string | undefined {
 }
 
 const META_KEY = 'lp.m.local'
+const FOLDER = 'local'
 
 /** Persisted, lightweight metadata (no blobs — those live for the session). */
 interface LocalMeta {
@@ -20,6 +31,10 @@ interface LocalMeta {
   title: string
   artist?: string
   durationSec?: number
+  // Path under Directory.Data of the copied file, when the import ran on a native
+  // build. Absent => session-only import (browser), so it dies with the reload.
+  path?: string
+  mime?: string
 }
 
 function readMeta(): LocalMeta[] {
@@ -59,6 +74,40 @@ function titleFromName(name: string): string {
   return name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim()
 }
 
+const AUDIO_RE = /\.(mp3|m4a|flac|wav|ogg|oga|aac|opus|weba)$/i
+
+/** Extension of a filename, lowercased, without the dot ('mp3' by default). */
+function extOf(name: string): string {
+  const m = name.match(/\.([a-z0-9]+)$/i)
+  return m ? m[1].toLowerCase() : 'mp3'
+}
+
+/**
+ * Copy an imported file into app storage so it survives a restart. The track id
+ * is not filename-safe (it embeds the original name), hence the md5.
+ * Returns the path under Directory.Data, or undefined when there's no native
+ * filesystem (desktop browser) or the write failed — the import still works for
+ * the session in that case.
+ */
+async function persist(id: string, file: File): Promise<string | undefined> {
+  const plugin = fsPlugin()
+  if (!isNative() || !plugin) return undefined
+  const path = `${FOLDER}/${md5(id)}.${extOf(file.name)}`
+  try {
+    try {
+      await plugin.mkdir({ path: FOLDER, directory: DATA_DIR, recursive: true })
+    } catch {
+      /* already exists */
+    }
+    await plugin.writeFile({ path, directory: DATA_DIR, data: await blobToBase64(file), recursive: true })
+    const st = await plugin.stat({ path, directory: DATA_DIR })
+    if (!st.size) return undefined
+    return path
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Import picked files into the session. Returns Track objects ready for the
  * queue; their blob URLs are registered for the 'local' provider to resolve.
@@ -67,33 +116,39 @@ export async function importFiles(files: FileList | File[]): Promise<Track[]> {
   const out: Track[] = []
   const meta = readMeta()
   for (const file of Array.from(files)) {
-    if (!file.type.startsWith('audio') && !/\.(mp3|m4a|flac|wav|ogg|aac|opus)$/i.test(file.name)) {
-      continue
-    }
+    if (!file.type.startsWith('audio') && !AUDIO_RE.test(file.name)) continue
     const id = `local:${file.name}:${file.size}`
     const url = URL.createObjectURL(file)
     blobs.set(id, url)
     const durationSec = await probeDuration(url)
-    // dashes/parens are common "Artist - Title" separators in filenames
+    // "Artist - Title" is the common filename convention; the spaces around the
+    // dash are required, so a hyphenated name ("no-artist-here") stays a title.
+    // There is no tag reader on this path — the desktop's scanner is Node-only.
     const base = titleFromName(file.name)
     let title = base
     let artist: string | undefined
-    const m = base.match(/^(.+?)\s*[-–—]\s*(.+)$/)
+    const m = base.match(/^(.+?)\s+[-–—]\s+(.+)$/)
     if (m) {
       artist = m[1].trim()
       title = m[2].trim()
     }
     out.push({ id, providerId: 'local', uri: url, title, artist, durationSec })
-    if (!meta.some((x) => x.id === id)) meta.push({ id, title, artist, durationSec })
+    const path = await persist(id, file)
+    const row: LocalMeta = { id, title, artist, durationSec, path, mime: file.type || undefined }
+    const at = meta.findIndex((x) => x.id === id)
+    if (at >= 0) meta[at] = row
+    else meta.push(row)
   }
   writeMeta(meta)
   return out
 }
 
 /**
- * Tracks known from previous sessions. Their blobs are gone after a reload, so
- * they're returned flagged unavailable (the UI prompts a re-import). We surface
- * them so the user sees their library isn't empty.
+ * Tracks known from previous sessions. On a native build their bytes are still on
+ * disk, so they play straight away (resolveUrl reads them lazily); in a browser
+ * the blobs are gone after a reload, so they come back unavailable and the player
+ * prompts a re-import. Either way we surface them, so the user's library doesn't
+ * look empty.
  */
 export function getKnownLocal(): Track[] {
   return readMeta().map((m) => ({
@@ -106,12 +161,62 @@ export function getKnownLocal(): Track[] {
   }))
 }
 
-export function isAvailable(id: string): boolean {
-  return blobs.has(id)
+/**
+ * A playable URL for an imported track: the session blob if it's still live,
+ * otherwise the persisted copy read back into a fresh blob (same reasoning as
+ * offline.ts — a blob: URL is same-origin and server-independent, which the
+ * convertFileSrc form is not). Null when the file is gone.
+ */
+export async function resolveUrl(id: string): Promise<string | null> {
+  const live = blobs.get(id)
+  if (live) return live
+  const entry = readMeta().find((m) => m.id === id)
+  const plugin = fsPlugin()
+  if (!entry?.path || !plugin) return null
+  try {
+    const { data } = await plugin.readFile({ path: entry.path, directory: DATA_DIR })
+    if (!data) return null
+    const url = URL.createObjectURL(base64ToBlob(data, entry.mime || 'audio/mpeg'))
+    // Cache it for the session: re-reading a whole file through the bridge on
+    // every replay is expensive, and the URL stays valid until the page reloads.
+    blobs.set(id, url)
+    return url
+  } catch {
+    return null
+  }
 }
 
-export function clearLocal(): void {
+/** Forget one imported track (and delete its copy on disk). */
+export async function removeLocal(id: string): Promise<void> {
+  const entry = readMeta().find((m) => m.id === id)
+  const url = blobs.get(id)
+  if (url) {
+    URL.revokeObjectURL(url)
+    blobs.delete(id)
+  }
+  const plugin = fsPlugin()
+  if (entry?.path && plugin) {
+    try {
+      await plugin.deleteFile({ path: entry.path, directory: DATA_DIR })
+    } catch {
+      /* already gone */
+    }
+  }
+  writeMeta(readMeta().filter((m) => m.id !== id))
+}
+
+export async function clearLocal(): Promise<void> {
+  for (const m of readMeta()) await removeLocal(m.id)
   for (const url of blobs.values()) URL.revokeObjectURL(url)
   blobs.clear()
   localStorage.removeItem(META_KEY)
+}
+
+/**
+ * Open the system file picker and resolve with the audio files the user chose
+ * (empty when they cancel). See picker.ts for why a hidden input is the only
+ * option here and how a cancel is detected.
+ */
+export function pickAudioFiles(): Promise<File[]> {
+  return pickFiles('audio/*', true)
 }

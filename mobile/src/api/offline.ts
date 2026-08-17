@@ -14,6 +14,7 @@
 import type { Track } from '@shared/types'
 import { resolveStream as scResolveStream } from './soundcloud'
 import { resolveStream as ymResolveStream } from './yandex'
+import { base64ToBlob, convertSrc, DATA_DIR, fsPlugin, isNative, transferPlugin } from './capfs'
 
 /** Resolve a track's direct CDN URL using its provider's resolver. */
 function resolveStream(track: Track): Promise<string> {
@@ -23,7 +24,7 @@ function resolveStream(track: Track): Promise<string> {
 }
 
 const KEY = 'lp.m.offline'
-const DIR = 'DATA' // Capacitor Directory.Data
+const DIR = DATA_DIR // Capacitor Directory.Data
 const FOLDER = 'offline'
 
 export interface OfflineEntry {
@@ -37,28 +38,7 @@ export interface OfflineEntry {
   artLocal?: string
 }
 
-interface FileTransferPlugin {
-  // Downloads url -> an absolute file path (file:// from Filesystem.getUri),
-  // streamed natively to disk, following redirects.
-  downloadFile: (o: { url: string; path: string }) => Promise<{ path?: string }>
-}
-interface CapGlobal {
-  isNativePlatform?: () => boolean
-  convertFileSrc?: (uri: string) => string
-  Plugins?: { Filesystem?: FilesystemPlugin; FileTransfer?: FileTransferPlugin }
-}
-interface FilesystemPlugin {
-  mkdir: (o: { path: string; directory: string; recursive?: boolean }) => Promise<void>
-  deleteFile: (o: { path: string; directory: string }) => Promise<void>
-  getUri: (o: { path: string; directory: string }) => Promise<{ uri: string }>
-  stat: (o: { path: string; directory: string }) => Promise<{ size?: number }>
-  // no encoding => returns the file's bytes as a base64 string
-  readFile: (o: { path: string; directory: string }) => Promise<{ data: string }>
-}
-
-const cap = (): CapGlobal | undefined => (window as unknown as { Capacitor?: CapGlobal }).Capacitor
-const isNative = (): boolean => !!cap()?.isNativePlatform?.()
-const fs = (): FilesystemPlugin | undefined => cap()?.Plugins?.Filesystem
+const fs = fsPlugin
 
 // HLS tracks can't be saved for offline: resolveStream gives an .m3u8 playlist
 // (not a self-contained file), and playback would still fetch segments over the
@@ -103,7 +83,7 @@ export async function downloadTrack(track: Track): Promise<void> {
     size: 0
   }
   const plugin = fs()
-  const transfer = cap()?.Plugins?.FileTransfer
+  const transfer = transferPlugin()
   if (isNative() && plugin && transfer) {
     if (isHlsUri(track.uri)) throw new Error('Offline is available for progressive tracks only')
     const url = await resolveStream(track) // resolve to a direct CDN mp3 (per provider)
@@ -123,7 +103,7 @@ export async function downloadTrack(track: Track): Promise<void> {
     // Best-effort: cache the cover locally too, so both the media notification
     // and the in-app UI (Downloads list, Now Playing) show a cover offline —
     // fetching the remote artwork natively with no network crashes the app.
-    const conv = cap()?.convertFileSrc
+    const conv = convertSrc()
     if (track.artwork && conv) {
       try {
         const artPath = `${FOLDER}/${track.id}.jpg`
@@ -170,14 +150,8 @@ export function offlineArtForUri(uri: string): string | null {
   return entry?.artLocal || null
 }
 
-// base64 -> Blob (chunked to avoid building a huge argument list).
-function base64ToBlob(b64: string, type: string): Blob {
-  const bin = atob(b64)
-  const len = bin.length
-  const bytes = new Uint8Array(len)
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i)
-  return new Blob([bytes], { type })
-}
+// base64 -> Blob and the Capacitor plumbing live in capfs.ts (shared with the
+// imported-tracks store in localfiles.ts).
 
 // One live object URL at a time; revoke the previous when a new track resolves.
 let lastBlobUrl: string | null = null
@@ -217,7 +191,7 @@ export async function offlineSrcForUri(uri: string): Promise<string | null> {
   }
   // Fallback: convertFileSrc via Capacitor's local web server.
   try {
-    const conv = cap()?.convertFileSrc
+    const conv = convertSrc()
     if (!conv) return null
     const { uri: fileUri } = await plugin.getUri({ path: entry.path, directory: DIR })
     return conv(fileUri)

@@ -121,10 +121,6 @@ interface PlayerState {
   // local profile (overrides SoundCloud identity when set)
   profileName: string
   profileAvatar: string | null
-  // editable vanity stats (for fun — purely local)
-  profileFollowers: number
-  profilePlays: number
-  profileRating: number
 
   // lyrics panel
   lyricsOpen: boolean
@@ -318,7 +314,6 @@ interface PlayerState {
   setProfileName: (name: string) => void
   pickProfileAvatar: () => Promise<void>
   clearProfileAvatar: () => void
-  setProfileStat: (key: 'followers' | 'plays' | 'rating', value: number) => void
 
   // lyrics
   toggleLyrics: () => void
@@ -1139,9 +1134,6 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     profileName: localStorage.getItem('lp.profileName') || '',
     profileAvatar: localStorage.getItem('lp.profileAvatar'),
-    profileFollowers: readNum('lp.profileFollowers', 0),
-    profilePlays: readNum('lp.profilePlays', 0),
-    profileRating: readNum('lp.profileRating', 0),
 
     lyricsOpen: false,
     rightOpen: true,
@@ -2650,22 +2642,6 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ profileAvatar: null })
       try {
         localStorage.removeItem('lp.profileAvatar')
-      } catch {
-        /* ignore */
-      }
-    },
-
-    setProfileStat(key, value) {
-      const v = Number.isFinite(value) ? Math.max(0, value) : 0
-      const field = (
-        { followers: 'profileFollowers', plays: 'profilePlays', rating: 'profileRating' } as const
-      )[key]
-      const lsKey = (
-        { followers: 'lp.profileFollowers', plays: 'lp.profilePlays', rating: 'lp.profileRating' } as const
-      )[key]
-      set({ [field]: v } as Partial<PlayerState>)
-      try {
-        localStorage.setItem(lsKey, String(v))
       } catch {
         /* ignore */
       }

@@ -5,12 +5,19 @@
 // sent to Swift, which writes to /tmp and plays via AVPlayer.
 //
 // On Android/browser, falls back to <audio> + Web Audio analyser (real visualizer).
+//
+// The URL is resolved asynchronously: a track imported in an earlier session has
+// no live blob: URL, only a copy on disk that localfiles.resolveUrl() reads back
+// (see localfiles.ts). `createPlayback` is synchronous, so both handles below
+// attach the source when it arrives and remember a play() that came in first.
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
 import { connectElement, resumeAudio } from '@renderer/audio/analyser'
-import { getBlobUrl } from './localfiles'
+import { resolveUrl } from './localfiles'
 import { getNativeAudio } from './nativeAudio'
+
+const MISSING = 'Файл недоступен — переимпортируйте его в Библиотеке.'
 
 const localProvider: PlaybackProvider = {
   id: 'local',
@@ -18,13 +25,11 @@ const localProvider: PlaybackProvider = {
 
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     const native = getNativeAudio()
-    const url = getBlobUrl(track.id) || track.uri
-    if (!url) {
-      cb.onError('Файл недоступен — переимпортируйте его в Библиотеке.')
-      return { play: () => {}, pause: () => {}, seek: () => {}, setVolume: () => {}, setNormalization: () => {}, setFade: () => {}, destroy: () => {} }
-    }
+    // A blob: uri on the track itself is this session's import — resolveUrl finds
+    // it by id too, so it only matters for tracks built outside the library.
+    const url = resolveUrl(track.id).then((u) => u || track.uri || null)
     if (native) return createNativeLocal(track, cb, native, url)
-    return createWebLocal(track, cb, url)
+    return createWebLocal(cb, url)
   }
 }
 
@@ -32,7 +37,7 @@ function createNativeLocal(
   track: Track,
   cb: PlaybackCallbacks,
   native: NonNullable<ReturnType<typeof getNativeAudio>>,
-  url: string
+  url: Promise<string | null>
 ): PlaybackHandle {
   let destroyed = false
   const unsubs: (() => void)[] = []
@@ -52,7 +57,11 @@ function createNativeLocal(
   native.setMetadata({ title: track.title, artist: track.artist || 'Local', artwork: track.artwork || undefined })
 
   let wantPlay = false
-  native.load(url).then(() => { if (wantPlay) native.play() })
+  void url.then((u) => {
+    if (destroyed) return
+    if (!u) return cb.onError(MISSING)
+    native.load(u).then(() => { if (wantPlay && !destroyed) native.play() })
+  })
 
   return {
     play: () => { wantPlay = true; native.play() },
@@ -65,14 +74,9 @@ function createNativeLocal(
   }
 }
 
-function createWebLocal(
-  track: Track,
-  cb: PlaybackCallbacks,
-  url: string
-): PlaybackHandle {
+function createWebLocal(cb: PlaybackCallbacks, url: Promise<string | null>): PlaybackHandle {
   const audio = new Audio()
   audio.preload = 'auto'
-  audio.src = url
   const audioCtl = connectElement(audio)
 
   audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
@@ -86,14 +90,39 @@ function createWebLocal(
     cb.onError(audio.error ? `audio error (code ${audio.error.code})` : 'unknown audio error')
   )
 
+  let destroyed = false
+  let wantPlay = false
+  let pendingSeek: number | null = null
+  void url.then((u) => {
+    if (destroyed) return
+    if (!u) return cb.onError(MISSING)
+    audio.src = u
+    if (pendingSeek != null) audio.currentTime = pendingSeek
+    if (wantPlay) { resumeAudio(); void audio.play().catch((e) => cb.onError(String(e))) }
+  })
+
   return {
-    play: () => { resumeAudio(); void audio.play().catch((e) => cb.onError(String(e))) },
-    pause: () => audio.pause(),
-    seek: (sec) => { audio.currentTime = sec },
+    play: () => {
+      wantPlay = true
+      if (!audio.src) return // the source attaches itself below, then plays
+      resumeAudio()
+      void audio.play().catch((e) => cb.onError(String(e)))
+    },
+    pause: () => { wantPlay = false; audio.pause() },
+    seek: (sec) => {
+      if (audio.src) audio.currentTime = sec
+      else pendingSeek = sec
+    },
     setVolume: (v) => { audio.volume = Math.min(1, Math.max(0, v)) },
     setNormalization: (db) => audioCtl.setNormalization(db),
     setFade: (value, rampSec) => audioCtl.setFade(value, rampSec),
-    destroy: () => { audioCtl.disconnect(); audio.pause(); audio.removeAttribute('src'); audio.load() }
+    destroy: () => {
+      destroyed = true
+      audioCtl.disconnect()
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+    }
   }
 }
 

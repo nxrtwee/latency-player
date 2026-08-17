@@ -74,8 +74,11 @@ export function ArtistPage(): JSX.Element {
             </span>
             {totalSec > 0 && (
               <>
-                <span className="dot">•</span>
-                <span>{formatTotal(totalSec)}</span>
+                {/* Marked so the phone can drop it: "3 ч 12 мин" of catalogue is
+                    trivia, and in a 225px column it cost the follower count its
+                    line (portrait.css §9). */}
+                <span className="dot ph-dur">•</span>
+                <span className="ph-dur">{formatTotal(totalSec)}</span>
               </>
             )}
           </div>

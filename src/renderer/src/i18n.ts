@@ -13,6 +13,31 @@ const dict: Record<string, { en: string; ru: string }> = {
   recentArtists: { en: 'Recent Artists', ru: 'Недавние артисты' },
   profile: { en: 'Profile', ru: 'Профиль' },
   guest: { en: 'Guest', ru: 'Гость' },
+  // phone chrome only (mobile/src/shell/*) — the desktop has no drawer to open
+  menu: { en: 'Menu', ru: 'Меню' },
+  // short tab-bar label; the sidebar's own 'yourLikes' is too long for 1/5 of a
+  // phone's width
+  likesTab: { en: 'Liked', ru: 'Любимое' },
+  // phone sign-in sheet (mobile/src/shell/TokenSheet.tsx). Desktop signs in
+  // through an Electron OAuth window; a phone has no such window, so the user
+  // pastes a web-session token instead. Lives here (not in a mobile-only dict)
+  // because the sheet reuses the shared `t()`.
+  pasteTokenSc: { en: 'Connect SoundCloud', ru: 'Подключить SoundCloud' },
+  pasteTokenYm: { en: 'Connect Yandex Music', ru: 'Подключить Яндекс Музыку' },
+  connect: { en: 'Connect', ru: 'Подключить' },
+  scTokenHint: {
+    en: 'Sign in at soundcloud.com, open DevTools → Network → any api-v2 request → copy the Authorization (OAuth …) header and paste it here. On-device auto sign-in comes later.',
+    ru: 'Войди на soundcloud.com, открой DevTools → Network → любой запрос к api-v2 → скопируй заголовок Authorization (OAuth …) и вставь сюда. На устройстве авто-вход появится позже.'
+  },
+  ymTokenHint: {
+    en: 'Open the Yandex sign-in page, log in, then copy the address bar URL (it contains access_token) and paste it here. The bare token works too. On-device auto sign-in comes later.',
+    ru: 'Откройте страницу входа Яндекса, авторизуйтесь, затем скопируйте адрес из строки браузера (он содержит access_token) и вставьте сюда. Можно вставить и сам токен. Авто-вход на устройстве появится позже.'
+  },
+  ymGetToken: { en: 'Open Yandex sign-in page', ru: 'Открыть страницу входа Яндекса' },
+  tokenBad: {
+    en: 'Token didn’t work. Check it and retry.',
+    ru: 'Токен не подошёл. Проверь и попробуй снова.'
+  },
   viewProfile: { en: 'View profile', ru: 'Открыть профиль' },
   changePhoto: { en: 'Change photo', ru: 'Сменить фото' },
   removePhoto: { en: 'Remove photo', ru: 'Убрать фото' },
@@ -51,6 +76,9 @@ const dict: Record<string, { en: string; ru: string }> = {
   folders: { en: 'Folders', ru: 'Папки' },
   addMusicFolder: { en: 'Add music folder', ru: 'Добавить папку' },
   noFolders: { en: 'No folders yet', ru: 'Папок пока нет' },
+  // touch build: a phone has no folders to watch, only files the user picks
+  importTracks: { en: 'Import tracks', ru: 'Импортировать треки' },
+  forgetImported: { en: 'Forget imported tracks', ru: 'Удалить импортированные' },
   // page meta
   playlist: { en: 'Playlist', ru: 'Плейлист' },
   history: { en: 'History', ru: 'История' },
@@ -88,6 +116,12 @@ const dict: Record<string, { en: string; ru: string }> = {
   emptyRecent: { en: 'Nothing played yet.', ru: 'Пока ничего не играли.' },
   emptyPlaylist: { en: 'This playlist is empty. Add tracks with the ··· menu.', ru: 'Плейлист пуст. Добавьте треки через меню ···.' },
   emptyLocal: { en: 'Add a music folder to get started.', ru: 'Добавьте папку с музыкой, чтобы начать.' },
+  // touch build: files are imported one by one, there are no folders to scan
+  emptyLocalTouch: {
+    en: 'Import tracks from your device to get started.',
+    ru: 'Импортируйте треки с устройства, чтобы начать.'
+  },
+  localDescTouch: { en: 'Tracks you imported.', ru: 'Треки, импортированные с устройства.' },
   scanning: { en: 'Scanning…', ru: 'Сканирование…' },
   filterTracks: { en: 'Filter these tracks…', ru: 'Фильтр по трекам…' },
   // explore

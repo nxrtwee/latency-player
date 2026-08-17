@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePlayer } from '../store'
 import { formatTime } from '../util'
+import { COARSE_POINTER } from '../touch'
 import { Slider } from './Slider'
 import { PlayIcon, PauseIcon, PlusIcon, CloseIcon } from './Icons'
 import type { Track } from '@shared/types'
@@ -108,8 +109,17 @@ export function SyncEditor({ track, seedText, onClose, onSaved }: SyncEditorProp
         <div>
           <div className="sync-title">Sync &amp; edit lyrics</div>
           <div className="sync-sub">
-            Tap <kbd>Space</kbd> on each line while it plays · <kbd>⌫</kbd> undo · edit text inline ·{' '}
-            {stamped}/{rows.length} stamped
+            {COARSE_POINTER ? (
+              <>
+                Tap the button below on each line while it plays · tap a stamp to jump there ·{' '}
+                {stamped}/{rows.length} stamped
+              </>
+            ) : (
+              <>
+                Tap <kbd>Space</kbd> on each line while it plays · <kbd>⌫</kbd> undo · edit text
+                inline · {stamped}/{rows.length} stamped
+              </>
+            )}
           </div>
         </div>
         <div className="sync-actions">

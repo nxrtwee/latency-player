@@ -1,4 +1,13 @@
-import { memo, type CSSProperties, type Ref, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  type CSSProperties,
+  type Ref,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
 import { formatTime } from '../util'
@@ -7,7 +16,9 @@ import { OverlayScrollbar } from './OverlayScrollbar'
 import { grabScroll } from '../grabScroll'
 import { extractPalette, type Palette } from '../palette'
 import { useCover } from '../cover'
+import { COARSE_POINTER } from '../touch'
 import { SyncEditor } from './SyncEditor'
+import { FsQueue } from './FsQueue'
 import {
   PlayIcon,
   PauseIcon,
@@ -18,7 +29,13 @@ import {
   RefreshIcon,
   ClockIcon,
   CloseIcon,
-  FilmIcon
+  FilmIcon,
+  LyricsIcon,
+  HeartIcon,
+  HeartFilledIcon,
+  ShuffleIcon,
+  RepeatIcon,
+  RepeatOneIcon
 } from './Icons'
 
 interface Lyrics {
@@ -28,6 +45,9 @@ interface Lyrics {
   lines: { timeSec: number; text: string }[]
   plain: string | null
 }
+
+/** Idle delay before the immersive karaoke view drops everything but the text. */
+const CHROME_IDLE_MS = 6000
 
 /** Tidy plain (Genius / LRCLIB-plain) lyrics: trim and collapse blank runs. */
 function cleanPlain(plain: string): string[] {
@@ -158,6 +178,22 @@ export function LyricsView(): JSX.Element {
   const cover = useCover(track)
   const hasCustomCover = usePlayer((s) => (track ? !!s.customCovers[track.id] : false))
 
+  // Like / shuffle / repeat used to sit in a row of their own above the phone's
+  // queue (FsQueue's old `.fs-extras`). They read better where the desktop puts
+  // them: the heart in the cover's top-right corner like the right panel's, and
+  // the other two at the ends of the transport row. Desktop's fullscreen player is
+  // karaoke and has none of this, so all three are COARSE_POINTER-only.
+  const likes = usePlayer((s) => s.likes)
+  const scLikes = usePlayer((s) => s.scLikes)
+  const toggleLike = usePlayer((s) => s.toggleLike)
+  const shuffle = usePlayer((s) => s.shuffle)
+  const repeat = usePlayer((s) => s.repeat)
+  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  const cycleRepeat = usePlayer((s) => s.cycleRepeat)
+  const liked = track
+    ? likes.some((x) => x.id === track.id) || scLikes.some((x) => x.id === track.id)
+    : false
+
   // Per-track karaoke background (image / video / youtube), independent of the
   // global interface background. Takes precedence in the fullscreen player. Falls
   // back to the all-tracks karaoke background when this track has no own entry.
@@ -186,6 +222,15 @@ export function LyricsView(): JSX.Element {
   const [reloadKey, setReloadKey] = useState(0)
   const [closing, setClosing] = useState(false)
   const [bgReady, setBgReady] = useState(false)
+  // Touch only: on a phone this screen IS the player (there is no right panel and
+  // the capsule is a display), so its default view is the phone layout everyone
+  // knows — big art, title, visualizer, transport, and the queue underneath
+  // (components/FsQueue.tsx). The karaoke text is a MODE of that screen, opened
+  // from the corner button, not a second tab. Desktop has only ever been karaoke,
+  // so `lyricsMode` is constant true there and `immersive` constant false.
+  const [touchLyrics, setTouchLyrics] = useState(false)
+  const lyricsMode = !COARSE_POINTER || touchLyrics
+  const immersive = COARSE_POINTER && touchLyrics
 
   // Only reveal the custom background once it's fully decoded — then it crossfades
   // in over the gradient base, so there's never a half-loaded flash on open. Video
@@ -224,6 +269,13 @@ export function LyricsView(): JSX.Element {
     setClosing(true)
     setTimeout(() => toggleLyrics(), 240)
   }
+  // Opening an artist page from here has to close the player too: otherwise the
+  // navigation happens behind a full-screen overlay and only shows up once the user
+  // thinks to dismiss it by hand — which reads as "the click did nothing".
+  function goToArtist(nav: () => void): void {
+    nav()
+    requestClose()
+  }
   const viewportRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLParagraphElement>(null)
   const karyScrollRef = useRef<HTMLDivElement>(null)
@@ -235,6 +287,28 @@ export function LyricsView(): JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   const kbgRef = useRef<HTMLDivElement>(null)
   const [kbgMenu, setKbgMenu] = useState(false)
+
+  // Immersive karaoke (touch only): after a few idle seconds everything except the
+  // text fades away, and the next tap anywhere brings it back. `chromeOn` is true
+  // at every other moment — desktop, the phone's player view, and the first
+  // seconds after entering the text mode — so nothing can get stuck hidden. The
+  // background menu holds the timer off: it is a popover the user is reading, and
+  // fading it out under them reads as a bug. A track with no lyrics holds it off
+  // too — hiding the chrome over "no text found" would leave a blank screen the
+  // user has to guess how to escape.
+  const [chromeOn, setChromeOn] = useState(true)
+  const hideRef = useRef<number>()
+  const bumpChrome = useCallback(() => {
+    setChromeOn(true)
+    window.clearTimeout(hideRef.current)
+    if (immersive && !kbgMenu && status === 'ok') {
+      hideRef.current = window.setTimeout(() => setChromeOn(false), CHROME_IDLE_MS)
+    }
+  }, [immersive, kbgMenu, status])
+  useEffect(() => {
+    bumpChrome()
+    return () => window.clearTimeout(hideRef.current)
+  }, [bumpChrome])
 
   // close the karaoke-bg menu on an outside click
   useEffect(() => {
@@ -255,6 +329,23 @@ export function LyricsView(): JSX.Element {
     if (!v || karaokeBg?.type !== 'video') return
     v.play().catch(() => {})
   }, [karaokeBg])
+
+  // Phones can carry a video background too now (the mobile picker copies the clip
+  // into app storage — see mobile/src/api/wallpaper.ts), and this is the screen
+  // that stays open the longest. Decoding a clip nobody can see is pure battery
+  // burn, so it stops with the page: backgrounding the app (or minimizing the
+  // window) flips `document.hidden`. The interface-wide clip in App.tsx does the
+  // same for the same reason.
+  useEffect(() => {
+    const sync = (): void => {
+      const v = videoRef.current
+      if (!v) return
+      if (document.hidden) v.pause()
+      else v.play().catch(() => {})
+    }
+    document.addEventListener('visibilitychange', sync)
+    return () => document.removeEventListener('visibilitychange', sync)
+  }, [])
 
   useEffect(() => {
     const v = videoRef.current
@@ -377,14 +468,15 @@ export function LyricsView(): JSX.Element {
     const block = (e: WheelEvent): void => e.preventDefault()
     el.addEventListener('wheel', block, { passive: false })
     return () => el.removeEventListener('wheel', block)
-  }, [])
+    // The phone's player view doesn't render this element at all (constant on desktop).
+  }, [lyricsMode])
 
   // keep the active line centered in the karaoke viewport
   useEffect(() => {
     const vp = viewportRef.current
     const el = activeRef.current
     if (vp && el) setOffset(vp.clientHeight / 2 - (el.offsetTop + el.offsetHeight / 2))
-  }, [activeIndex, status])
+  }, [activeIndex, status, lyricsMode])
 
   function lineOpacity(i: number): number {
     if (activeIndex < 0) return i < 3 ? 0.5 : 0.2
@@ -407,8 +499,13 @@ export function LyricsView(): JSX.Element {
 
   return (
     <div
-      className={`fsplayer ${closing ? 'closing' : ''} ${fsHasBg ? 'has-image' : ''}`}
+      className={`fsplayer ${closing ? 'closing' : ''} ${fsHasBg ? 'has-image' : ''} ${
+        immersive ? 'fs-immersive' : ''
+      } ${immersive && !chromeOn ? 'fs-chrome-off' : ''} ${
+        COARSE_POINTER && !touchLyrics ? 'fs-player-mode' : ''
+      }`}
       style={{ '--fs-glow': palette?.top } as CSSProperties}
+      onPointerDown={immersive ? bumpChrome : undefined}
     >
       {/* Opaque gradient base is ALWAYS present so that while the custom image
           decodes there's a neutral backdrop — never a flash of the UI behind. */}
@@ -437,6 +534,7 @@ export function LyricsView(): JSX.Element {
       )}
       {!hasKaraokeBg && showFsBg && bgReady && bgKind === 'video' && (
         <video
+          ref={videoRef}
           className="fsplayer-bg-video"
           src={customBg!}
           autoPlay
@@ -460,9 +558,20 @@ export function LyricsView(): JSX.Element {
       </button>
 
       {/* Bottom-right corner stack: lyric actions (reset / sync) sit above the
-          per-track background button, all as round icon buttons. */}
+          per-track background button, all as round icon buttons. On a phone the
+          stack is a top-left row, and it gains the switch into the karaoke text —
+          the phone's default view is the player itself. */}
       {track && (
         <div className="fsplayer-corner">
+          {COARSE_POINTER && (
+            <button
+              className={`fsplayer-bg-btn fs-lyrics-btn ${touchLyrics ? 'on' : ''}`}
+              onClick={() => setTouchLyrics((v) => !v)}
+              title={tr('lyrics')}
+            >
+              <LyricsIcon size={19} />
+            </button>
+          )}
           {(status === 'ok' || status === 'none') && (
             <>
               {isManual && (
@@ -552,6 +661,15 @@ export function LyricsView(): JSX.Element {
         <div className="fsplayer-side">
           <div className="fsplayer-art">
             {cover ? <img src={cover} alt="" /> : <span>♫</span>}
+            {COARSE_POINTER && track && (
+              <button
+                className={`np-like ${liked ? 'liked' : ''}`}
+                title={liked ? 'Unlike' : 'Like'}
+                onClick={() => toggleLike(track)}
+              >
+                {liked ? <HeartFilledIcon size={18} /> : <HeartIcon size={18} />}
+              </button>
+            )}
             {track && (
               <div className="cover-edit">
                 <button
@@ -583,9 +701,11 @@ export function LyricsView(): JSX.Element {
                     <button
                       className="artist-link"
                       onClick={() =>
-                        a.id
-                          ? openArtist({ id: a.id, name: a.name, provider: track.providerId })
-                          : openArtistFromTrack(track)
+                        goToArtist(() =>
+                          a.id
+                            ? openArtist({ id: a.id, name: a.name, provider: track.providerId })
+                            : openArtistFromTrack(track)
+                        )
                       }
                     >
                       {a.name}
@@ -593,7 +713,10 @@ export function LyricsView(): JSX.Element {
                   </span>
                 ))
               ) : (
-                <button className="artist-link" onClick={() => openArtistFromTrack(track)}>
+                <button
+                  className="artist-link"
+                  onClick={() => goToArtist(() => openArtistFromTrack(track))}
+                >
                   {track.artist || 'Unknown artist'}
                 </button>
               )}
@@ -602,6 +725,7 @@ export function LyricsView(): JSX.Element {
           {isManual && <span className="sync-badge side">{tr('manualSynced')}</span>}
         </div>
 
+        {lyricsMode && (
         <div className="fsplayer-lyrics" ref={lyricsAreaRef}>
           {status === 'loading' && <div className="lyrics-msg">{tr('searchingLyrics')}</div>}
           {status === 'none' && (
@@ -648,6 +772,7 @@ export function LyricsView(): JSX.Element {
             </div>
           )}
         </div>
+        )}
       </div>
 
       <div className="fsplayer-controls">
@@ -663,6 +788,15 @@ export function LyricsView(): JSX.Element {
         />
         <span className="pb-time">{formatTime(durationSec)}</span>
         <div className="fsplayer-transport">
+          {COARSE_POINTER && (
+            <button
+              className={`icon-btn ${repeat !== 'off' ? 'on' : ''}`}
+              title={`Repeat: ${repeat}`}
+              onClick={cycleRepeat}
+            >
+              {repeat === 'one' ? <RepeatOneIcon size={19} /> : <RepeatIcon size={19} />}
+            </button>
+          )}
           <button className="icon-btn" title="Previous" onClick={prev}>
             <PrevIcon size={22} />
           </button>
@@ -672,8 +806,25 @@ export function LyricsView(): JSX.Element {
           <button className="icon-btn" title="Next" onClick={next}>
             <NextIcon size={22} />
           </button>
+          {COARSE_POINTER && (
+            <button
+              className={`icon-btn ${shuffle ? 'on' : ''}`}
+              title="Shuffle"
+              onClick={toggleShuffle}
+            >
+              <ShuffleIcon size={19} />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Phone player view: the queue is always on screen under the transport, the
+          way every phone player draws it — not a panel one has to go and find. */}
+      {COARSE_POINTER && !touchLyrics && <FsQueue />}
+
+      {/* Immersive karaoke, chrome hidden: this swallows the tap that brings the
+          chrome back, so it cannot also land on a lyric line (which would seek). */}
+      {immersive && !chromeOn && <div className="fs-tap-catch" onClick={bumpChrome} />}
 
       {editing && track && (
         <SyncEditor

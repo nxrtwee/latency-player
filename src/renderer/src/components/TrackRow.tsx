@@ -5,6 +5,7 @@ import { PlayIcon, HeartIcon, HeartFilledIcon, DownloadIcon, CheckIcon } from '.
 import { PlaylistMenu } from './PlaylistMenu'
 import { ProviderBadge } from './ProviderBadge'
 import { useCover } from '../cover'
+import { COARSE_POINTER } from '../touch'
 import type { Track } from '@shared/types'
 
 function Thumb({ track }: { track: Track }): JSX.Element {
@@ -58,6 +59,10 @@ function TrackRowImpl({ track, index, onPlay, plays }: TrackRowProps): JSX.Eleme
     <div
       className={`trow ${playing ? 'active' : ''} ${plays != null ? 'with-plays' : ''}`}
       onDoubleClick={() => onPlay(index)}
+      // Touch has no double click and no hover, so the hover-revealed .t-play
+      // button is unreachable — the row itself becomes the play target. Inert on
+      // desktop: COARSE_POINTER is false for a mouse (see ../touch.ts).
+      onClick={COARSE_POINTER ? () => onPlay(index) : undefined}
     >
       <div className="c-index">
         {playing ? (
@@ -114,7 +119,12 @@ function TrackRowImpl({ track, index, onPlay, plays }: TrackRowProps): JSX.Eleme
       <button
         className={`c-like row-like ${liked ? 'liked' : ''}`}
         title={liked ? 'Remove from Your Likes' : 'Add to Your Likes'}
-        onClick={() => toggleLike(track)}
+        onClick={(e) => {
+          // Must not reach the row: with tap-to-play (touch) a bubbling click
+          // would start the track as a side effect of liking it.
+          e.stopPropagation()
+          toggleLike(track)
+        }}
       >
         {liked ? <HeartFilledIcon size={16} /> : <HeartIcon size={16} />}
       </button>

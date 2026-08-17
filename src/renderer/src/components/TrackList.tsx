@@ -9,12 +9,14 @@ import {
   DownloadIcon,
   CheckIcon,
   ImageIcon,
+  PlusIcon,
   RefreshIcon
 } from './Icons'
 import { TrackRow } from './TrackRow'
 import { ListMenu } from './ListMenu'
 import { useT } from '../i18n'
 import { useVirtualRows } from '../useVirtualRows'
+import { COARSE_POINTER, ROW_H_TOUCH } from '../touch'
 import type { Track } from '@shared/types'
 
 // Pinned .trow heights (see styles.css) — windowing math depends on them.
@@ -26,6 +28,7 @@ export function TrackList(): JSX.Element {
   const source = usePlayer((s) => s.source)
   const tracks = usePlayer((s) => s.tracks)
   const loading = usePlayer((s) => s.loading)
+  const addFolder = usePlayer((s) => s.addFolder)
   const likes = usePlayer((s) => s.likes)
   const scLikes = usePlayer((s) => s.scLikes)
   const offlineTracks = usePlayer((s) => s.offlineTracks)
@@ -68,7 +71,13 @@ export function TrackList(): JSX.Element {
   const metaMap: Partial<Record<string, { label: string; title: string; desc: string }>> = {
     likes: { label: t('playlist'), title: t('yourLikes'), desc: t('likesDesc') },
     recent: { label: t('history'), title: t('recentlyPlayed'), desc: t('recentDesc') },
-    local: { label: t('library'), title: t('localFiles'), desc: t('localDesc') },
+    // "Folders" is a desktop notion: on touch the library is imported file by
+    // file through the system picker (see the mobile shim's addFolder).
+    local: {
+      label: t('library'),
+      title: t('localFiles'),
+      desc: COARSE_POINTER ? t('localDescTouch') : t('localDesc')
+    },
     offline: { label: t('library'), title: t('downloaded'), desc: t('downloadedDesc') },
     playlist: { label: t('playlist'), title: selectedPlaylist?.name ?? t('playlist'), desc: '' }
   }
@@ -102,7 +111,10 @@ export function TrackList(): JSX.Element {
   const allSaved = list.length > 0 && dlPending.length === 0
 
   const compact = usePlayer((s) => s.compact)
-  const ROW_H = compact ? ROW_H_COMPACT : ROW_H_NORMAL
+  // Touch rows are taller (they carry the artist on a second line — see
+  // portrait.css), and the windowing spacers below have to agree with the CSS.
+  // COARSE_POINTER is false for a mouse, so desktop keeps 54/38 exactly.
+  const ROW_H = compact ? ROW_H_COMPACT : COARSE_POINTER ? ROW_H_TOUCH : ROW_H_NORMAL
   const { containerRef, win } = useVirtualRows(list.length, ROW_H, '.cscroll-view')
 
   // Stable so React.memo on TrackRow can skip re-rendering rows during scroll.
@@ -123,7 +135,8 @@ export function TrackList(): JSX.Element {
     if (source === 'recent') return t('emptyRecent')
     if (source === 'offline') return t('emptyOffline')
     if (source === 'playlist') return t('emptyPlaylist')
-    return loading ? t('scanning') : t('emptyLocal')
+    if (loading) return COARSE_POINTER ? t('importing') : t('scanning')
+    return COARSE_POINTER ? t('emptyLocalTouch') : t('emptyLocal')
   }
 
   return (
@@ -175,6 +188,19 @@ export function TrackList(): JSX.Element {
               <PlayIcon size={18} />
               <span>{t('play')}</span>
             </button>
+            {/* Import lives here on touch as well as in the drawer: the drawer's
+                copy is a scroll away and closes itself when you open this page,
+                which is exactly when an empty library needs the button. */}
+            {COARSE_POINTER && source === 'local' && (
+              <button
+                className="btn-round"
+                title={t('importTracks')}
+                disabled={loading}
+                onClick={() => addFolder()}
+              >
+                {loading ? <span className="btn-spin" /> : <PlusIcon size={18} />}
+              </button>
+            )}
             <button className="btn-round" title="Shuffle" onClick={shufflePlay} disabled={!list.length}>
               <ShuffleIcon size={18} />
             </button>

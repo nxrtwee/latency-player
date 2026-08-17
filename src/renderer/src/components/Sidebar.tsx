@@ -3,6 +3,7 @@ import type { Track } from '@shared/types'
 import { grabScroll } from '../grabScroll'
 import { usePlayer } from '../store'
 import { useT } from '../i18n'
+import { COARSE_POINTER } from '../touch'
 import { Logo } from './Logo'
 import {
   PlusIcon,
@@ -64,6 +65,7 @@ export const Sidebar = forwardRef<
     (s) => new Set([...s.likes, ...s.scLikes].map((t) => t.id)).size
   )
   const offlineCount = usePlayer((s) => s.offlineIds.length)
+  const localCount = usePlayer((s) => s.tracks.length)
 
   const playlists = usePlayer((s) => s.playlists)
   const selectedPlaylistId = usePlayer((s) => s.selectedPlaylistId)
@@ -394,7 +396,36 @@ export const Sidebar = forwardRef<
         </ul>
       </div>
 
-      {source === 'local' && (
+      {source === 'local' && COARSE_POINTER && (
+        /* A phone has no folders: a sandboxed WebView can't walk the filesystem, so
+           the library is whatever the user picks in the system file dialog (the
+           mobile shim's addFolder opens it and imports what comes back). Hence a
+           count instead of a folder list, and a "forget" button — the imported files
+           are copied into app storage, so they need a way out. */
+        <div className="folders">
+          <div className="folders-toggle">
+            <span>
+              {t('imported')} ({localCount})
+            </span>
+          </div>
+          <button className="add-folder" disabled={loading} onClick={() => addFolder()}>
+            <PlusIcon size={15} />
+            <span>{t('importTracks')}</span>
+          </button>
+          {localCount > 0 && (
+            <button
+              className="add-folder ghost"
+              disabled={loading}
+              onClick={() => removeFolder('*')}
+            >
+              <CloseIcon size={13} />
+              <span>{t('forgetImported')}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {source === 'local' && !COARSE_POINTER && (
         <div className="folders">
           <button className="folders-toggle" onClick={() => setShowFolders((v) => !v)}>
             <span>

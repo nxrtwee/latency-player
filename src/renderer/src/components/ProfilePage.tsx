@@ -13,63 +13,12 @@ import {
   RealYandexMusicIcon
 } from './Icons'
 
-/** Compact number: 12300 → 12.3K, 4_500_000 → 4.5M. */
-function compact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 ? 1 : 0)}K`
-  return String(Math.round(n * 10) / 10)
-}
-
-/** Click-to-edit numeric stat shown inline in the profile meta row. */
-function EditableStat({
-  value,
-  onSave,
-  format,
-  step = 1
-}: {
-  value: number
-  onSave: (v: number) => void
-  format: (v: number) => string
-  step?: number
-}): JSX.Element {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  if (editing) {
-    const commit = (): void => {
-      onSave(Number(draft) || 0)
-      setEditing(false)
-    }
-    return (
-      <input
-        className="stat-edit"
-        type="number"
-        min={0}
-        step={step}
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') setEditing(false)
-        }}
-      />
-    )
-  }
-  return (
-    <button
-      className="stat-chip"
-      title="Click to edit"
-      onClick={() => {
-        setDraft(String(value))
-        setEditing(true)
-      }}
-    >
-      {format(value)}
-    </button>
-  )
-}
-
+/**
+ * The profile hero used to carry three hand-editable vanity numbers (followers /
+ * plays / rating). They were invented, editable by anyone, and told the owner of
+ * the library nothing — so the meta line is just the handle now. The real numbers
+ * live in the `.act-stats` cards below, where they are actually computed.
+ */
 export function ProfilePage(): JSX.Element {
   const t = useT()
   const scAuth = usePlayer((s) => s.scAuth)
@@ -94,11 +43,6 @@ export function ProfilePage(): JSX.Element {
   const likes = usePlayer((s) => s.likes)
   const scLikes = usePlayer((s) => s.scLikes)
   const playlists = usePlayer((s) => s.playlists)
-  const profileFollowers = usePlayer((s) => s.profileFollowers)
-  const profilePlays = usePlayer((s) => s.profilePlays)
-  const profileRating = usePlayer((s) => s.profileRating)
-  const setProfileStat = usePlayer((s) => s.setProfileStat)
-  const setSettingsOpen = usePlayer((s) => s.setSettingsOpen)
   const setSource = usePlayer((s) => s.setSource)
   const playQueue = usePlayer((s) => s.playQueue)
   const openArtistFromTrack = usePlayer((s) => s.openArtistFromTrack)
@@ -184,25 +128,6 @@ export function ProfilePage(): JSX.Element {
           )}
           <div className="ph-meta pf-meta">
             <span>{subtitle}</span>
-            <span className="dot">•</span>
-            <EditableStat
-              value={profileFollowers || scAuth?.followers || 0}
-              onSave={(v) => setProfileStat('followers', v)}
-              format={(v) => `${compact(v)} ${t('followers')}`}
-            />
-            <span className="dot">•</span>
-            <EditableStat
-              value={profilePlays}
-              onSave={(v) => setProfileStat('plays', v)}
-              format={(v) => `${compact(v)} ${t('plays')}`}
-            />
-            <span className="dot">•</span>
-            <EditableStat
-              value={profileRating}
-              onSave={(v) => setProfileStat('rating', v)}
-              format={(v) => `★ ${v || 0} ${t('rating')}`}
-              step={0.1}
-            />
           </div>
           <div className="ph-actions">
             <button className="btn-play" onClick={startEdit}>
@@ -233,9 +158,6 @@ export function ProfilePage(): JSX.Element {
                 {t('useScIdentity')}
               </button>
             )}
-            <button className="sync-btn ghost" onClick={() => setSettingsOpen(true)}>
-              {t('settings')}
-            </button>
           </div>
         </div>
       </header>
