@@ -1,3 +1,4 @@
+import { cpSync, existsSync, readdirSync } from 'fs'
 import { resolve } from 'path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -59,6 +60,39 @@ function scFetchProxy(): Plugin {
   }
 }
 
+// Copies the bundled wallpaper pack (mobile/assets/wallpapers, 12 phone-res
+// PNGs) into the build output, so `npx cap sync` carries it into the .apk / .ipa.
+//
+// Nothing in the app imports them: they used to feed a mobile-only preset picker
+// that the desktop-parity revamp replaced, and they are kept in the package on
+// purpose. A plain file copy — not an ESM import — is what makes that survive:
+// Rollup drops an asset whose import result is never used, so an "unused"
+// wallpapers.ts would quietly stop shipping them again.
+function bundleWallpapers(): Plugin {
+  const src = resolve(__dirname, 'assets/wallpapers')
+  let outDir = resolve(__dirname, 'dist')
+  return {
+    name: 'bundle-wallpapers',
+    apply: 'build',
+    configResolved(config) {
+      // build.outDir stays as written in the config ('dist' by default), so it
+      // has to be resolved against the Vite root and not the caller's CWD —
+      // `npm run build:mobile` runs from the repo root, one level up.
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    // closeBundle, not generateBundle: run after Vite has written (and possibly
+    // emptied) outDir, otherwise the copy gets wiped.
+    closeBundle() {
+      if (!existsSync(src)) {
+        this.warn(`wallpaper pack not found at ${src} — build ships without it`)
+        return
+      }
+      cpSync(src, resolve(outDir, 'wallpapers'), { recursive: true })
+      this.info(`bundled ${readdirSync(src).length} wallpapers`)
+    }
+  }
+}
+
 // Mobile target. Runs on the already-installed Vite (no extra npm install needed
 // for browser dev), so the Electron toolchain stays untouched. Reuses the
 // desktop renderer sources via the same @renderer / @shared aliases.
@@ -68,7 +102,7 @@ function scFetchProxy(): Plugin {
 export default defineConfig({
   root: resolve(__dirname),
   base: './',
-  plugins: [react(), scFetchProxy()],
+  plugins: [react(), scFetchProxy(), bundleWallpapers()],
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, '../src/renderer/src'),
