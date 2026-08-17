@@ -3,6 +3,33 @@ import type { Album, Artist, Playlist, Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle } from './providers/types'
 import { getProvider } from './providers/registry'
 import { makeupGainDb, DEFAULT_TARGET_LUFS } from '@shared/loudness'
+import {
+  buildLikesBundle,
+  likesBundleFilename,
+  mergeLikes,
+  parseLikesBundle,
+  type LikesParseError
+} from '@shared/sync'
+
+/** Outcome of writing the likes-sync file (Settings shows it on the button). */
+export interface LikesExportResult {
+  status: 'ok' | 'cancelled' | 'failed' | 'empty'
+  /** Likes written. */
+  count: number
+  /** Local-file likes left out — they mean nothing on another device. */
+  skipped: number
+  /** Where it landed (a path on desktop, a device directory on mobile). */
+  path?: string
+}
+
+/** Outcome of reading a likes-sync file back. */
+export interface LikesImportResult {
+  status: 'ok' | 'cancelled' | 'failed' | LikesParseError
+  /** Likes that were not already here. */
+  added: number
+  /** Size of the resulting list. */
+  total: number
+}
 
 export type RepeatMode = 'off' | 'all' | 'one'
 /** Where the custom background image is applied. */
@@ -382,6 +409,12 @@ interface PlayerState {
     provider: 'soundcloud' | 'yandex',
     onProgress?: (done: number, total: number) => void
   ) => Promise<number>
+  // Cross-platform likes sync through our own JSON file (shared/sync.ts): the
+  // desktop and the phone have no server between them, so the file IS the
+  // transport. Export writes every portable like in order; import merges a file
+  // back, imported order first.
+  exportLikesFile: () => Promise<LikesExportResult>
+  importLikesFile: () => Promise<LikesImportResult>
 
   // offline actions
   loadOffline: () => Promise<void>
@@ -1055,6 +1088,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
   const syncLikedIds = (): void =>
     set({ likedIds: new Set([...get().likes, ...get().scLikes].map((t) => t.id)) })
 
+  /**
+   * Which build is writing a likes-sync file. `html.m` is set by
+   * mobile/src/main.tsx and by nothing else, so it is the honest test — the
+   * pointer type is not (a touchscreen laptop runs the desktop app). Used for the
+   * bundle's `platform` field and the filename it suggests.
+   */
+  const syncPlatform = (): 'desktop' | 'mobile' =>
+    document.documentElement.classList.contains('m') ? 'mobile' : 'desktop'
+
   // Fire-and-forget: mirror a like/unlike out to the track's own service when the
   // opt-in toggle is on and that provider is signed in. Local tracks have no
   // service, so they're skipped. Desktop-only (guarded `?.` — no-op on mobile).
@@ -1380,6 +1422,52 @@ export const usePlayer = create<PlayerState>((set, get) => {
         await delay(gap())
       }
       return ok
+    },
+
+    async exportLikesFile() {
+      const likes = get().likes
+      const { bundle, skipped } = buildLikesBundle(likes, syncPlatform())
+      if (!bundle.tracks.length) return { status: 'empty', count: 0, skipped }
+      try {
+        // Pretty-printed: the file is the user's, and 2-space JSON is diffable and
+        // readable in any editor. A few thousand likes is still well under a MB.
+        const path = await window.api.saveJsonFile(
+          likesBundleFilename(bundle.platform),
+          JSON.stringify(bundle, null, 2)
+        )
+        if (!path) return { status: 'cancelled', count: 0, skipped }
+        return { status: 'ok', count: bundle.tracks.length, skipped, path }
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) })
+        return { status: 'failed', count: 0, skipped }
+      }
+    },
+
+    async importLikesFile() {
+      let file: { name: string; text: string } | null = null
+      try {
+        file = await window.api.openJsonFile()
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) })
+        return { status: 'failed', added: 0, total: get().likes.length }
+      }
+      if (!file) return { status: 'cancelled', added: 0, total: get().likes.length }
+
+      const parsed = parseLikesBundle(file.text)
+      if (!parsed.ok) return { status: parsed.error, added: 0, total: get().likes.length }
+
+      const { likes, added } = mergeLikes(get().likes, parsed.bundle.tracks)
+      // Nothing new: still write, because the ORDER may differ and matching the
+      // other device's order is half of what the file is for.
+      try {
+        const saved = await window.api.setLikes(likes)
+        set({ likes: saved })
+        syncLikedIds()
+        return { status: 'ok', added, total: saved.length }
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) })
+        return { status: 'failed', added: 0, total: get().likes.length }
+      }
     },
 
     async loadOffline() {
@@ -2070,9 +2158,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
     async pickBackgroundVideo() {
       const url = await window.api.pickVideo()
       if (url) {
-        // Video backgrounds are object-fit: cover (no manual framing) — reset the
-        // framing transform so a leftover image zoom/pan can't crop the clip.
-        set({ customBg: url, bgKind: 'video', bgPosX: 50, bgPosY: 50, bgZoom: 1, framingOpen: false })
+        // Same deal as an image: reset the framing so a leftover zoom/pan from the
+        // previous wallpaper can't crop the new clip, then offer to frame it.
+        set({ customBg: url, bgKind: 'video', bgPosX: 50, bgPosY: 50, bgZoom: 1, framingOpen: true })
         try {
           localStorage.setItem('lp.bg', url)
           localStorage.setItem('lp.bgKind', 'video')

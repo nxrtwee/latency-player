@@ -22,6 +22,7 @@ import * as offline from './offline'
 import { offlineSrcForUri } from './offline'
 import { clearLocal, getKnownLocal, importFiles, pickAudioFiles } from './localfiles'
 import { pickFile } from './picker'
+import { openJsonFile, saveJsonFile } from './jsonfile'
 import { pickVideoFile } from './wallpaper'
 import { requestToken } from './tokenRequest'
 import { getFreshResolve, putResolve } from './resolveCache'
@@ -93,6 +94,22 @@ function addManyLikes(tracks: Track[]): Track[] {
 /** Drop every like that came from a given provider — undoes an import. */
 function removeProviderLikes(provider: string): Track[] {
   const next = getLikes().filter((t) => t.providerId !== provider)
+  write(LIKES_KEY, next)
+  return next
+}
+/**
+ * Replace the whole list, order included — the import half of the cross-platform
+ * sync (shared/sync.ts) has to reproduce the exporting device's exact order, which
+ * `addManyLikes` (prepend-only) cannot do. Dedupe here is belt-and-braces; the
+ * merge already did it.
+ */
+function setLikes(tracks: Track[]): Track[] {
+  const seen = new Set<string>()
+  const next = tracks.filter((t) => {
+    if (!t?.id || seen.has(t.id)) return false
+    seen.add(t.id)
+    return true
+  })
   write(LIKES_KEY, next)
   return next
 }
@@ -273,6 +290,7 @@ const api = {
   getLikes: async (): Promise<Track[]> => getLikes(),
   toggleLike: async (track: Track): Promise<Track[]> => toggleLike(track),
   addManyLikes: async (tracks: Track[]): Promise<Track[]> => addManyLikes(tracks),
+  setLikes: async (tracks: Track[]): Promise<Track[]> => setLikes(tracks),
   removeProviderLikes: async (provider: string): Promise<Track[]> => removeProviderLikes(provider),
   getPlaylists: async (): Promise<Playlist[]> => getPlaylists(),
   createPlaylist: async (name: string): Promise<Playlist[]> =>
@@ -349,6 +367,12 @@ const api = {
   // the app's own local server, so it survives a restart without stuffing tens of
   // megabytes of base64 into localStorage (see wallpaper.ts).
   pickVideo: (): Promise<string | null> => pickVideoFile(),
+  // likes-sync file (shared/sync.ts): written into a user-reachable directory
+  // instead of a save dialog, read back through the same picker as everything
+  // else — see jsonfile.ts.
+  saveJsonFile: (suggestedName: string, text: string): Promise<string | null> =>
+    saveJsonFile(suggestedName, text),
+  openJsonFile: (): Promise<{ name: string; text: string } | null> => openJsonFile(),
 
   // lyrics — LRCLIB + Genius via the proxy / CapacitorHttp, cached locally.
   getLyrics: (title: string, artist: string, durationSec?: number, useGenius?: boolean) =>

@@ -384,7 +384,22 @@ export function App(): JSX.Element {
   const bgLayer = showInterfaceBg && (
     <div className="app-bg">
       {bgKind === 'video' ? (
-        <video ref={bgVideoRef} src={customBg!} autoPlay loop muted playsInline />
+        <video
+          ref={bgVideoRef}
+          src={customBg!}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            objectPosition: `${bgPosX}% ${bgPosY}%`,
+            transformOrigin: `${bgPosX}% ${bgPosY}%`,
+            // `translateZ(0)` is not decoration: `.app-bg video` uses it to force
+            // its own compositor layer (see styles.css), and an inline transform
+            // would otherwise replace that rule and re-freeze the clip on scroll.
+            transform: `scale(${bgZoom}) translateZ(0)`
+          }}
+        />
       ) : (
         <img
           src={customBg!}

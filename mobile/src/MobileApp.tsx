@@ -202,7 +202,20 @@ export function MobileApp(): JSX.Element {
       {showInterfaceBg && (
         <div className="app-bg">
           {bgKind === 'video' ? (
-            <video ref={bgVideoRef} src={customBg!} autoPlay loop muted playsInline />
+            <video
+              ref={bgVideoRef}
+              src={customBg!}
+              autoPlay
+              loop
+              muted
+              playsInline
+              style={{
+                objectPosition: `${bgPosX}% ${bgPosY}%`,
+                transformOrigin: `${bgPosX}% ${bgPosY}%`,
+                // Keeps `.app-bg video`'s compositor promotion (see styles.css).
+                transform: `scale(${bgZoom}) translateZ(0)`
+              }}
+            />
           ) : (
             <img
               src={customBg!}

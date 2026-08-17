@@ -94,6 +94,9 @@ const api = {
   toggleLike: (track: Track): Promise<Track[]> => ipcRenderer.invoke('likes:toggle', track),
   addManyLikes: (tracks: Track[]): Promise<Track[]> =>
     ipcRenderer.invoke('likes:addMany', tracks),
+  // Order-replacing write — the import half of the cross-platform likes sync
+  // (shared/sync.ts) needs to reproduce the exporting device's exact order.
+  setLikes: (tracks: Track[]): Promise<Track[]> => ipcRenderer.invoke('likes:setAll', tracks),
   removeProviderLikes: (providerId: Track['providerId']): Promise<Track[]> =>
     ipcRenderer.invoke('likes:removeProvider', providerId),
   scSetLike: (id: string, liked: boolean): Promise<boolean> =>
@@ -109,6 +112,13 @@ const api = {
   windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
   pickBackground: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickImage'),
   pickVideo: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickVideo'),
+  // Text-file transport for the likes sync file. `saveJsonFile` resolves to the
+  // path it wrote (null = the user cancelled the dialog); `openJsonFile` hands
+  // back the file's name + contents for shared/sync.ts to parse.
+  saveJsonFile: (suggestedName: string, text: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:saveJson', suggestedName, text),
+  openJsonFile: (): Promise<{ name: string; text: string } | null> =>
+    ipcRenderer.invoke('dialog:openJson'),
   onWindowMaximized: (cb: (maximized: boolean) => void): (() => void) => {
     const listener = (_e: unknown, maximized: boolean): void => cb(maximized)
     ipcRenderer.on('window:maximized', listener)

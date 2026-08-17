@@ -57,3 +57,20 @@ export async function removeByProvider(providerId: Track['providerId']): Promise
   }
   return likes
 }
+
+/**
+ * Replace the whole list, order included. `addMany` can only prepend, which is
+ * useless for the cross-platform sync (shared/sync.ts): importing a bundle has to
+ * be able to say "this is the order the other device had". The caller owns the
+ * merge; this just writes what it decided.
+ */
+export async function setAll(tracks: Track[]): Promise<Track[]> {
+  const seen = new Set<string>()
+  likes = tracks.filter((t) => {
+    if (!t?.id || seen.has(t.id)) return false
+    seen.add(t.id)
+    return true
+  })
+  await persist()
+  return likes
+}

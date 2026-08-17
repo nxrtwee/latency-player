@@ -9,6 +9,8 @@
 #                        the screen locks / app backgrounds)
 #   2. AppDelegate    -> AVAudioSession category .playback + setActive(true)
 #                        (makes the lock-screen Media Session transport authoritative)
+# …plus the icon, the status-bar mode, the portrait lock, and Files-app access to
+# the Documents directory (§6 — the likes-sync export writes there).
 #
 # Idempotent: re-running is a no-op. Fails loudly if an anchor is missing so a
 # Capacitor template change surfaces in the CI log instead of silently shipping
@@ -92,6 +94,23 @@ done
 echo "==> locked to portrait (iPhone + iPad)"
 
 # NativeAudioBridge is embedded in AppDelegate.swift (no separate file needed).
+
+# ---------------------------------------------------------------------------
+# 6. Expose the app's Documents directory to the Files app.
+#    The likes-sync export (mobile/src/api/jsonfile.ts) writes its JSON into
+#    Directory.Documents; without UIFileSharingEnabled that folder is invisible,
+#    so the file could never be carried over to the desktop. LSSupportsOpening-
+#    DocumentsInPlace lets the user edit/replace it there instead of getting a
+#    copy. Both are booleans on the app itself — no entitlement, no review flag.
+# ---------------------------------------------------------------------------
+for KEY in UIFileSharingEnabled LSSupportsOpeningDocumentsInPlace; do
+  if "$PB" -c "Print :$KEY" "$PLIST" >/dev/null 2>&1; then
+    "$PB" -c "Set :$KEY true" "$PLIST"
+  else
+    "$PB" -c "Add :$KEY bool true" "$PLIST"
+  fi
+done
+echo "==> Documents directory shared with the Files app"
 
 echo "==> patch-ios: done"
 echo "----- final AppDelegate.swift -----"

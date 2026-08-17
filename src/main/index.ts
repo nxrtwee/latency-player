@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, protocol, net } from 'electron'
-import { join } from 'path'
-import { readFileSync, writeFileSync } from 'fs'
+import { join, basename } from 'path'
+import { readFileSync, writeFileSync, promises as fsp } from 'fs'
 import { pathToFileURL } from 'url'
 import * as library from './library'
 import * as soundcloud from './soundcloud'
@@ -215,6 +215,7 @@ function registerIpc(): void {
   ipcMain.handle('likes:get', () => likes.getLikes())
   ipcMain.handle('likes:toggle', (_e, track: Track) => likes.toggle(track))
   ipcMain.handle('likes:addMany', (_e, tracks: Track[]) => likes.addMany(tracks))
+  ipcMain.handle('likes:setAll', (_e, tracks: Track[]) => likes.setAll(tracks))
   ipcMain.handle('likes:removeProvider', (_e, providerId: Track['providerId']) =>
     likes.removeByProvider(providerId)
   )
@@ -284,6 +285,36 @@ function registerIpc(): void {
     if (r.canceled || !r.filePaths[0]) return null
     const fileUrl = pathToFileURL(r.filePaths[0])
     return 'media://local/' + fileUrl.pathname.replace(/^\//, '')
+  })
+
+  // --- plain-text (JSON) file dialogs ------------------------------------------
+  // The transport for the cross-platform likes sync (shared/sync.ts). Kept
+  // generic — "hand me a filename and a string" / "hand me back a string" — so
+  // the renderer owns the format and the main process owns only the disk.
+  ipcMain.handle('dialog:saveJson', async (e, suggestedName: string, text: string) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const opts = {
+      title: 'Export liked tracks',
+      defaultPath: join(app.getPath('downloads'), suggestedName),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return null
+    await fsp.writeFile(r.filePath, text, 'utf-8')
+    return r.filePath
+  })
+
+  ipcMain.handle('dialog:openJson', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const opts = {
+      title: 'Import liked tracks',
+      properties: ['openFile' as const],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    const text = await fsp.readFile(r.filePaths[0], 'utf-8')
+    return { name: basename(r.filePaths[0]), text }
   })
 
   ipcMain.handle(

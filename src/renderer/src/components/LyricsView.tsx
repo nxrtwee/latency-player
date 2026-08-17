@@ -541,6 +541,13 @@ export function LyricsView(): JSX.Element {
           loop
           muted
           playsInline
+          // The app background carries the user's framing; a per-track karaoke
+          // clip (above) does not — that one is whatever the track ships with.
+          style={{
+            objectPosition: `${bgPosX}% ${bgPosY}%`,
+            transformOrigin: `${bgPosX}% ${bgPosY}%`,
+            transform: `scale(${bgZoom})`
+          }}
         />
       )}
       {!hasKaraokeBg && showFsBg && bgReady && bgKind !== 'video' && (

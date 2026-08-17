@@ -1994,6 +1994,13 @@ aside.sidebar.collapsed {
   font-size: 12px;
   color: var(--muted);
 }
+/* Result line of the likes-sync block: the export message is two lines (summary +
+   the path it wrote), and a path has no spaces to wrap at. */
+.set-sync-msg {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
 .set-input {
   width: 100%;
   padding: 9px 12px;
@@ -4768,7 +4775,11 @@ button:disabled {
 .framing-stage:active {
   cursor: grabbing;
 }
-.framing-stage img {
+/* An mp4 background frames exactly like an image: same box, same object-fit, same
+   inline object-position/transform. The <video> is muted+loop and plays while you
+   drag, so the framing is judged on moving pixels. */
+.framing-stage img,
+.framing-stage video {
   position: absolute;
   inset: 0;
   width: 100%;

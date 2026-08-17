@@ -7,8 +7,8 @@ import { CloseIcon } from './Icons'
 /**
  * Non-destructive image framing: pan (object-position + a matching transform
  * origin) + zoom (scale). Drives the global framing state live, so the real
- * background / avatar updates as you drag. Handles two targets: the app
- * background ('bg') and the profile avatar ('avatar').
+ * background / avatar updates as you drag. Handles three targets: an image app
+ * background, an mp4 app background ('bg' + `bgKind`), and the profile avatar.
  *
  * The pan is EXACT — one finger/cursor pixel moves the image by one pixel. The
  * hidden strip on an axis is `zoom * displayed - frame` px wide (see `travel`
@@ -21,6 +21,7 @@ export function BgFraming(): JSX.Element {
   const t = useT()
   const target = usePlayer((s) => s.framingTarget)
   const customBg = usePlayer((s) => s.customBg)
+  const bgKind = usePlayer((s) => s.bgKind)
   const bgPosX = usePlayer((s) => s.bgPosX)
   const bgPosY = usePlayer((s) => s.bgPosY)
   const bgZoom = usePlayer((s) => s.bgZoom)
@@ -33,6 +34,8 @@ export function BgFraming(): JSX.Element {
   const closeFraming = usePlayer((s) => s.closeFraming)
 
   const isAvatar = target === 'avatar'
+  // An mp4 background is framed the same way; only the element differs.
+  const isVideo = !isAvatar && bgKind === 'video'
   const img = isAvatar ? avatar : customBg
   const posX = isAvatar ? avPosX : bgPosX
   const posY = isAvatar ? avPosY : bgPosY
@@ -135,6 +138,17 @@ export function BgFraming(): JSX.Element {
   // Background frames to the window aspect; the avatar frames to a square.
   const aspect = isAvatar ? '1 / 1' : `${window.innerWidth} / ${window.innerHeight}`
 
+  // The zoom scales about the framed point, not the centre, so the strip the
+  // zoom hides moves with `object-position` too — that is what makes a zoomed
+  // image pannable on BOTH axes even when the source's aspect matches the
+  // frame's. Every place that paints a framed image/video does the same (App /
+  // LyricsView / MobileApp / ProfilePage / Sidebar).
+  const framed = {
+    objectPosition: `${posX}% ${posY}%`,
+    transformOrigin: `${posX}% ${posY}%`,
+    transform: `scale(${zoom})`
+  }
+
   return (
     <div
       className={`framing-overlay ${closing ? 'closing' : ''}`}
@@ -167,7 +181,26 @@ export function BgFraming(): JSX.Element {
           onPointerCancel={onPointerUp}
           onWheel={onWheel}
         >
-          {img && (
+          {img && isVideo && (
+            <video
+              src={img}
+              autoPlay
+              loop
+              muted
+              playsInline
+              // `videoWidth/Height` is what `naturalWidth/Height` is for an
+              // image — it is 0 until metadata lands, hence the same onLoad
+              // hook, just a different event.
+              onLoadedMetadata={(e) => {
+                nat.current = {
+                  w: e.currentTarget.videoWidth,
+                  h: e.currentTarget.videoHeight
+                }
+              }}
+              style={framed}
+            />
+          )}
+          {img && !isVideo && (
             <img
               src={img}
               alt=""
@@ -178,17 +211,7 @@ export function BgFraming(): JSX.Element {
                   h: e.currentTarget.naturalHeight
                 }
               }}
-              // The zoom scales about the framed point, not the centre, so the
-              // strip the zoom hides moves with `object-position` too — that is
-              // what makes a zoomed image pannable on BOTH axes even when the
-              // source's aspect matches the frame's. Every place that paints a
-              // framed image does the same (App / LyricsView / MobileApp /
-              // ProfilePage / Sidebar).
-              style={{
-                objectPosition: `${posX}% ${posY}%`,
-                transformOrigin: `${posX}% ${posY}%`,
-                transform: `scale(${zoom})`
-              }}
+              style={framed}
             />
           )}
           <div className={`framing-grid ${isAvatar ? 'circle' : ''}`} />

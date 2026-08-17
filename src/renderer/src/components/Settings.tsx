@@ -88,6 +88,52 @@ export function Settings(): JSX.Element {
   const exportLabel = (s: 'idle' | 'busy' | string): string =>
     s === 'busy' ? t2('exporting') : s === 'idle' ? t2('exportLikes') : s
 
+  // --- likes sync through our own JSON file (store: export/importLikesFile) ----
+  const exportLikesFile = usePlayer((s) => s.exportLikesFile)
+  const importLikesFile = usePlayer((s) => s.importLikesFile)
+  const [fileSync, setFileSync] = useState<'idle' | 'export' | 'import'>('idle')
+  // One shared result line under the two buttons: a path after an export, a count
+  // after an import, a reason after a refusal. Sticks around (no timeout) — the
+  // path is the one thing the user has to be able to read and act on.
+  const [fileSyncMsg, setFileSyncMsg] = useState<string | null>(null)
+
+  async function runFileExport(): Promise<void> {
+    setFileSync('export')
+    setFileSyncMsg(null)
+    const r = await exportLikesFile()
+    setFileSync('idle')
+    if (r.status === 'cancelled') return
+    if (r.status === 'empty') return setFileSyncMsg(t2('likesSyncNothing'))
+    if (r.status === 'failed') return setFileSyncMsg(t2('likesSyncFailed'))
+    const skipped = r.skipped ? ` · ${r.skipped} ${t2('likesSyncSkipped')}` : ''
+    setFileSyncMsg(`${t2('likesSyncExported')}: ${r.count}${skipped}\n${r.path ?? ''}`)
+  }
+
+  async function runFileImport(): Promise<void> {
+    setFileSync('import')
+    setFileSyncMsg(null)
+    const r = await importLikesFile()
+    setFileSync('idle')
+    switch (r.status) {
+      case 'cancelled':
+        return
+      case 'notBundle':
+      case 'notJson':
+        return setFileSyncMsg(t2('likesSyncNotBundle'))
+      case 'tooNew':
+        return setFileSyncMsg(t2('likesSyncTooNew'))
+      case 'empty':
+        return setFileSyncMsg(t2('likesSyncEmpty'))
+      case 'failed':
+        return setFileSyncMsg(t2('likesSyncFailed'))
+      default:
+        // Zero added is a success too — the order was still applied.
+        setFileSyncMsg(
+          `${t2('likesSyncAdded')}: ${r.added} · ${r.total} ${t2('yourLikes').toLowerCase()} · ${t2('likesSyncOrdered')}`
+        )
+    }
+  }
+
   const theme = usePlayer((s) => s.theme)
   const setTheme = usePlayer((s) => s.setTheme)
   const skin = usePlayer((s) => s.skin)
@@ -451,7 +497,7 @@ export function Settings(): JSX.Element {
                 <button className="sync-btn ghost" onClick={() => pickBackgroundVideo()}>
                   {customBg && bgKind === 'video' ? t('changeVideo') : t('chooseVideo')}
                 </button>
-                {customBg && bgKind === 'image' && (
+                {customBg && (
                   <button className="sync-btn ghost" onClick={() => openFraming()}>
                     {t('adjustFraming')}
                   </button>
@@ -692,6 +738,33 @@ export function Settings(): JSX.Element {
               </div>
             </section>
           )}
+
+          {/* Cross-platform likes sync — a file, because there is no server. Not
+              gated on auth: the likes list can hold SoundCloud/Yandex tracks that
+              were imported while signed in and are still there afterwards. */}
+          <section className="set-block">
+            <div className="set-label">{t('likesSync')}</div>
+            <div className="set-row col">
+              <span className="set-row-sub">{t('likesSyncSub')}</span>
+              <div className="set-account">
+                <button
+                  className="sync-btn ghost"
+                  disabled={fileSync !== 'idle'}
+                  onClick={runFileExport}
+                >
+                  {fileSync === 'export' ? t('exporting') : t('likesSyncExport')}
+                </button>
+                <button
+                  className="sync-btn ghost"
+                  disabled={fileSync !== 'idle'}
+                  onClick={runFileImport}
+                >
+                  {fileSync === 'import' ? t('importing') : t('likesSyncImport')}
+                </button>
+              </div>
+              {fileSyncMsg && <span className="set-row-sub set-sync-msg">{fileSyncMsg}</span>}
+            </div>
+          </section>
 
           {/* Storage */}
           <section className="set-block">

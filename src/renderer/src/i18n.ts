@@ -317,6 +317,29 @@ const dict: Record<string, { en: string; ru: string }> = {
     ru: 'Лайк трека в плеере ставит лайк и на его сервисе (SoundCloud → SoundCloud, Yandex → Yandex). Снятие лайка убирает его и там. Меняет ваш реальный аккаунт.'
   },
   removedNone: { en: 'Nothing to remove', ru: 'Нечего убирать' },
+  // cross-platform likes sync (a JSON file — see shared/sync.ts)
+  likesSync: { en: 'Sync likes between devices', ru: 'Синхронизация лайков между устройствами' },
+  likesSyncSub: {
+    en: 'Latency has no server, so a file does the job: export your liked tracks — with their exact order — and load that file on the other device. SoundCloud and Yandex tracks travel; local files stay behind.',
+    ru: 'Сервера у Latency нет, поэтому переносит файл: выгрузите любимые треки вместе с их порядком и загрузите этот файл на другом устройстве. Едут треки SoundCloud и Яндекса; локальные файлы остаются.'
+  },
+  likesSyncExport: { en: 'Export to file', ru: 'Выгрузить в файл' },
+  likesSyncImport: { en: 'Load from file', ru: 'Загрузить из файла' },
+  likesSyncExported: { en: 'Exported', ru: 'Выгружено' },
+  likesSyncSkipped: { en: 'local skipped', ru: 'локальных пропущено' },
+  likesSyncNothing: { en: 'No transferable likes yet', ru: 'Пока нечего переносить' },
+  likesSyncAdded: { en: 'Added', ru: 'Добавлено' },
+  likesSyncOrdered: { en: 'order applied', ru: 'порядок применён' },
+  likesSyncNotBundle: {
+    en: 'Not a Latency likes file',
+    ru: 'Это не файл лайков Latency'
+  },
+  likesSyncTooNew: {
+    en: 'Made by a newer version — update the app',
+    ru: 'Создан более новой версией — обновите приложение'
+  },
+  likesSyncEmpty: { en: 'The file has no transferable tracks', ru: 'В файле нет переносимых треков' },
+  likesSyncFailed: { en: "Couldn't read the file", ru: 'Не удалось прочитать файл' },
   wantRealMixes: { en: 'Want real, accurate mixes?', ru: 'Хотите настоящие точные миксы?' },
   promoSub: {
     en: 'These mixes are auto-generated and can be a bit off. Sign in with SoundCloud to get your real personalized mixes.',
