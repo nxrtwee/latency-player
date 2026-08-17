@@ -362,6 +362,10 @@ const dict: Record<string, { en: string; ru: string }> = {
   adjustFraming: { en: 'Adjust framing…', ru: 'Кадрировать…' },
   frameBackground: { en: 'Frame background', ru: 'Кадрирование фона' },
   frameHint: { en: 'Drag to reposition · scroll or slider to zoom', ru: 'Тяните, чтобы сместить · колесо или ползунок для зума' },
+  frameHintTouch: {
+    en: 'Drag to reposition · pinch or slider to zoom',
+    ru: 'Тяните, чтобы сместить · щипок или ползунок для зума'
+  },
   zoom: { en: 'Zoom', ru: 'Масштаб' },
   reset: { en: 'Reset', ru: 'Сброс' },
   done: { en: 'Done', ru: 'Готово' },

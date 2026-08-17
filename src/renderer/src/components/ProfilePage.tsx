@@ -99,7 +99,11 @@ export function ProfilePage(): JSX.Element {
             <img
               src={avatar}
               alt=""
-              style={{ objectPosition: `${avPosX}% ${avPosY}%`, transform: `scale(${avZoom})` }}
+              style={{
+                objectPosition: `${avPosX}% ${avPosY}%`,
+                transformOrigin: `${avPosX}% ${avPosY}%`,
+                transform: `scale(${avZoom})`
+              }}
             />
           ) : (
             <span>{name[0]?.toUpperCase() ?? '?'}</span>

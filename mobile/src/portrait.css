@@ -29,6 +29,17 @@ html.m {
      the scrollers must clear. */
   --m-safe-top: env(safe-area-inset-top, 0px);
   --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* iOS reports 34px of bottom inset on a home-indicator phone — Apple's generous
+     "don't put anything here" margin, not the size of the indicator (a 5px bar
+     sitting ~8px off the edge). Spending all 34px lifted the tab bar to 92px and
+     the capsule to 98px off the screen edge, which is what "нижняя шторка
+     поднимается слишком высоко" is: a finger's worth of dead glass under the
+     chrome. 14px clears the indicator and its margin, and is what every piece of
+     bottom chrome and every sheet pads with. Android reports 0 (or ~24px with
+     gesture nav) and is unaffected either way.
+     Note the full inset is still the right thing for anything that must BLEED to
+     the edge — the tab bar's own background does, because it is `bottom: 0`. */
+  --m-safe-pad: min(var(--m-safe-bottom), 14px);
   --m-gutter: 8px;
   /* Distance from the screen edge to page content. THE size knob for the whole
      app: every page root is `.tracklist` (+ a modifier), and nextgen pads it
@@ -42,9 +53,12 @@ html.m {
      mini-player was. */
   --m-bar-h: 60px;
   --m-drawer-w: min(300px, 84vw);
-  /* Total chrome the page scroller has to clear at the bottom. */
+  /* Total chrome the page scroller has to clear at the bottom: the tab bar, the
+     6px the capsule floats above it (§6), the capsule itself, and air. The air
+     used to be 10px, which left 4px between the last row and the capsule — close
+     enough that the capsule's shadow landed on the text. */
   --m-bottom-chrome: calc(
-    var(--m-tabbar-h) + var(--m-safe-bottom) + var(--m-bar-h) + 10px
+    var(--m-tabbar-h) + var(--m-safe-pad) + 6px + var(--m-bar-h) + 18px
   );
 }
 
@@ -152,14 +166,25 @@ html.m .content::before {
 
 /* The page scroller must clear the fixed bottom chrome (capsule + tab bar) and
    start below the status bar inset. nextgen already pads 104px at the bottom for
-   its capsule; phone chrome is taller, so it is recomputed here. */
+   its capsule; phone chrome is taller, so it is recomputed here.
+
+   The budget lives on `.cscroll-content`, NOT on the scroll container itself:
+   `.cscroll-view` is `display: flex; flex-direction: column`, and WebKit (plus
+   older Chromium) drops a column flex container's own `padding-bottom` from its
+   scrollable overflow — the page then scrolls to its true end with the last rows
+   still tucked under the capsule, which is exactly the bug. Padding on a child is
+   real layout, so it always counts. `.cscroll-view` is pinned to 0 because
+   nextgen sets `padding-bottom: 104px` on it (0,2,0 → this rule's 0,2,1 wins). */
 html.m .cscroll,
 html.m .cscroll-view {
   min-height: 0;
 }
 html.m .cscroll-view {
   /* Horizontal inset is owned by `.tracklist` below, so the two can't stack. */
-  padding: 0 0 var(--m-bottom-chrome);
+  padding: 0;
+}
+html.m .cscroll-content {
+  padding-bottom: var(--m-bottom-chrome);
 }
 
 /* Page edge inset — the single rule that retunes every screen at once. Each page
@@ -298,7 +323,7 @@ html.m .m-drawer .sidebar {
   flex: none !important;
   border-radius: 0 22px 22px 0;
   border-left: 0;
-  padding: calc(var(--m-safe-top) + 14px) 10px calc(var(--m-safe-bottom) + 14px);
+  padding: calc(var(--m-safe-top) + 14px) 10px calc(var(--m-safe-pad) + 14px);
   overflow-y: auto;
   overscroll-behavior: contain;
   transform: translateX(-103%);
@@ -307,6 +332,21 @@ html.m .m-drawer .sidebar {
 }
 html.m .m-drawer.open .sidebar {
   transform: none;
+}
+/* Bottom clearance as a real flex item instead of the container's own
+   `padding-bottom`: `.sidebar` IS the scroller (`overflow-y: auto`) and a column
+   flex container's end padding is dropped from scrollable overflow in WebKit, so
+   the drawer would scroll to its end with "Импорт библиотеки" half-eaten by the
+   home indicator. `::after` is a flex item, so it always counts. The parent's
+   16px `gap` sits on top of this height. */
+html.m .m-drawer .sidebar {
+  padding-bottom: 0;
+}
+html.m .m-drawer .sidebar::after {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  height: calc(var(--m-safe-pad) + 2px);
 }
 
 /* The panel is OPAQUE on a phone. nextgen fills the sidebar with a 50%-alpha
@@ -421,8 +461,8 @@ html.m .m-tabbar {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   align-items: stretch;
-  height: calc(var(--m-tabbar-h) + var(--m-safe-bottom));
-  padding-bottom: var(--m-safe-bottom);
+  height: calc(var(--m-tabbar-h) + var(--m-safe-pad));
+  padding-bottom: var(--m-safe-pad);
   background: rgba(10, 8, 18, 0.82);
   -webkit-backdrop-filter: var(--ng-glass, blur(28px) saturate(1.35));
   backdrop-filter: var(--ng-glass, blur(28px) saturate(1.35));
@@ -475,7 +515,7 @@ html.m .playerbar {
      one vertical line the whole app is aligned to. */
   left: var(--m-edge);
   right: var(--m-edge);
-  bottom: calc(var(--m-tabbar-h) + var(--m-safe-bottom) + 6px);
+  bottom: calc(var(--m-tabbar-h) + var(--m-safe-pad) + 6px);
   width: auto !important;
   max-width: none !important;
   margin: 0;
@@ -1319,7 +1359,7 @@ html.m .fsplayer-controls {
   align-items: center;
   column-gap: 9px;
   row-gap: 6px;
-  padding: 10px 14px calc(var(--m-safe-bottom) + 14px);
+  padding: 10px 14px calc(var(--m-safe-pad) + 14px);
 }
 html.m .fsplayer-controls > .pb-time:nth-child(1) {
   grid-area: 1 / 1;
@@ -1392,26 +1432,39 @@ html.m .fs-lyrics-btn.on {
    the desktop `flex: 1` on `.fsplayer-inner` would eat the whole screen and the
    queue would be squeezed to nothing.
 
-   The top padding is the base 52px plus the 44px the old `.fs-extras` row used to
-   occupy above the queue: the art block drops by exactly what that row gave back,
-   so the queue's head stays on the same line it was on and the player above it
-   sits lower, clear of the notch and the two corner buttons. Karaoke mode keeps
-   the base value (`.fs-immersive` overrides it) — there is no queue there to
-   trade height with. */
+   The top padding is the base 52px plus 12px of air under the two corner buttons.
+   The 44px the old `.fs-extras` row used to occupy is NOT added back here any
+   more: the whole player block sits high on the screen and the space it gave up
+   goes to `.fsplayer-controls`'s bottom padding below, so the queue's top edge
+   stays on exactly the line it was on while art, title, visualizer and transport
+   all move up by ~32px. Karaoke mode keeps the base value (`.fs-immersive`
+   overrides it) — there is no queue there to trade height with. */
 html.m .fsplayer.fs-player-mode .fsplayer-inner {
   flex: 0 0 auto;
-  padding-top: calc(var(--m-safe-top) + 96px);
+  padding-top: calc(var(--m-safe-top) + 64px);
 }
 /* The visualizer and the transport sit directly under the title, and the queue
-   follows — so this row gives up the bottom padding it needs when it is the last
-   thing on the screen. */
+   follows. The bottom padding is the counterweight to the 32px taken off the top
+   inset: it is dead space that keeps the queue's heading on the exact line it was
+   on ("очередь оставь как есть") while everything above it rises. 26px and not the
+   full 32 because the sheet below now has 14px of top padding of its own — so its
+   edge lands ~14px higher while its text does not move. */
 html.m .fsplayer.fs-player-mode .fsplayer-controls {
-  padding: 6px 14px 4px;
+  padding: 6px 14px 26px;
 }
 
 /* The queue, always on screen under the transport. It is the LAST child of
    `.fsplayer` (not of `.fsplayer-inner`), so it owns the bottom of the screen and
-   scrolls internally while the player above it stays put. */
+   scrolls internally while the player above it stays put.
+
+   It is also a real sheet: rounded top corners, a hairline lip and a graded fill
+   that separates it from the blurred cover behind. Before, the block had no
+   surface of its own at all, and the only thing drawing a box down there was the
+   filter field's hard-edged 9px rectangle sitting flush under the heading — which
+   is what read as a crooked backing with sharp edges.
+   NO `backdrop-filter` here, ever: `.q-list` scrolls inside this element, and a
+   backdrop-filter on a scroll ancestor stops Chromium re-rasterizing during
+   compositor scrolls (the freeze documented in styles.css). */
 html.m .fs-queue {
   position: relative;
   z-index: 1;
@@ -1421,7 +1474,13 @@ html.m .fs-queue {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 14px calc(var(--m-safe-bottom) + 8px);
+  padding: 14px 14px calc(var(--m-safe-pad) + 8px);
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(20, 17, 32, 0.55), rgba(9, 8, 16, 0.78) 42%);
+  box-shadow:
+    0 -18px 40px -22px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 /* The desktop stacks these as `.np-controls` + `.np-volume` under a 300px-wide
    art; the phone has no room for a second control row, so the like heart moved to
@@ -1450,17 +1509,33 @@ html.m .fs-queue .rp-card {
   -webkit-backdrop-filter: none;
 }
 html.m .fs-queue .rp-head {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   padding: 0 2px;
 }
+/* Softened to match the sheet it now sits on: the desktop field is a 9px-radius
+   hairline rectangle, which at this size is the hardest edge on the screen and was
+   landing 6px under the heading. Taller, rounder, and with air on both sides. */
 html.m .fs-queue .q-filter {
-  height: 36px;
-  margin-bottom: 6px;
+  height: 38px;
+  margin-bottom: 10px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 /* No `type` attribute, so the blanket `input[type='text']` rule in §16 misses it
    — and under 16px iOS zooms the page on focus. */
 html.m .fs-queue .q-filter input {
   font-size: 16px;
+}
+/* nextgen pads the queue list 104px at the bottom to clear the desktop capsule.
+   The full-screen player draws OVER the capsule, so here that is 104px of empty
+   scroll under the last track; the sheet's own bottom inset is the real clearance. */
+html.m .fs-queue .q-list {
+  padding-bottom: 2px;
+}
+/* 6px on a 38px thumb reads as a square; the sheet's language is rounder. */
+html.m .fs-queue .q-thumb {
+  border-radius: 9px;
 }
 /* `.q-item` height is NOT touched: it is the stride the windowing math in
    FsQueue/useVirtualRows counts on (50px + 2px margin). Only the remove button
@@ -1573,7 +1648,7 @@ html.m .fs-tap-catch {
    the alpha has to carry the whole cover, and 0.92 let the karaoke text ghost
    through between the rows, so it goes up to 0.985. */
 html.m .sync-editor {
-  padding: calc(var(--m-safe-top) + 12px) 12px calc(var(--m-safe-bottom) + 8px);
+  padding: calc(var(--m-safe-top) + 12px) 12px calc(var(--m-safe-pad) + 8px);
   background: rgba(7, 10, 9, 0.985);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -1688,8 +1763,18 @@ html.m .modal-head h2 {
   font-size: 18px;
 }
 html.m .modal-body {
-  padding: 14px 14px calc(var(--m-safe-bottom) + 26px);
+  padding: 14px 14px 0;
   gap: 18px;
+}
+/* Same story as the drawer: `.modal-body` is the sheet's scroller and a column
+   flex container's `padding-bottom` is dropped from scrollable overflow, so the
+   last settings block ended up under the home indicator once the sheet scrolled
+   all the way down. A pseudo flex item is real layout. */
+html.m .modal-body::after {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  height: calc(var(--m-safe-pad) + 10px);
 }
 /* Label + control on one line down to ~320px, wrapping instead of squashing the
    control when a translated label runs long. */
@@ -1726,26 +1811,76 @@ html.m .m-token .sync-btn {
 
 /* ---------- 14. Touch behaviour ---------- */
 
-/* Sticky :hover. A tap leaves the hover state applied until the next tap
-   elsewhere, so every hover LIFT freezes mid-air — the single most obvious
-   "this is a desktop app" artefact on a touchscreen. Colour and background
-   hovers are kept (they read as a selection cue); only the transforms go. */
+/* Sticky :hover. A WebView applies :hover to whatever the finger touched and
+   leaves it applied until the next tap somewhere else — including when the touch
+   was a scroll, so the row you pushed the page by stays lit behind you. Every
+   hover artefact therefore has to go on touch, backgrounds included (the earlier
+   pass kept them as "a selection cue"; in practice they read as a stuck
+   selection, which is the bug). `:active` below carries the press feedback
+   instead, and it releases with the finger.
+   Every row/card family here has a transparent base — checked in styles.css and
+   skin-nextgen.css — so `transparent` really is the resting value; `.active` /
+   `.playing` tints are exempted so the current track stays marked. */
 @media (hover: none) {
+  html.m .trow:hover:not(.active),
+  html.m .q-item:hover:not(.active):not(.dragging):not(.drag-over),
+  html.m .feed-item:hover,
+  html.m .similar-card:hover,
+  html.m .nav-item:hover:not(.active),
+  html.m .pl-row:hover:not(.active),
+  html.m .mix-item:hover:not(.active),
+  html.m .artist-mini:hover:not(.active),
+  html.m .home-card:hover,
+  html.m .album-card:hover,
+  html.m .pt-card:hover,
+  html.m .mix-card:not(.skeleton):hover {
+    background: transparent;
+    box-shadow: none;
+  }
+  /* nextgen paints this tile with a gradient at rest and a brighter one on hover,
+     so the resting look has to be restated rather than zeroed. */
+  html.m .quick-tile:hover {
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    border-color: var(--border-2);
+    box-shadow: none;
+  }
+  /* Lifts and slides: a frozen mid-air card is the loudest artefact of the lot. */
   html.m .mix-card:not(.skeleton):hover,
   html.m .stat-card:hover,
   html.m .quick-tile:hover,
   html.m .ex-chip:hover,
   html.m .pg-tile:hover,
   html.m .nav-item:hover,
+  html.m .mix-item:hover,
+  html.m .pl-row:hover,
   html.m .artist-mini:hover,
   html.m .lyric-hit:hover,
   html.m .cp-preset:hover,
+  html.m .home-card:hover,
+  html.m .album-card:hover,
+  html.m .pt-card:hover,
   html.m .home-card:hover .home-card-art,
   html.m .home-card:hover .home-card-art img,
+  html.m .mix-card:not(.skeleton):hover .mix-art,
+  html.m .mix-card:not(.skeleton):hover .mix-art img,
   html.m .album-card:hover .album-cover,
   html.m .album-card:hover .album-cover img,
+  html.m .pt-card:hover .pt-cover,
+  html.m .pt-card:hover .pt-cover img,
+  html.m .profile-chip:hover .profile-avatar,
+  html.m .profile-chip:hover .profile-avatar img,
   html.m .pa-artist:hover .pa-artist-av {
     transform: none;
+  }
+  /* The desktop swaps a row's track number for a play glyph on hover. A phone
+     plays on a plain tap (TrackRow's COARSE_POINTER branch), so the swap has no
+     job here — and left alone it strands a play icon on the last row the finger
+     brushed while scrolling. */
+  html.m .trow:hover .t-num {
+    display: inline-flex;
+  }
+  html.m .trow:hover .t-play {
+    display: none;
   }
 }
 
@@ -1761,20 +1896,21 @@ html.m .pl-row:active {
   transform: scale(0.985);
 }
 
-/* Long-press text selection and the iOS callout menu are never wanted on
-   controls; inputs keep both. */
-html.m .trow,
-html.m .m-tab,
-html.m .m-tabbar,
-html.m .playerbar,
-html.m .sidebar,
-html.m .m-topbar,
-html.m .pg-tile,
-html.m .mix-card,
-html.m .home-card {
+/* Long-press selection and the iOS callout menu are never wanted in an app shell:
+   a scroll that starts on a title used to leave the title highlighted, and a slow
+   drag inside a track list could enter native text selection instead of scrolling.
+   Blanket-off, with the fields that genuinely need it opted back in. */
+html.m body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+html.m input,
+html.m textarea,
+html.m [contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* ---------- 15. Explore / search ---------- */
@@ -1899,5 +2035,56 @@ html.m .app-bg video {
      is already px-pinned — but the fullscreen art is `min(86vw, …, 40vh)`, and on
      a tall tablet 40vh clears the 340px cap. Left alone on purpose: 340px of art
      on an iPad is still a modest cover. */
+}
+
+/* ---------- 18. Background framing (components/BgFraming.tsx) ---------- */
+
+/* The framing dialog is a centred 760px desktop panel; on a phone it becomes the
+   same bottom sheet everything else here uses, and the stage has to be sized from
+   its HEIGHT. The desktop stage is `width: 100%; max-height: 56vh` with the screen
+   aspect set inline — on a 375x812 phone that asks for a 347x751 box, gets clamped
+   to 455px tall, and the preview then shows a crop the wallpaper will never have.
+   A definite height with `width: auto` lets the inline `aspect-ratio` resolve the
+   width instead, so what you frame is what you get. */
+html.m .framing-overlay {
+  align-items: flex-end;
+}
+html.m .framing-modal {
+  width: 100%;
+  max-width: none;
+  border-radius: 22px 22px 0 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  padding: 16px 14px calc(var(--m-safe-pad) + 14px);
+  gap: 14px;
+}
+html.m .framing-stage {
+  width: auto;
+  height: min(52vh, 420px);
+  max-height: none;
+  align-self: center;
+  border-radius: 16px;
+  cursor: default;
+}
+/* The avatar stage is square, so the width can stay the driver there. */
+html.m .framing-stage.avatar {
+  width: min(300px, 68vw);
+  height: auto;
+}
+/* Two 44px buttons don't fit on the zoom row at 375px — they wrap to their own
+   line and split it, which also gives them a real touch target. */
+html.m .framing-controls {
+  flex-wrap: wrap;
+  row-gap: 12px;
+  gap: 10px;
+}
+html.m .framing-controls .slider {
+  flex: 1 1 140px;
+}
+html.m .framing-controls .sync-btn {
+  flex: 1 1 45%;
+  min-height: 44px;
+  justify-content: center;
 }
 

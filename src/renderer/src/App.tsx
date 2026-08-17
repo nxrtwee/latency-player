@@ -389,7 +389,13 @@ export function App(): JSX.Element {
         <img
           src={customBg!}
           alt=""
-          style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+          style={{
+            objectPosition: `${bgPosX}% ${bgPosY}%`,
+            // Zoom about the framed point, not the centre, so the strip the zoom
+            // hides pans with `object-position` (see BgFraming.tsx).
+            transformOrigin: `${bgPosX}% ${bgPosY}%`,
+            transform: `scale(${bgZoom})`
+          }}
         />
       )}
       <div className="app-bg-scrim" />

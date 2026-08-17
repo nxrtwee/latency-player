@@ -207,7 +207,11 @@ export function MobileApp(): JSX.Element {
             <img
               src={customBg!}
               alt=""
-              style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+              style={{
+                objectPosition: `${bgPosX}% ${bgPosY}%`,
+                transformOrigin: `${bgPosX}% ${bgPosY}%`,
+                transform: `scale(${bgZoom})`
+              }}
             />
           )}
           <div className="app-bg-scrim" />

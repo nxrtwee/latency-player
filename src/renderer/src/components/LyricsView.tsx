@@ -548,7 +548,11 @@ export function LyricsView(): JSX.Element {
           className="fsplayer-bg-img"
           src={customBg!}
           alt=""
-          style={{ objectPosition: `${bgPosX}% ${bgPosY}%`, transform: `scale(${bgZoom})` }}
+          style={{
+            objectPosition: `${bgPosX}% ${bgPosY}%`,
+            transformOrigin: `${bgPosX}% ${bgPosY}%`,
+            transform: `scale(${bgZoom})`
+          }}
         />
       )}
       <div className={`fsplayer-scrim ${fsHasBg ? 'on-image' : ''}`} />

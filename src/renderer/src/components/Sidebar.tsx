@@ -157,7 +157,11 @@ export const Sidebar = forwardRef<
             <img
               src={profileAvatar || scAuth?.avatar}
               alt=""
-              style={{ objectPosition: `${avPosX}% ${avPosY}%`, transform: `scale(${avZoom})` }}
+              style={{
+                objectPosition: `${avPosX}% ${avPosY}%`,
+                transformOrigin: `${avPosX}% ${avPosY}%`,
+                transform: `scale(${avZoom})`
+              }}
             />
           ) : (
             <span>{(profileName || scAuth?.name || t('guest'))[0]?.toUpperCase()}</span>
