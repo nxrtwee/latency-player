@@ -17,6 +17,7 @@ import './api/ymProvider'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { MobileApp } from './MobileApp'
+import { applyUiScale, savedUiScale } from './uiScale'
 
 // The phone renders the DESKTOP stylesheets, in the desktop's own load order
 // (later sheets override earlier ones by source order, not specificity), and
@@ -32,6 +33,12 @@ import './portrait.css'
 // Marks the bundle as the phone one. Every portrait.css rule is scoped to it, so
 // the class must be on <html> before the first paint.
 document.documentElement.classList.add('m')
+
+// Interface scale — a viewport-width rewrite, so it has to happen before the
+// first layout or the UI flashes at the device's default size. Read from
+// localStorage rather than the store: same value, no import cycle, and the store
+// is already evaluated by this point anyway.
+applyUiScale(savedUiScale())
 
 // Native-only marker. The old shell used it to switch off a dev-time phone-width
 // centering; the portrait layer has no such affordance (the fixed chrome would

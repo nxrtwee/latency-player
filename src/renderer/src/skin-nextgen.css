@@ -872,9 +872,6 @@
   color: #fff;
   box-shadow: 0 14px 40px -10px var(--accent);
 }
-[data-skin='nextgen'] .home-wave-play {
-  box-shadow: var(--ng-accent-glow);
-}
 [data-skin='nextgen'] .wave-headline {
   letter-spacing: -1.4px;
 }

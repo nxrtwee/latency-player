@@ -148,6 +148,9 @@ export function Settings(): JSX.Element {
   const setPlayerBarWidth = usePlayer((s) => s.setPlayerBarWidth)
   const playerBarHeight = usePlayer((s) => s.playerBarHeight)
   const setPlayerBarHeight = usePlayer((s) => s.setPlayerBarHeight)
+  const uiScale = usePlayer((s) => s.uiScale)
+  const setUiScale = usePlayer((s) => s.setUiScale)
+  const isPhoneShell = document.documentElement.classList.contains('m')
   const customAccent = usePlayer((s) => s.customAccent)
   const setCustomAccent = usePlayer((s) => s.setCustomAccent)
   const customBg = usePlayer((s) => s.customBg)
@@ -346,6 +349,35 @@ export function Settings(): JSX.Element {
                 <span className="set-slider-val">{fpsLimit >= 120 ? '∞' : fpsLimit}</span>
               </div>
             </div>
+
+            {/* Interface scale — phone only. A phone's CSS pixel follows its
+                density bucket, not its physical size, so the same layout reads
+                oversized on a 720p panel and cramped on a flagship; this is the
+                knob for that. The mobile shell turns the pref into a viewport
+                width (mobile/src/uiScale.ts) — on desktop the OS and the browser
+                own zoom already, hence the `html.m` gate. Read at render time:
+                mobile/src/main.tsx adds the class after the module graph is
+                evaluated, so a module-level const would still be false. */}
+            {isPhoneShell && (
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('uiScale')}</span>
+                  <span className="set-row-sub">{t('uiScaleSub')}</span>
+                </div>
+                <div className="set-slider">
+                  <input
+                    type="range"
+                    className="slider"
+                    min={80}
+                    max={130}
+                    step={5}
+                    value={uiScale}
+                    onChange={(e) => setUiScale(Number(e.target.value))}
+                  />
+                  <span className="set-slider-val">{uiScale}%</span>
+                </div>
+              </div>
+            )}
 
             {skin === 'nextgen' && (
               /* `set-row-barw` is a styling hook, not a variant: the phone build

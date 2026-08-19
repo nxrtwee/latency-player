@@ -205,6 +205,11 @@ interface PlayerState {
   // nextgen floating player bar width, as a percent of the window (45–95).
   playerBarWidth: number
   playerBarHeight: number
+  // Phone-only UI scale, as a percent (80–130, default 100). The mobile shell
+  // turns it into a viewport-meta width so every CSS px scales at once — a
+  // phone's density decides how big the interface reads, and two phones of the
+  // same physical size can be a whole step apart. Desktop ignores it.
+  uiScale: number
   // custom-background framing (object-position % + zoom scale)
   bgPosX: number
   bgPosY: number
@@ -373,6 +378,7 @@ interface PlayerState {
   setKaraokeBgScope: (scope: 'track' | 'all') => void
   setPlayerBarWidth: (pct: number) => void
   setPlayerBarHeight: (pct: number) => void
+  setUiScale: (pct: number) => void
   setBgFraming: (f: Partial<{ x: number; y: number; zoom: number }>) => void
   setBgScope: (scope: BgScope) => void
   openFraming: () => void
@@ -1266,6 +1272,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     })(),
     playerBarWidth: Math.min(95, Math.max(45, readNum('lp.playerBarW', 64))),
     playerBarHeight: Math.min(100, Math.max(60, readNum('lp.playerBarH', 100))),
+    uiScale: Math.min(130, Math.max(80, readNum('lp.uiScale', 100))),
     bgPosX: readNum('lp.bgPosX', 50),
     bgPosY: readNum('lp.bgPosY', 50),
     bgZoom: readNum('lp.bgZoom', 1),
@@ -2344,6 +2351,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
       set({ playerBarHeight: h })
       try {
         localStorage.setItem('lp.playerBarH', String(h))
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setUiScale(pct) {
+      const s = Math.min(130, Math.max(80, Math.round(pct / 5) * 5))
+      set({ uiScale: s })
+      try {
+        localStorage.setItem('lp.uiScale', String(s))
       } catch {
         /* ignore */
       }

@@ -1498,8 +1498,21 @@ html.m .fsplayer-transport .icon-btn {
 }
 /* The card frame goes: inside a full-screen player it is a border around nothing,
    and the queue reads better as a plain list running off the bottom edge — which
-   is also how the previous mobile builds drew it. */
-html.m .fs-queue .rp-card {
+   is also how the previous mobile builds drew it.
+
+   The `.app.has-bg` twin is not a duplicate: with a custom background set, THREE
+   desktop rules re-fill `.rp-card` from a selector that outranks a bare
+   `html.m .fs-queue .rp-card` (0,3,1) —
+   `[data-skin='nextgen'] .app.has-bg .rp-card` (0,4,0) in skin-nextgen.css and
+   the two `html:is([data-graphics=…]) .app.has-bg .rp-card` blocks in perf.css
+   (0,4,1). They put the skin's translucent gradient back with the radius this
+   rule already zeroed, i.e. a hard-edged rectangle inset 14px inside the sheet's
+   24px corners: invisible over the near-black palette gradient, a black box over
+   a wallpaper. Naming `.app.has-bg` here makes it (0,5,1) and wins over all
+   three — including perf.css's `backdrop-filter: blur(7px)`, which would also
+   hang `.q-list`'s scrolling on the freeze documented above. */
+html.m .fs-queue .rp-card,
+html.m .app.has-bg .fs-queue .rp-card {
   padding: 0;
   border: none;
   background: none;
@@ -1869,7 +1882,14 @@ html.m .m-token .sync-btn {
   html.m .pt-card:hover .pt-cover img,
   html.m .profile-chip:hover .profile-avatar,
   html.m .profile-chip:hover .profile-avatar img,
-  html.m .pa-artist:hover .pa-artist-av {
+  html.m .pa-artist:hover .pa-artist-av,
+  /* "My Wave": the logo disc is the play button now (HomePage/HomeBento), so its
+     hover scale would stick to the finger the same way the card lifts do — and
+     the banner itself lifts under nextgen. `:active` on the core carries the
+     press instead (styles.css / visual-universal.css). */
+  html.m .home-wave:hover,
+  html.m .home-wave-disc:hover .home-wave-core,
+  html.m .pg-wave-disc:hover .pg-wave-core {
     transform: none;
   }
   /* The desktop swaps a row's track number for a play glyph on hover. A phone

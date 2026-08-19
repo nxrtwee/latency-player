@@ -25,6 +25,7 @@ import { installMediaSession } from './api/mediaSession'
 import { installResolvePrefetch } from './api/resolveCache'
 import { installNativeLevels } from './api/nativeLevels'
 import { installStatusBar } from './api/statusBar'
+import { applyUiScale } from './uiScale'
 
 /**
  * The phone shell.
@@ -63,6 +64,7 @@ export function MobileApp(): JSX.Element {
   const lyricsSize = usePlayer((s) => s.lyricsSize)
   const compact = usePlayer((s) => s.compact)
   const customAccent = usePlayer((s) => s.customAccent)
+  const uiScale = usePlayer((s) => s.uiScale)
 
   const customBg = usePlayer((s) => s.customBg)
   const bgKind = usePlayer((s) => s.bgKind)
@@ -99,6 +101,14 @@ export function MobileApp(): JSX.Element {
     if (theme === 'custom') root.style.setProperty('--accent', customAccent)
     else root.style.removeProperty('--accent')
   }, [theme, skin, visual, graphics, compact, lyricsSize, customAccent])
+
+  // Interface scale — the Settings slider only writes the pref; the viewport
+  // rewrite lives in the phone shell (uiScale.ts explains why it is the viewport
+  // and not CSS zoom). main.tsx already applied the saved value pre-paint, so
+  // this effect exists for live changes.
+  useEffect(() => {
+    applyUiScale(uiScale)
+  }, [uiScale])
 
   // Bootstrap. The desktop's loaders (they all go through window.api, which the
   // mobile shim implements) plus the four native installs that only exist here:

@@ -9,8 +9,7 @@ import {
   RefreshIcon,
   SoundCloudIcon,
   YandexMusicIcon,
-  DownloadIcon,
-  PlayIcon
+  DownloadIcon
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
@@ -151,28 +150,32 @@ export function HomePage(): JSX.Element {
           }}
           title={t('myWave')}
         >
-          <span className="home-wave-disc">
-            <span className="wave-ring r1" />
-            <span className="wave-ring r2" />
-            <span className="home-wave-core">
-              <YandexMusicIcon size={34} />
-            </span>
-          </span>
-          <span className="home-wave-text">
-            <span className="home-wave-label">{t('yandexMusic')}</span>
-            <span className="home-wave-title">{t('myWave')}</span>
-            <span className="home-wave-sub">{t('myWaveBannerSub')}</span>
-          </span>
+          {/* The disc IS the play button. It always was one visually — the Yandex
+              mark is a circle around a play triangle (Icons.tsx) — so a second
+              accent circle with a second play glyph at the far end of the banner
+              read as two play buttons for one action. Tapping the disc starts the
+              wave; the rest of the banner still opens the Wave page. */}
           <button
-            className="home-wave-play"
+            type="button"
+            className="home-wave-disc"
             title={t('playWave')}
+            aria-label={t('playWave')}
             onClick={(e) => {
               e.stopPropagation()
               playMyWave(0)
             }}
           >
-            <PlayIcon size={20} />
+            <span className="wave-ring r1" />
+            <span className="wave-ring r2" />
+            <span className="home-wave-core">
+              <YandexMusicIcon size={34} />
+            </span>
           </button>
+          <span className="home-wave-text">
+            <span className="home-wave-label">{t('yandexMusic')}</span>
+            <span className="home-wave-title">{t('myWave')}</span>
+            <span className="home-wave-sub">{t('myWaveBannerSub')}</span>
+          </span>
         </div>
       )}
 

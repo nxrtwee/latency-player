@@ -280,6 +280,8 @@
   padding: 16px 20px;
   cursor: pointer;
 }
+/* The disc is the tile's play button (a <button> — hence the chrome reset); the
+   tile itself opens the Wave page. See the note in styles.css `.home-wave`. */
 [data-visual='universal'] .pg-wave-disc {
   position: relative;
   width: 62px;
@@ -287,6 +289,12 @@
   flex: none;
   display: grid;
   place-items: center;
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
 }
 [data-visual='universal'] .pg-wave-core {
   width: 54px;
@@ -297,6 +305,13 @@
   color: var(--accent-ink);
   background: linear-gradient(140deg, var(--accent-2), var(--accent));
   box-shadow: var(--pg-glow);
+  transition: transform 0.16s var(--pg-ease);
+}
+[data-visual='universal'] .pg-wave-disc:hover .pg-wave-core {
+  transform: scale(1.08);
+}
+[data-visual='universal'] .pg-wave-disc:active .pg-wave-core {
+  transform: scale(0.94);
 }
 [data-visual='universal'] .pg-tile-wave .wave-ring {
   position: absolute;
@@ -335,23 +350,6 @@
 [data-visual='universal'] .pg-wave-title {
   font-size: 18px;
   font-weight: 800;
-}
-[data-visual='universal'] .pg-wave-play {
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border: none;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  color: var(--accent-ink);
-  background: linear-gradient(140deg, var(--accent-2), var(--accent));
-  box-shadow: var(--pg-glow);
-  transition: transform 0.16s var(--pg-ease);
-}
-[data-visual='universal'] .pg-wave-play:hover {
-  transform: scale(1.08);
 }
 
 /* ---- stats widget (2x1 — spans two columns) ---- */

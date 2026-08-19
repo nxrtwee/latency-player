@@ -209,7 +209,8 @@ export function HomeBento(): JSX.Element {
           </button>
         ))}
 
-        {/* My Wave — wide tile (Yandex only). */}
+        {/* My Wave — wide tile (Yandex only). The disc is the play button: see the
+            note on the same widget in HomePage.tsx. */}
         {ymAuth && myWave && (
           <div
             className="pg-tile pg-tile-wave"
@@ -220,27 +221,26 @@ export function HomeBento(): JSX.Element {
               if (e.key === 'Enter' || e.key === ' ') setSource('wave')
             }}
           >
-            <span className="pg-wave-disc">
-              <span className="wave-ring r1" />
-              <span className="wave-ring r2" />
-              <span className="pg-wave-core">
-                <YandexMusicIcon size={30} />
-              </span>
-            </span>
-            <span className="pg-wave-text">
-              <span className="pg-wave-label">{t('yandexMusic')}</span>
-              <span className="pg-wave-title">{t('myWave')}</span>
-            </span>
             <button
-              className="pg-wave-play"
+              type="button"
+              className="pg-wave-disc"
               title={t('playWave')}
+              aria-label={t('playWave')}
               onClick={(e) => {
                 e.stopPropagation()
                 playMyWave(0)
               }}
             >
-              <PlayIcon size={18} />
+              <span className="wave-ring r1" />
+              <span className="wave-ring r2" />
+              <span className="pg-wave-core">
+                <YandexMusicIcon size={30} />
+              </span>
             </button>
+            <span className="pg-wave-text">
+              <span className="pg-wave-label">{t('yandexMusic')}</span>
+              <span className="pg-wave-title">{t('myWave')}</span>
+            </span>
           </div>
         )}
 

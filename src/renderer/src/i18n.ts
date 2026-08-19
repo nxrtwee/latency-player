@@ -372,6 +372,11 @@ const dict: Record<string, { en: string; ru: string }> = {
     en: 'Caps the visualizer frame rate — lower eases GPU/CPU (∞ = uncapped)',
     ru: 'Ограничивает частоту кадров визуализатора — ниже = меньше нагрузка (∞ = без лимита)'
   },
+  uiScale: { en: 'Interface scale', ru: 'Масштаб интерфейса' },
+  uiScaleSub: {
+    en: 'Resizes the whole interface — smaller fits more on screen',
+    ru: 'Меняет размер всего интерфейса — меньше = больше влезает на экран'
+  },
   theme: { en: 'Theme', ru: 'Тема' },
   customColor: { en: 'Custom', ru: 'Свой цвет' },
   language: { en: 'Language', ru: 'Язык' },

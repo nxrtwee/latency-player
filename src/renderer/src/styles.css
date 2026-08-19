@@ -3108,7 +3108,10 @@ button:disabled {
 }
 
 /* "My Wave" banner — shown above the SoundCloud mixes when signed in to Yandex.
-   Compact pulsing disc (from the Wave tab, sans the blurb/chips) + a play button. */
+   Compact pulsing disc (from the Wave tab, sans the blurb/chips), and the disc is
+   the play control: the Yandex mark it holds is already a play triangle in a
+   circle, so the accent play button this banner used to end with was a second
+   button for the same action. The banner itself opens the Wave page. */
 .home-wave {
   position: relative;
   z-index: 1;
@@ -3128,6 +3131,8 @@ button:disabled {
 .home-wave:hover {
   background: var(--panel-2);
 }
+/* A <button> now, so the UA chrome has to go; the rings are still absolutely
+   positioned against it. */
 .home-wave-disc {
   position: relative;
   flex: 0 0 auto;
@@ -3136,6 +3141,12 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
 }
 .home-wave-disc .wave-ring.r1 {
   width: 64px;
@@ -3157,6 +3168,15 @@ button:disabled {
   color: #1a1a1a;
   background: linear-gradient(150deg, #ffe45e, #ffcc00 65%, #ff9f1c);
   box-shadow: 0 10px 30px rgba(255, 184, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+/* The disc is the only control inside a clickable banner, so it says so on
+   hover and dips under a press — the cue the removed play button carried. */
+.home-wave-disc:hover .home-wave-core {
+  transform: scale(1.06);
+}
+.home-wave-disc:active .home-wave-core {
+  transform: scale(0.94);
 }
 .home-wave-text {
   flex: 1;
@@ -3185,24 +3205,6 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.home-wave-play {
-  flex: 0 0 auto;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: var(--accent-ink);
-  box-shadow: 0 8px 24px -6px var(--accent);
-  transition: transform 0.15s ease;
-}
-.home-wave-play:hover {
-  transform: scale(1.06);
 }
 .home-h2 {
   position: relative;
