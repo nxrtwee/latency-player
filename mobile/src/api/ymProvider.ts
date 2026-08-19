@@ -8,7 +8,7 @@
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
-import { makeVolumeFader } from './volumeFade'
+import { makeTrackAudio } from './graphAudio'
 import { getNativeAudio } from './nativeAudio'
 
 const ymProvider: PlaybackProvider = {
@@ -83,7 +83,10 @@ function createNativeYM(
 function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
   const audio = new Audio()
   audio.preload = 'auto'
-  const fader = makeVolumeFader(audio)
+  // Offline (blob:) plays through the Web Audio graph — equalizer included. An
+  // online Yandex stream only joins it if their storage host answers with CORS,
+  // otherwise this stays exactly the volume fader it was (see graphAudio.ts).
+  const ctl = makeTrackAudio(audio)
 
   audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
   audio.addEventListener('durationchange', () => {
@@ -106,17 +109,25 @@ function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
 
   window.api
     .ymResolveStream(track.uri)
-    .then((url) => { if (!destroyed) { audio.src = url; ready = true; tryPlay() } })
+    .then(async (url) => {
+      if (destroyed) return
+      // Before src: this may set crossOrigin, which only applies to a later load.
+      await ctl.useGraphIfAllowed(url)
+      if (destroyed) return
+      audio.src = url
+      ready = true
+      tryPlay()
+    })
     .catch((e) => cb.onError(`Yandex: ${e instanceof Error ? e.message : String(e)}`))
 
   return {
     play: () => { wantPlay = true; tryPlay() },
     pause: () => { wantPlay = false; audio.pause() },
     seek: (sec) => { if (ready) audio.currentTime = sec },
-    setVolume: (v) => fader.setVolume(v),
-    setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
-    destroy: () => { destroyed = true; fader.destroy(); audio.pause(); audio.removeAttribute('src'); audio.load() }
+    setVolume: (v) => ctl.setVolume(v),
+    setNormalization: (db) => ctl.setNormalization(db),
+    setFade: (value, rampSec) => ctl.setFade(value, rampSec),
+    destroy: () => { destroyed = true; ctl.destroy(); audio.pause(); audio.removeAttribute('src'); audio.load() }
   }
 }
 

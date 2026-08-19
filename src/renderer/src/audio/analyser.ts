@@ -95,6 +95,32 @@ export function getEqState(): { gains: number[]; enabled: boolean } {
   return { gains: [...eqGains], enabled: eqEnabled }
 }
 
+// Change observers. The Web Audio filters above are not the only consumer of the
+// EQ state: on iOS playback runs in a native AVPlayer, so the phone shell mirrors
+// every change down to a native DSP stage (see mobile/src/api/nativeEq.ts).
+// Desktop registers nothing, so nothing changes there.
+type EqListener = (state: { gains: number[]; enabled: boolean }) => void
+const eqListeners = new Set<EqListener>()
+
+/** Subscribe to EQ changes. Returns an unsubscribe fn. */
+export function onEqChange(fn: EqListener): () => void {
+  eqListeners.add(fn)
+  return () => {
+    eqListeners.delete(fn)
+  }
+}
+
+function notifyEqChange(): void {
+  const state = getEqState()
+  for (const fn of eqListeners) {
+    try {
+      fn(state)
+    } catch {
+      /* a broken listener must not break the EQ */
+    }
+  }
+}
+
 /** Set all band gains (length EQ_BAND_COUNT, clamped to ±EQ_MAX_DB dB). */
 export function setEqGains(gains: number[]): void {
   eqGains = gains
@@ -102,6 +128,7 @@ export function setEqGains(gains: number[]): void {
     .map((v) => (Number.isFinite(v) ? Math.max(-EQ_MAX_DB, Math.min(EQ_MAX_DB, v)) : 0))
   while (eqGains.length < EQ_BAND_COUNT) eqGains.push(0)
   applyEqGains()
+  notifyEqChange()
   try {
     localStorage.setItem(EQ_GAINS_KEY, JSON.stringify(eqGains))
   } catch {
@@ -113,6 +140,7 @@ export function setEqGains(gains: number[]): void {
 export function setEqEnabled(enabled: boolean): void {
   eqEnabled = enabled
   applyEqGains()
+  notifyEqChange()
   try {
     localStorage.setItem(EQ_ENABLED_KEY, enabled ? '1' : '0')
   } catch {

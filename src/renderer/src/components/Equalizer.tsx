@@ -35,6 +35,11 @@ function gainsEqual(a: number[], b: number[]): boolean {
 
 export function Equalizer(): JSX.Element {
   const t = useT()
+  // The filtering happens in a different place on a phone (iOS: the native audio
+  // tap; Android: the Web Audio graph, when the source lets us in), so the footnote
+  // about what gets shaped differs too. Read at render time — the mobile bundle
+  // adds `html.m` after its module graph is evaluated.
+  const isPhoneShell = document.documentElement.classList.contains('m')
   const [closing, setClosing] = useState(false)
   const close = (): void => {
     setClosing(true)
@@ -135,7 +140,7 @@ export function Equalizer(): JSX.Element {
 
         <div className="eq-note">
           <SoundCloudIcon size={14} />
-          <span>{t('eqLocalOnly')}</span>
+          <span>{t(isPhoneShell ? 'eqMobileScope' : 'eqLocalOnly')}</span>
         </div>
       </div>
     </div>

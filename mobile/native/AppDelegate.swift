@@ -6,19 +6,83 @@
 //   2. NativeAudioBridge → WKScriptMessageHandler for lock-screen prev/next-track
 //      and native AVPlayer playback. Handles both network URLs and base64-encoded
 //      blob data (for offline files that can't be played via blob: URLs).
+//   3. A 10-band equalizer inside the audio tap. Because playback is AVPlayer, the
+//      renderer's Web Audio EQ is not in the path at all; the tap's PCM is, so the
+//      filtering happens here and JS only forwards the slider values ("setEq").
 import UIKit
 import Capacitor
 import AVFoundation
 import MediaPlayer
 import WebKit
 import Accelerate
+import os
 
-// MARK: - Audio tap (real visualizer levels)
+// MARK: - Equalizer settings (shared between the bridge and the audio thread)
+
+/// The EQ curve as JS last set it. Written from the WebKit message handler (main
+/// thread), read by the audio thread once per buffer.
+///
+/// The lock is only ever *tried* on the audio side: if JS happens to hold it while
+/// a buffer is being filtered, that buffer reuses the previous gains (~10 ms stale)
+/// instead of blocking a real-time thread.
+final class EqSettings {
+    static let shared = EqSettings()
+
+    /// Same centre frequencies, Q and range as the renderer's Web Audio EQ
+    /// (src/renderer/src/audio/analyser.ts). One curve, identical on both platforms.
+    static let frequencies: [Double] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+    static let q: Double = 1.1
+    static let maxDb: Double = 12
+    static var bandCount: Int { frequencies.count }
+
+    private let lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+    private let gains = UnsafeMutablePointer<Double>.allocate(capacity: EqSettings.bandCount)
+
+    private init() {
+        lock.initialize(to: os_unfair_lock())
+        gains.initialize(repeating: 0, count: EqSettings.bandCount)
+    }
+
+    /// Copy the current gains without waiting. False = lock busy, caller keeps
+    /// whatever it read last time.
+    func tryCopy(into out: UnsafeMutablePointer<Double>) -> Bool {
+        guard os_unfair_lock_trylock(lock) else { return false }
+        out.update(from: gains, count: EqSettings.bandCount)
+        os_unfair_lock_unlock(lock)
+        return true
+    }
+
+    /// Blocking copy — for tap setup, which is not a real-time callback.
+    func copy(into out: UnsafeMutablePointer<Double>) {
+        os_unfair_lock_lock(lock)
+        out.update(from: gains, count: EqSettings.bandCount)
+        os_unfair_lock_unlock(lock)
+    }
+
+    /// Store the gains in dB. A disabled EQ is stored as all-zero, so the audio
+    /// thread never has to know about the on/off flag — flat means bypass.
+    func update(gains newGains: [Double], enabled: Bool) {
+        var next = [Double](repeating: 0, count: EqSettings.bandCount)
+        if enabled {
+            for i in 0..<min(newGains.count, next.count) {
+                let v = newGains[i]
+                next[i] = v.isFinite ? max(-EqSettings.maxDb, min(EqSettings.maxDb, v)) : 0
+            }
+        }
+        os_unfair_lock_lock(lock)
+        for i in 0..<EqSettings.bandCount { gains[i] = next[i] }
+        os_unfair_lock_unlock(lock)
+    }
+}
+
+// MARK: - Audio tap (equalizer + real visualizer levels)
 
 // Streamed/offline audio on iOS plays through AVPlayer (outside Web Audio), so the
-// JS analyser can't see it. An MTAudioProcessingTap on the player item taps the PCM
-// on a real-time audio thread; we run an FFT and push per-band 0..1 levels to JS
-// (throttled, on the main thread) to drive the visualizer.
+// JS analyser can't see it and the JS EQ can't shape it. An MTAudioProcessingTap on
+// the player item hands us the PCM on a real-time audio thread: we filter it in
+// place (that buffer is what continues to the output — see applyEq), then run an FFT
+// and push per-band 0..1 levels to JS (throttled, on the main thread) to drive the
+// visualizer.
 final class TapContext {
     weak var bridge: NativeAudioBridge?
     let bandCount = 24
@@ -34,9 +98,21 @@ final class TapContext {
     private var smoothed = [Float](repeating: 0, count: 24)
     private var lastSend: CFTimeInterval = 0
 
+    // EQ: everything below is allocated in prepare() and only read/written by the
+    // audio thread afterwards, so no buffer is ever allocated inside process().
+    private let eqBands = EqSettings.bandCount
+    private var eqSampleRate: Double = 44100
+    private var eqChannels = 0
+    private var eqFloat = false
+    private var eqTarget: UnsafeMutablePointer<Double>?  // gains JS asked for
+    private var eqCurrent: UnsafeMutablePointer<Double>? // gains we are actually at
+    private var eqCoeffs: UnsafeMutablePointer<Float>?   // 5 per band: b0 b1 b2 a1 a2
+    private var eqState: UnsafeMutablePointer<Float>?    // 4 per (channel, band)
+    private var eqActive = false
+
     init(bridge: NativeAudioBridge) { self.bridge = bridge }
 
-    func prepare() {
+    func prepare(format: AudioStreamBasicDescription) {
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
         window = .allocate(capacity: n)
         vDSP_hann_window(window!, vDSP_Length(n), Int32(vDSP_HANN_NORM))
@@ -44,6 +120,29 @@ final class TapContext {
         realp = .allocate(capacity: half)
         imagp = .allocate(capacity: half)
         mags = .allocate(capacity: half)
+
+        // The tap's processing format decides the filter: coefficients depend on the
+        // real sample rate, and the state array on the real channel count.
+        eqSampleRate = format.mSampleRate > 0 ? format.mSampleRate : 44100
+        eqChannels = max(1, Int(format.mChannelsPerFrame))
+        eqFloat = format.mFormatFlags & kAudioFormatFlagIsFloat != 0 && format.mBitsPerChannel == 32
+        let target = UnsafeMutablePointer<Double>.allocate(capacity: eqBands)
+        let current = UnsafeMutablePointer<Double>.allocate(capacity: eqBands)
+        let coeffs = UnsafeMutablePointer<Float>.allocate(capacity: eqBands * 5)
+        let state = UnsafeMutablePointer<Float>.allocate(capacity: eqBands * eqChannels * 4)
+        target.initialize(repeating: 0, count: eqBands)
+        coeffs.initialize(repeating: 0, count: eqBands * 5)
+        state.initialize(repeating: 0, count: eqBands * eqChannels * 4)
+        // Start *at* the saved curve instead of gliding up to it, so switching
+        // tracks doesn't sweep the EQ in from flat.
+        EqSettings.shared.copy(into: target)
+        current.initialize(from: target, count: eqBands)
+        eqTarget = target
+        eqCurrent = current
+        eqCoeffs = coeffs
+        eqState = state
+        updateCoefficients()
+        eqActive = (0..<eqBands).contains { current[$0] != 0 }
     }
 
     func teardown() {
@@ -53,9 +152,132 @@ final class TapContext {
         realp?.deallocate(); realp = nil
         imagp?.deallocate(); imagp = nil
         mags?.deallocate(); mags = nil
+        eqTarget?.deallocate(); eqTarget = nil
+        eqCurrent?.deallocate(); eqCurrent = nil
+        eqCoeffs?.deallocate(); eqCoeffs = nil
+        eqState?.deallocate(); eqState = nil
+        eqChannels = 0
+        eqActive = false
     }
 
     func process(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
+        guard frames > 0 else { return }
+        applyEq(bufferList, frames: frames)
+        analyse(bufferList, frames: frames)
+    }
+
+    // MARK: EQ
+
+    /// Shape the tap's PCM in place. This buffer is what AVPlayer sends downstream,
+    /// so filtering it here *is* the equalizer. It runs before the FFT below, which
+    /// makes the visualizer post-EQ — the same order as the desktop graph
+    /// (source → … → EQ → analyser).
+    private func applyEq(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
+        guard eqFloat, eqChannels > 0,
+              let target = eqTarget, let current = eqCurrent, let state = eqState else { return }
+
+        _ = EqSettings.shared.tryCopy(into: target)
+
+        // Glide toward the target so dragging a slider can't click: 25% of the
+        // remaining distance per buffer settles in ~100-200 ms. Coefficients are
+        // only recomputed while something is actually moving.
+        var moved = false
+        var active = false
+        for i in 0..<eqBands {
+            let delta = target[i] - current[i]
+            if abs(delta) > 0.001 {
+                current[i] += delta * 0.25
+                if abs(target[i] - current[i]) <= 0.001 { current[i] = target[i] }
+                moved = true
+            }
+            if current[i] != 0 { active = true }
+        }
+        if moved { updateCoefficients() }
+
+        guard active else {
+            // Flat curve: leave the PCM untouched, and drop the filter history so a
+            // later re-enable starts clean instead of ringing out an old buffer.
+            if eqActive { state.update(repeating: 0, count: eqBands * eqChannels * 4) }
+            eqActive = false
+            return
+        }
+        eqActive = true
+
+        let abl = UnsafeMutableAudioBufferListPointer(bufferList)
+        if abl.count >= eqChannels {
+            // Deinterleaved (what the tap normally hands out): one buffer per channel.
+            for ch in 0..<eqChannels {
+                guard let raw = abl[ch].mData else { continue }
+                filter(raw.assumingMemoryBound(to: Float.self), frames: frames, step: 1, channel: ch)
+            }
+        } else if abl.count == 1, Int(abl[0].mNumberChannels) == eqChannels,
+                  let raw = abl[0].mData {
+            let base = raw.assumingMemoryBound(to: Float.self)
+            for ch in 0..<eqChannels {
+                filter(base + ch, frames: frames, step: eqChannels, channel: ch)
+            }
+        }
+    }
+
+    /// Run one channel through the cascade of peaking sections (direct form 1, the
+    /// same topology and state layout Web Audio uses).
+    private func filter(_ p: UnsafeMutablePointer<Float>, frames: Int, step: Int, channel: Int) {
+        guard let coeffs = eqCoeffs, let state = eqState else { return }
+        for band in 0..<eqBands {
+            let c = coeffs + band * 5
+            // A 0 dB band is written as a literal pass-through, so skipping it here
+            // is exact, not an approximation.
+            if c[0] == 1 && c[1] == 0 && c[2] == 0 && c[3] == 0 && c[4] == 0 { continue }
+            let b0 = c[0], b1 = c[1], b2 = c[2], a1 = c[3], a2 = c[4]
+            let st = state + (channel * eqBands + band) * 4
+            var x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3]
+            var idx = 0
+            for _ in 0..<frames {
+                let x = p[idx]
+                let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+                x2 = x1; x1 = x
+                y2 = y1; y1 = y
+                p[idx] = y
+                idx += step
+            }
+            st[0] = x1; st[1] = x2; st[2] = y1; st[3] = y2
+        }
+        // A boosted band can push peaks past full scale; clip so the output stage
+        // gets valid samples instead of wrapping into a crackle.
+        var lo: Float = -1, hi: Float = 1
+        vDSP_vclip(p, step, &lo, &hi, p, step, vDSP_Length(frames))
+    }
+
+    /// RBJ-cookbook peaking coefficients, normalized by a0 — the same formulas
+    /// BiquadFilterNode uses, so a curve dialled in on the desktop sounds the same
+    /// here. Called on a gain change, never per buffer.
+    private func updateCoefficients() {
+        guard let current = eqCurrent, let coeffs = eqCoeffs else { return }
+        let nyquist = eqSampleRate / 2
+        for (band, f) in EqSettings.frequencies.enumerated() {
+            let out = coeffs + band * 5
+            let db = current[band]
+            // Nothing to shape at 0 dB, or above Nyquist at this sample rate.
+            guard abs(db) > 0.0005, f < nyquist else {
+                out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0; out[4] = 0
+                continue
+            }
+            let a = pow(10, db / 40) // sqrt of the linear gain
+            let w0 = 2 * Double.pi * f / eqSampleRate
+            let alpha = sin(w0) / (2 * EqSettings.q)
+            let cosw = cos(w0)
+            let a0 = 1 + alpha / a
+            out[0] = Float((1 + alpha * a) / a0)
+            out[1] = Float((-2 * cosw) / a0)
+            out[2] = Float((1 - alpha * a) / a0)
+            out[3] = Float((-2 * cosw) / a0)
+            out[4] = Float((1 - alpha / a) / a0)
+        }
+    }
+
+    // MARK: Levels
+
+    private func analyse(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
         guard let setup = fftSetup, let window, let samples, let realp, let imagp, let mags,
               frames > 0 else { return }
         let abl = UnsafeMutableAudioBufferListPointer(bufferList)
@@ -110,8 +332,10 @@ private let tapFinalize: MTAudioProcessingTapFinalizeCallback = { tap in
     ctx.takeUnretainedValue().teardown()
     ctx.release()
 }
-private let tapPrepare: MTAudioProcessingTapPrepareCallback = { tap, _, _ in
-    Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue().prepare()
+private let tapPrepare: MTAudioProcessingTapPrepareCallback = { tap, _, format in
+    Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap))
+        .takeUnretainedValue()
+        .prepare(format: format.pointee)
 }
 private let tapUnprepare: MTAudioProcessingTapUnprepareCallback = { tap in
     Unmanaged<TapContext>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue().teardown()
@@ -181,6 +405,12 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             }
         case "setVolume":
             if let vol = body["volume"] as? Float { player?.volume = vol }
+        case "setEq":
+            // Settings only — it touches no player and no now-playing state, so the
+            // EQ can never interfere with playback or the lock screen. The running
+            // tap picks the new curve up on its next buffer.
+            let gains = (body["gains"] as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } ?? []
+            EqSettings.shared.update(gains: gains, enabled: body["enabled"] as? Bool ?? false)
         case "setMetadata":
             setMetadata(
                 title: body["title"] as? String ?? "",

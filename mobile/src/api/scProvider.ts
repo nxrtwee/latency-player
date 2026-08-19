@@ -9,7 +9,7 @@ import Hls from 'hls.js'
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
-import { makeVolumeFader } from './volumeFade'
+import { makeTrackAudio } from './graphAudio'
 import { getNativeAudio } from './nativeAudio'
 
 const scProvider: PlaybackProvider = {
@@ -97,7 +97,10 @@ function createWeb(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
   const audio = new Audio()
   audio.preload = 'auto'
   const isHls = track.uri.includes('/stream/hls')
-  const fader = makeVolumeFader(audio)
+  // Starts on the plain volume fader and upgrades itself to the Web Audio graph
+  // (equalizer + normalization + real visualizer) once the source is known to be
+  // CORS-safe — see graphAudio.ts.
+  const ctl = makeTrackAudio(audio)
 
   audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
   audio.addEventListener('durationchange', () => {
@@ -121,7 +124,7 @@ function createWeb(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
 
   window.api
     .scResolveStream(track.uri)
-    .then((url) => {
+    .then(async (url) => {
       if (destroyed) return
       if (isHls && !url.startsWith('blob:') && Hls.isSupported()) {
         hls = new Hls({ enableWorker: true })
@@ -130,7 +133,14 @@ function createWeb(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
         })
         hls.loadSource(url)
         hls.attachMedia(audio)
+        // hls.js feeds a MediaSource, which is same-origin whatever the segments'
+        // host was — the graph is always safe here.
+        ctl.useGraph()
       } else {
+        // Before src: this may set crossOrigin, which only takes effect on a load
+        // started afterwards.
+        await ctl.useGraphIfAllowed(url)
+        if (destroyed) return
         audio.src = url
       }
       ready = true
@@ -142,11 +152,11 @@ function createWeb(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     play: () => { wantPlay = true; tryPlay() },
     pause: () => { wantPlay = false; audio.pause() },
     seek: (sec) => { if (ready) audio.currentTime = sec },
-    setVolume: (v) => fader.setVolume(v),
-    setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
+    setVolume: (v) => ctl.setVolume(v),
+    setNormalization: (db) => ctl.setNormalization(db),
+    setFade: (value, rampSec) => ctl.setFade(value, rampSec),
     destroy: () => {
-      destroyed = true; fader.destroy(); audio.pause()
+      destroyed = true; ctl.destroy(); audio.pause()
       if (hls) { hls.destroy(); hls = null }
       audio.removeAttribute('src'); audio.load()
     }

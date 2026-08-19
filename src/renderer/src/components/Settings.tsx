@@ -183,6 +183,7 @@ export function Settings(): JSX.Element {
   const setNormalizeVolume = usePlayer((s) => s.setNormalizeVolume)
   const crossfadeSec = usePlayer((s) => s.crossfadeSec)
   const setCrossfadeSec = usePlayer((s) => s.setCrossfadeSec)
+  const setEqOpen = usePlayer((s) => s.setEqOpen)
   const geniusFallback = usePlayer((s) => s.geniusFallback)
   const setGeniusFallback = usePlayer((s) => s.setGeniusFallback)
   const karaokeCrumble = usePlayer((s) => s.karaokeCrumble)
@@ -610,6 +611,21 @@ export function Settings(): JSX.Element {
                 </span>
               </div>
             </div>
+
+            {/* Equalizer — phone only. The desktop opens it from the right panel,
+                which the phone shell doesn't render (no room), so this row is its
+                only door there. Same `html.m` read-at-render gate as uiScale above. */}
+            {isPhoneShell && (
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('equalizer')}</span>
+                  <span className="set-row-sub">{t('eqRowSub')}</span>
+                </div>
+                <button className="sync-btn ghost" onClick={() => setEqOpen(true)}>
+                  {t('eqOpenBtn')}
+                </button>
+              </div>
+            )}
           </section>
 
           {/* Lyrics */}

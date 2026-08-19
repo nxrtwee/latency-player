@@ -14,6 +14,7 @@ import { ProfilePage } from '@renderer/components/ProfilePage'
 import { CommentsPage } from '@renderer/components/CommentsPage'
 import { LyricsView } from '@renderer/components/LyricsView'
 import { Settings } from '@renderer/components/Settings'
+import { Equalizer } from '@renderer/components/Equalizer'
 import { BgFraming } from '@renderer/components/BgFraming'
 import { Splash } from '@renderer/components/Splash'
 import { TopBar } from './shell/TopBar'
@@ -24,6 +25,7 @@ import { TokenSheet } from './shell/TokenSheet'
 import { installMediaSession } from './api/mediaSession'
 import { installResolvePrefetch } from './api/resolveCache'
 import { installNativeLevels } from './api/nativeLevels'
+import { installNativeEq } from './api/nativeEq'
 import { installStatusBar } from './api/statusBar'
 import { applyUiScale } from './uiScale'
 
@@ -37,9 +39,11 @@ import { applyUiScale } from './uiScale'
  * deviations are three pieces of chrome the desktop has no use for (TopBar,
  * Drawer, BottomTabs) plus the portrait.css layer.
  *
- * Deliberately NOT rendered: TitleBar (no OS window), Resizer (no pointer),
- * RightPanel (no room — its queue lives in the fullscreen player) and Equalizer
- * (only reachable from the right panel, and the mobile audio path has no EQ).
+ * Deliberately NOT rendered: TitleBar (no OS window), Resizer (no pointer) and
+ * RightPanel (no room — its queue lives in the fullscreen player). The Equalizer,
+ * which the desktop opens from that right panel, IS rendered: Settings gained a
+ * phone-only row that opens it. Its 10 bands are applied by the Web Audio graph on
+ * Android and by the native audio tap on iOS (mobile/src/api/nativeEq.ts).
  */
 export function MobileApp(): JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -55,6 +59,7 @@ export function MobileApp(): JSX.Element {
 
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const settingsOpen = usePlayer((s) => s.settingsOpen)
+  const eqOpen = usePlayer((s) => s.eqOpen)
   const framingOpen = usePlayer((s) => s.framingOpen)
 
   const theme = usePlayer((s) => s.theme)
@@ -111,9 +116,10 @@ export function MobileApp(): JSX.Element {
   }, [uiScale])
 
   // Bootstrap. The desktop's loaders (they all go through window.api, which the
-  // mobile shim implements) plus the four native installs that only exist here:
+  // mobile shim implements) plus the five native installs that only exist here:
   // lock-screen transport, neighbour stream prefetch, the native level tap that
-  // drives the visualizer, and the status-bar style.
+  // drives the visualizer, the EQ mirror into that same tap, and the status-bar
+  // style.
   const booted = useRef(false)
   useEffect(() => {
     if (booted.current) return
@@ -131,6 +137,7 @@ export function MobileApp(): JSX.Element {
     installMediaSession()
     installResolvePrefetch()
     installNativeLevels()
+    installNativeEq()
     installStatusBar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -262,6 +269,9 @@ export function MobileApp(): JSX.Element {
 
       {lyricsOpen && <LyricsView />}
       {settingsOpen && <Settings />}
+      {/* After Settings on purpose: it is opened FROM Settings, and with both being
+          full-bleed sheets at z-index 60 the later sibling is the one on top. */}
+      {eqOpen && <Equalizer />}
       {framingOpen && <BgFraming />}
       {/* Paste-a-token sign-in: driven imperatively by the shim's scLogin /
           ymLogin, so it renders nothing until a connect button asks. */}

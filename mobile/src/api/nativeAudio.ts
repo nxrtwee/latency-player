@@ -17,6 +17,8 @@ interface NativeAudioHandle {
   pause(): Promise<void>
   seek(time: number): Promise<void>
   setVolume(volume: number): Promise<void>
+  /** Push the 10-band EQ curve (dB per band) to the native tap filter. */
+  setEq(gains: number[], enabled: boolean): Promise<void>
   getPosition(): Promise<number>
   getDuration(): Promise<number>
   setMetadata(opts: { title: string; artist: string; artwork?: string; duration?: number }): Promise<void>
@@ -89,6 +91,7 @@ function getPlugin(): NativeAudioHandle | null {
     async pause() { send({ action: 'pause' }) },
     async seek(time: number) { send({ action: 'seek', time }) },
     async setVolume(volume: number) { send({ action: 'setVolume', volume }) },
+    async setEq(gains: number[], enabled: boolean) { send({ action: 'setEq', gains, enabled }) },
     async getPosition() { return requestNumber('getPosition', (r) => { posResolve = r }) },
     async getDuration() { return requestNumber('getDuration', (r) => { durResolve = r }) },
     async setMetadata(opts) { send({ action: 'setMetadata', title: opts.title, artist: opts.artist, artwork: opts.artwork, duration: opts.duration }) },

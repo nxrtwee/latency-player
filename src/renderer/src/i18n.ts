@@ -205,6 +205,14 @@ const dict: Record<string, { en: string; ru: string }> = {
     en: 'Works for both local files and SoundCloud streams.',
     ru: 'Работает и для локальных файлов, и для потоков SoundCloud.'
   },
+  // Phone wording: iOS filters every source in the native audio tap, Android only
+  // the ones Web Audio may touch (local, downloads, SoundCloud).
+  eqMobileScope: {
+    en: 'Works for local files, downloads and SoundCloud streams. Yandex streams: iOS only.',
+    ru: 'Работает для локальных файлов, скачанных треков и потоков SoundCloud. Поток Яндекс Музыки — только на iOS.'
+  },
+  eqRowSub: { en: 'Ten bands and presets', ru: '10 полос и пресеты' },
+  eqOpenBtn: { en: 'Open', ru: 'Открыть' },
   eqFlat: { en: 'Flat', ru: 'Ровный' },
   eqBassBoost: { en: 'Bass Boost', ru: 'Усиление баса' },
   eqTrebleBoost: { en: 'Treble Boost', ru: 'Усиление верхов' },

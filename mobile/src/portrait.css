@@ -2108,3 +2108,60 @@ html.m .framing-controls .sync-btn {
   justify-content: center;
 }
 
+/* ---------- 19. Equalizer (components/Equalizer.tsx) ---------- */
+
+/* §13 already turned `.modal` into a full-bleed sheet, and `.eq-panel` is one — so
+   this section is only about the contents: safe areas (the panel has no
+   `.modal-head`/`.modal-body`, so it owns its own insets) and finger-sized bands.
+   Note the `.modal.eq-panel` compound: `html.m .modal` would otherwise win on
+   specificity over a plain `html.m .eq-panel`. */
+html.m .modal.eq-panel {
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--m-safe-top) + 12px) 12px calc(var(--m-safe-pad) + 14px);
+  overflow-y: auto;
+}
+html.m .eq-header {
+  margin-bottom: 10px;
+}
+html.m .eq-header h2 {
+  font-size: 18px;
+}
+/* The sliders take whatever the sheet has left over, so the panel fills the screen
+   instead of leaving a gap under the presets. */
+html.m .eq-sliders {
+  flex: 1 1 auto;
+  gap: 2px;
+  padding: 6px 0 0;
+}
+html.m .eq-band {
+  gap: 6px;
+  min-width: 0;
+}
+/* A 6px-wide track is a mouse target. 30px is a finger's, and `touch-action: none`
+   keeps a vertical drag on the band from scrolling the sheet instead of moving the
+   slider. */
+html.m .eq-slider {
+  width: 30px;
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 170px;
+  touch-action: none;
+}
+html.m .eq-gain-val {
+  font-size: 12px;
+}
+html.m .eq-freq {
+  font-size: 11px;
+}
+html.m .eq-presets {
+  margin-top: 16px;
+}
+html.m .eq-preset-chip {
+  padding: 9px 13px;
+  font-size: 13px;
+}
+html.m .eq-note {
+  margin-top: 14px;
+}
+
