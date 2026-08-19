@@ -1418,6 +1418,24 @@ html.m .fsplayer-bg-btn {
   width: 38px;
   height: 38px;
 }
+/* The background popover opens BELOW the row, across the screen. Desktop anchors
+   it to the button with `right: 0; bottom: 52px` because there the corner stack
+   sits in the bottom-right; here the same stack is a row at the TOP, so `bottom`
+   threw the panel past the notch — off-screen and impossible to tap. Fixed insets
+   rather than a flipped anchor offset: the toggle is the last button in the row,
+   so a 240px panel hung off it overshoots one screen edge or the other (left with
+   `right: 0`, right with `left: 0`). `max-height` keeps it inside the viewport if
+   the reset rows ever make it tall. */
+html.m .kbg-menu {
+  position: fixed;
+  top: calc(var(--m-safe-top) + 54px);
+  left: 10px;
+  right: 10px;
+  bottom: auto;
+  width: auto;
+  max-height: calc(100dvh - var(--m-safe-top) - 74px);
+  overflow-y: auto;
+}
 /* The switch into the karaoke text (touch only) joins that same row, first, so
    the four buttons read as one group. `.on` marks the text view as active — the
    same cue `.kbg-toggle.on` already uses. */
@@ -2114,7 +2132,9 @@ html.m .framing-controls .sync-btn {
    this section is only about the contents: safe areas (the panel has no
    `.modal-head`/`.modal-body`, so it owns its own insets) and finger-sized bands.
    Note the `.modal.eq-panel` compound: `html.m .modal` would otherwise win on
-   specificity over a plain `html.m .eq-panel`. */
+   specificity over a plain `html.m .eq-panel`. Two entry points on the phone:
+   Settings → Sound, and the corner row of the fullscreen player (which the sheet
+   covers — backdrop 60 over the player's 40 — and returns to on close). */
 html.m .modal.eq-panel {
   display: flex;
   flex-direction: column;

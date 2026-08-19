@@ -31,6 +31,7 @@ import {
   CloseIcon,
   FilmIcon,
   LyricsIcon,
+  EqualizerIcon,
   HeartIcon,
   HeartFilledIcon,
   ShuffleIcon,
@@ -178,6 +179,15 @@ export function LyricsView(): JSX.Element {
   const cover = useCover(track)
   const hasCustomCover = usePlayer((s) => (track ? !!s.customCovers[track.id] : false))
 
+  // Equalizer button in the corner row — phone only. The desktop opens the EQ from
+  // the right panel, and its fullscreen player is a karaoke screen with no such
+  // row; the phone has no right panel at all, so this is the only way to reach the
+  // EQ without leaving the player. Read at render time — the mobile bundle adds
+  // `html.m` after its module graph is evaluated.
+  const isPhoneShell = document.documentElement.classList.contains('m')
+  const setEqOpen = usePlayer((s) => s.setEqOpen)
+  const eqOpen = usePlayer((s) => s.eqOpen)
+
   // Like / shuffle / repeat used to sit in a row of their own above the phone's
   // queue (FsQueue's old `.fs-extras`). They read better where the desktop puts
   // them: the heart in the cover's top-right corner like the right panel's, and
@@ -293,18 +303,20 @@ export function LyricsView(): JSX.Element {
   // at every other moment — desktop, the phone's player view, and the first
   // seconds after entering the text mode — so nothing can get stuck hidden. The
   // background menu holds the timer off: it is a popover the user is reading, and
-  // fading it out under them reads as a bug. A track with no lyrics holds it off
-  // too — hiding the chrome over "no text found" would leave a blank screen the
-  // user has to guess how to escape.
+  // fading it out under them reads as a bug. The equalizer sheet holds it off for a
+  // second reason — it covers the player, so the idle seconds would pass unseen and
+  // closing it would drop the user onto a stripped screen. A track with no lyrics
+  // holds it off too — hiding the chrome over "no text found" would leave a blank
+  // screen the user has to guess how to escape.
   const [chromeOn, setChromeOn] = useState(true)
   const hideRef = useRef<number>()
   const bumpChrome = useCallback(() => {
     setChromeOn(true)
     window.clearTimeout(hideRef.current)
-    if (immersive && !kbgMenu && status === 'ok') {
+    if (immersive && !kbgMenu && !eqOpen && status === 'ok') {
       hideRef.current = window.setTimeout(() => setChromeOn(false), CHROME_IDLE_MS)
     }
-  }, [immersive, kbgMenu, status])
+  }, [immersive, kbgMenu, eqOpen, status])
   useEffect(() => {
     bumpChrome()
     return () => window.clearTimeout(hideRef.current)
@@ -613,6 +625,15 @@ export function LyricsView(): JSX.Element {
                 <ClockIcon size={18} />
               </button>
             </>
+          )}
+          {isPhoneShell && (
+            <button
+              className="fsplayer-bg-btn"
+              onClick={() => setEqOpen(true)}
+              title={tr('equalizer')}
+            >
+              <EqualizerIcon size={18} />
+            </button>
           )}
           <div className="fsplayer-kbg" ref={kbgRef}>
             <button
