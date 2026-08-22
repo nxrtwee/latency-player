@@ -18,6 +18,7 @@
 
 import { usePlayer } from '@renderer/store'
 import type { Track } from '@shared/types'
+import { isDownloaded } from './offline'
 
 // SoundCloud track_authorization tokens and Yandex signed CDN URLs are short-lived,
 // so a resolved URL is only trusted for a couple of minutes. Neighbours are
@@ -67,6 +68,11 @@ function resolverFor(track: Track): ((uri: string) => Promise<string>) | null {
 
 function prefetch(track: Track | undefined): void {
   if (!track) return
+  // A downloaded track resolves off local storage in milliseconds, and the local
+  // URL is deliberately never cached (putResolve skips it), so pre-resolving one
+  // buys nothing — while on the Downloads screen, where every neighbour is
+  // downloaded, it used to open two more files alongside the playing one.
+  if (isDownloaded(track.id)) return
   const uri = track.uri
   if (!uri || getFreshResolve(uri) || inFlight.has(uri)) return
   const resolve = resolverFor(track)

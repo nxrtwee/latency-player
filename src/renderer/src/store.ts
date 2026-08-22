@@ -515,6 +515,11 @@ const initialRecent: PlayedTrack[] = (() => {
 })()
 
 const QUEUE_KEY = 'lp.queue'
+// Set while a restored session is being loaded, cleared once the app is still
+// alive a few seconds later. Finding it set at startup means loading that track
+// took the app down — see restoreQueue.
+const RESTORE_KEY = 'lp.restoring'
+const RESTORE_SAFE_MS = 8000
 
 const SEARCH_HISTORY_KEY = 'lp.searchHistory'
 const SEARCH_HISTORY_MAX = 8
@@ -2857,11 +2862,21 @@ export const usePlayer = create<PlayerState>((set, get) => {
       try {
         const raw = localStorage.getItem(QUEUE_KEY)
         if (!raw) return
+        // A restore flag left over from the previous launch means the app died
+        // while loading that very track, and repeating it would kill this launch
+        // too — an Android WebView running out of heap on a downloaded file did
+        // exactly that, and the only way out was clearing the app's storage. Bring
+        // the queue back, leave the track alone, and let the flag go.
+        const crashedRestoring = localStorage.getItem(RESTORE_KEY) === '1'
+        localStorage.removeItem(RESTORE_KEY)
         const saved = JSON.parse(raw) as { queue: Track[]; currentIndex: number }
         if (!Array.isArray(saved.queue) || saved.queue.length === 0) return
         set({ queue: saved.queue })
+        if (crashedRestoring) return
         if (saved.currentIndex >= 0 && saved.currentIndex < saved.queue.length) {
+          localStorage.setItem(RESTORE_KEY, '1')
           loadIndex(saved.currentIndex, false) // restore paused, ready to resume
+          window.setTimeout(() => localStorage.removeItem(RESTORE_KEY), RESTORE_SAFE_MS)
         }
       } catch {
         /* ignore corrupt state */

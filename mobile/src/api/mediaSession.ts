@@ -12,7 +12,8 @@
 //   • Browser (dev): the W3C Media Session API (navigator.mediaSession) works
 //     in Chrome for OS media overlay.
 import { usePlayer } from '@renderer/store'
-import { offlineArtForUri } from './offline'
+import { toFileUri } from './capfs'
+import { offlineArtFileForUri, offlineArtForUri } from './offline'
 
 // ---- native Android plugin bridge types --------------------------------------
 interface MediaImage { src: string; sizes?: string; type?: string }
@@ -139,7 +140,12 @@ function installAndroid(ms: NativeMediaSession): void {
     }
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
-      const art = offlineArtForUri(track.uri) || track.artwork
+      // Native code draws this notification, so a locally cached cover has to be
+      // handed over as file:// — the local-server URL the WebView uses is
+      // unreachable from outside it (see capfs.toFileUri). A downloaded track
+      // carries that form in `track.artwork` too, hence the second conversion.
+      const local = offlineArtFileForUri(track.uri)
+      const art = local || (track.artwork ? toFileUri(track.artwork) : null)
       void ms.setMetadata({
         title: track.title,
         artist: track.artist || 'SoundCloud',

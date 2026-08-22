@@ -11,11 +11,22 @@
 //     desktop browser there is no Filesystem plugin: only the metadata persists and
 //     the tracks come back flagged unavailable until re-imported.
 import type { Track } from '@shared/types'
-import { base64ToBlob, blobToBase64, DATA_DIR, fsPlugin, isNative } from './capfs'
+import {
+  base64ToBlob,
+  blobToBase64,
+  DATA_DIR,
+  fsPlugin,
+  isNative,
+  MAX_BRIDGE_BYTES,
+  streamUrlFor
+} from './capfs'
 import { md5 } from './md5'
+import { isNativeAudioAvailable } from './nativeAudio'
 import { pickFiles } from './picker'
 
-// id -> object URL for the current session's imported files
+// id -> playable URL for this session: the object URL of a file picked now, or
+// whatever resolveUrl() worked out for a copy already on disk (a local-server
+// stream URL, or a blob read back from it).
 const blobs = new Map<string, string>()
 
 export function getBlobUrl(id: string): string | undefined {
@@ -163,9 +174,11 @@ export function getKnownLocal(): Track[] {
 
 /**
  * A playable URL for an imported track: the session blob if it's still live,
- * otherwise the persisted copy read back into a fresh blob (same reasoning as
- * offline.ts — a blob: URL is same-origin and server-independent, which the
- * convertFileSrc form is not). Null when the file is gone.
+ * otherwise the persisted copy. Preferably streamed from Capacitor's local file
+ * server (nothing crosses the JS bridge — reading a whole media file through it
+ * takes the Android WebView down, see capfs.MAX_BRIDGE_BYTES); a blob read is the
+ * fallback, and the only option on iOS, where the native AVPlayer needs the bytes.
+ * Null when the file is gone.
  */
 export async function resolveUrl(id: string): Promise<string | null> {
   const live = blobs.get(id)
@@ -173,7 +186,23 @@ export async function resolveUrl(id: string): Promise<string | null> {
   const entry = readMeta().find((m) => m.id === id)
   const plugin = fsPlugin()
   if (!entry?.path || !plugin) return null
+  // iOS plays through a native AVPlayer that needs the bytes whatever their size;
+  // everything else streams, and only reads a file small enough to be safe.
+  const needsBytes = isNativeAudioAvailable()
+  if (!needsBytes) {
+    const streamed = await streamUrlFor(entry.path)
+    // Cached like a blob URL: it stays valid for the session, and re-resolving
+    // would re-probe the server on every replay.
+    if (streamed) {
+      blobs.set(id, streamed)
+      return streamed
+    }
+  }
   try {
+    if (!needsBytes) {
+      const st = await plugin.stat({ path: entry.path, directory: DATA_DIR }).catch(() => null)
+      if (st?.size && st.size > MAX_BRIDGE_BYTES) return null
+    }
     const { data } = await plugin.readFile({ path: entry.path, directory: DATA_DIR })
     if (!data) return null
     const url = URL.createObjectURL(base64ToBlob(data, entry.mime || 'audio/mpeg'))

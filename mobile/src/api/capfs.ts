@@ -45,6 +45,94 @@ export const fsPlugin = (): FilesystemPlugin | undefined => cap()?.Plugins?.File
 export const transferPlugin = (): FileTransferPlugin | undefined => cap()?.Plugins?.FileTransfer
 export const convertSrc = (): ((uri: string) => string) | undefined => cap()?.convertFileSrc
 
+/**
+ * Biggest file we are willing to pull through the Capacitor bridge.
+ *
+ * `Filesystem.readFile` hands the bytes back as ONE base64 string, and on Android
+ * that string is copied several times on its way out (Java String → JSON → the
+ * `evaluateJavascript` payload → a JNI UTF-8 buffer) before JS ever sees it. For a
+ * whole MP3 that is tens of megabytes of Java heap per read, and the WebView is
+ * killed rather than throwing — which is why a downloaded track used to take the
+ * app down with it, and kept doing it on every launch once the session was
+ * restored onto that track. Media files must stream instead (`streamUrlFor`); this
+ * cap only guards the last-resort fallback.
+ */
+export const MAX_BRIDGE_BYTES = 6 * 1024 * 1024
+
+/**
+ * A local-server URL (`https://localhost/_capacitor_file_/…`) turned back into the
+ * `file://` URI it stands for; anything else is returned unchanged.
+ *
+ * That host only exists inside the WebView — nothing is listening on the port — so
+ * code running OUTSIDE it (a native plugin loading a bitmap, say) has to be given
+ * the plain file instead. This undoes the prefix swap convertFileSrc performs.
+ */
+export function toFileUri(url: string): string {
+  const at = url.indexOf('/_capacitor_file_/')
+  return at >= 0 ? `file://${url.slice(at + '/_capacitor_file_'.length)}` : url
+}
+
+/** Session cache for `streamUrlFor`: does the local server actually serve files? */
+let serverServesFiles: boolean | null = null
+
+/**
+ * Can the page fetch this URL? A two-byte ranged GET, aborted as soon as the
+ * headers land — enough to tell a working local file server from a dead one
+ * without pulling the file into memory. 200 counts as well as 206: a server that
+ * ignores `Range` still feeds `<audio>` fine (it just can't seek past the buffer).
+ */
+async function servesUrl(url: string): Promise<boolean> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 2500)
+  try {
+    const res = await fetch(url, { headers: { Range: 'bytes=0-1' }, signal: ctl.signal })
+    return res.ok || res.status === 206
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+    ctl.abort()
+  }
+}
+
+/**
+ * A streamable http(s) URL for a file in app storage, or null.
+ *
+ * This is the way to play a local media file: Capacitor's own local server hands
+ * the bytes straight to the WebView's media stack (range requests included) and
+ * NOTHING crosses the JS bridge — see `MAX_BRIDGE_BYTES` for what happens when it
+ * does. The URL is same-origin, so the Web Audio graph (equalizer, visualizer)
+ * still attaches to it.
+ *
+ * The first call probes the server, because a `convertFileSrc` URL is silently
+ * dead when there is none (that is what pushed offline playback onto the bridge in
+ * the first place). The verdict is cached for the session; a missing file answers
+ * 404 and returns null without poisoning it.
+ */
+export async function streamUrlFor(path: string): Promise<string | null> {
+  const plugin = fsPlugin()
+  const conv = convertSrc()
+  if (!isNative() || !plugin || !conv) return null
+  if (serverServesFiles === false) return null
+  try {
+    const { uri } = await plugin.getUri({ path, directory: DATA_DIR })
+    const url = conv(uri)
+    if (!/^https?:/i.test(url)) return null // custom scheme — fetch() can't judge it
+    const ok = await servesUrl(url)
+    if (!ok) {
+      // Tell a broken server apart from a missing file: if a file we know exists
+      // isn't served either, stop probing for the rest of the session.
+      const st = await plugin.stat({ path, directory: DATA_DIR }).catch(() => null)
+      if (st?.size) serverServesFiles = false
+      return null
+    }
+    serverServesFiles = true
+    return url
+  } catch {
+    return null
+  }
+}
+
 /** base64 -> Blob (chunked to avoid building a huge argument list). */
 export function base64ToBlob(b64: string, type: string): Blob {
   const bin = atob(b64)
