@@ -10,6 +10,13 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 // middleware does the fetch server-side (Node), exactly like Electron's main
 // process on desktop and CapacitorHttp will on-device. The client passes the
 // real upstream URL via ?url= and any upstream headers via x-sc-headers (JSON).
+//
+// It also carries byte ranges, which is what makes the MP3-over-MediaSource
+// feeder (mobile/src/api/mp3Mse.ts) testable in a desktop browser: `Range` goes
+// upstream, and the upstream status, `Content-Range` and `Accept-Ranges` come back
+// untouched. The entity size rides along as `x-upstream-length`, because
+// `Content-Length` has to describe THIS response (a HEAD proxied through here has
+// no body at all).
 function scFetchProxy(): Plugin {
   return {
     name: 'sc-fetch-proxy',
@@ -32,6 +39,7 @@ function scFetchProxy(): Plugin {
               /* ignore malformed */
             }
           }
+          if (typeof req.headers['range'] === 'string') headers.Range = req.headers['range']
           // Method/body passthrough — Yandex rotor feedback is POSTed. The caller
           // signals the upstream method via x-sc-method and streams the body.
           const method =
@@ -50,6 +58,12 @@ function scFetchProxy(): Plugin {
           res.statusCode = upstream.status
           const ct = upstream.headers.get('content-type')
           if (ct) res.setHeader('content-type', ct)
+          for (const h of ['content-range', 'accept-ranges']) {
+            const v = upstream.headers.get(h)
+            if (v) res.setHeader(h, v)
+          }
+          const len = upstream.headers.get('content-length')
+          if (len) res.setHeader('x-upstream-length', len)
           res.end(buf)
         } catch (e) {
           res.statusCode = 502

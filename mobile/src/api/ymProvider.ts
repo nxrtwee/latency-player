@@ -4,11 +4,15 @@
 // proper prev/next-track on the lock screen. Blob: URLs (offline) are read into
 // base64 and sent to Swift, which writes to /tmp and plays via AVPlayer.
 //
-// On Android/browser, falls back to <audio> (same as before).
+// On Android/browser, plays through <audio>: either straight from the URL, or —
+// because Yandex's storage sends no CORS headers and a tainted element would make
+// the Web Audio graph play silence — by feeding ranged reads into a MediaSource
+// (mp3Mse.ts), which is what gets Android the equalizer.
 import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
 import { makeTrackAudio } from './graphAudio'
+import { feedMp3, mseMode, type Mp3Feed } from './mp3Mse'
 import { getNativeAudio } from './nativeAudio'
 
 const ymProvider: PlaybackProvider = {
@@ -84,8 +88,9 @@ function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
   const audio = new Audio()
   audio.preload = 'auto'
   // Offline (blob:) plays through the Web Audio graph — equalizer included. An
-  // online Yandex stream only joins it if their storage host answers with CORS,
-  // otherwise this stays exactly the volume fader it was (see graphAudio.ts).
+  // online Yandex stream joins it either because their storage host answers with
+  // CORS, or, since it doesn't, by being fed into a MediaSource by hand (mp3Mse.ts);
+  // only if that fails too does this fall back to the plain volume fader.
   const ctl = makeTrackAudio(audio)
 
   audio.addEventListener('timeupdate', () => cb.onTime(audio.currentTime))
@@ -102,6 +107,7 @@ function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
   let wantPlay = false
   let ready = false
   let destroyed = false
+  let feed: Mp3Feed | null = null
 
   const tryPlay = (): void => {
     if (ready && wantPlay) audio.play().catch((e) => cb.onError(String(e)))
@@ -112,8 +118,32 @@ function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     .then(async (url) => {
       if (destroyed) return
       // Before src: this may set crossOrigin, which only applies to a later load.
-      await ctl.useGraphIfAllowed(url)
+      // ('force' skips the probe to exercise the feeder against a CORS-clean host,
+      // but never against something already same-origin — that needs no help.)
+      const local = /^(blob:|data:)/i.test(url) || url.startsWith(location.origin + '/')
+      const graphed = mseMode() === 'force' && !local ? false : await ctl.useGraphIfAllowed(url)
       if (destroyed) return
+      if (!graphed) {
+        // CORS refused: routing this element through the graph would play silence,
+        // so feed the bytes into a MediaSource instead — same-origin by
+        // construction, equalizer and all. feedMp3 assigns src itself.
+        feed = await feedMp3(audio, url, {
+          durationSec: track.durationSec || 0,
+          onError: (m) => cb.onError(`Yandex: ${m}`)
+        })
+        if (destroyed) {
+          feed?.destroy()
+          return
+        }
+        if (feed) {
+          ctl.useGraph()
+          ready = true
+          tryPlay()
+          return
+        }
+        // No MediaSource, no byte ranges, or the first read failed — play the URL
+        // straight, on the volume fader, exactly as before.
+      }
       audio.src = url
       ready = true
       tryPlay()
@@ -127,7 +157,14 @@ function createWebYM(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
     setVolume: (v) => ctl.setVolume(v),
     setNormalization: (db) => ctl.setNormalization(db),
     setFade: (value, rampSec) => ctl.setFade(value, rampSec),
-    destroy: () => { destroyed = true; ctl.destroy(); audio.pause(); audio.removeAttribute('src'); audio.load() }
+    destroy: () => {
+      destroyed = true
+      feed?.destroy()
+      ctl.destroy()
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+    }
   }
 }
 

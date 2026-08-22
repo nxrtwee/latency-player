@@ -9,12 +9,13 @@
 // all missing.
 //
 // So we check first, then upgrade. `blob:` (offline downloads) and MediaSource
-// (hls.js) sources are same-origin by construction and always safe. A remote URL is
-// safe only if its host answers with Access-Control-Allow-Origin: one cheap GET
-// settles it, and the verdict is cached per host. SoundCloud's progressive CDN does
-// send it, so online SC streams get the full graph; hosts that don't (Yandex's
-// storage, at the time of writing) simply stay on the volume fader — the previous
-// behaviour, unchanged.
+// (hls.js, mp3Mse.ts) sources are same-origin by construction and always safe. A
+// remote URL is safe only if its host answers with Access-Control-Allow-Origin: one
+// cheap GET settles it, and the verdict is cached per host. SoundCloud's progressive
+// CDN does send it, so online SC streams get the full graph; a host that doesn't
+// (Yandex's storage, at the time of writing) makes `useGraphIfAllowed` answer false,
+// and the caller can then feed the same bytes into a MediaSource instead of settling
+// for the fader — see mp3Mse.ts.
 //
 // iOS never gets here: there playback is a native AVPlayer and the EQ lives in the
 // audio tap (see nativeEq.ts).
@@ -32,9 +33,11 @@ export interface TrackAudio {
   useGraph: () => void
   /**
    * Route through Web Audio if `url`'s host allows CORS. Sets `crossOrigin` on the
-   * element, so it must be awaited BEFORE assigning `src`.
+   * element, so it must be awaited BEFORE assigning `src`. Answers whether the
+   * graph is now attached — a caller that cares (see mp3Mse.ts) can then feed the
+   * bytes itself instead of losing the equalizer.
    */
-  useGraphIfAllowed: (url: string) => Promise<void>
+  useGraphIfAllowed: (url: string) => Promise<boolean>
   destroy: () => void
 }
 
@@ -131,23 +134,23 @@ export function makeTrackAudio(audio: HTMLAudioElement): TrackAudio {
     },
     useGraph: attach,
     useGraphIfAllowed: async (url) => {
-      if (graph) return
+      if (graph) return true
       let parsed: URL
       try {
         parsed = new URL(url, location.href)
       } catch {
-        return
+        return false
       }
       // blob:/data: and our own origin carry no taint.
       if (parsed.protocol === 'blob:' || parsed.protocol === 'data:' || parsed.origin === location.origin) {
         attach()
-        return
+        return true
       }
       const host = parsed.host
       const cached = readVerdicts()[host]
       const ok = typeof cached === 'boolean' ? cached : await probeCors(url)
       if (typeof cached !== 'boolean') writeVerdict(host, ok)
-      if (!ok) return
+      if (!ok) return false
 
       audio.crossOrigin = 'anonymous'
       attach()
@@ -162,6 +165,7 @@ export function makeTrackAudio(audio: HTMLAudioElement): TrackAudio {
         },
         { once: true }
       )
+      return true
     },
     destroy: () => {
       fader.destroy()
