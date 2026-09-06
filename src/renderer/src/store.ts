@@ -1099,7 +1099,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
         // call play() on an already-playing handle). A real user pause can't reach
         // here mid-crossfade: togglePlay cancels the crossfade first. This is the
         // sibling guard to the `if (crossfading) return` already in onEnded.
-        if (crossfading && !playing) return
+        if ((crossfading || pendingFadeIn > 0) && !playing) return
         set({ isPlaying: playing })
         updatePresence()
         updateMediaSession()
@@ -1342,7 +1342,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
     resetLeveler()
     // Arriving from a fade hand-over: start silent and let the first tick ramp up.
     pendingFadeIn = fadeInSec > 0 ? fadeInSec : 0
-    if (fadeInSec > 0) handle.setFade(0)
+    if (fadeInSec > 0) {
+      handle.setFade(0)
+      setTimeout(() => {
+        if (pendingFadeIn > 0 && token === activeToken) {
+          pendingFadeIn = 0
+          handle?.setFade(1)
+        }
+      }, 3500)
+    }
     if (autoplay) {
       handle.play()
       recordRecent(track)

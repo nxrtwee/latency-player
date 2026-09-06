@@ -766,6 +766,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     /// Duration (seconds) from the JS track metadata — AVPlayerItem.duration is NaN
     /// for progressive MP3, so we can't rely on it for the lock-screen progress bar.
     private var currentDuration: Double = 0
+    private var currentVolume: Float = 1.0
     private var nextHandler: NSObjectProtocol?
     private var prevHandler: NSObjectProtocol?
     private var playHandler: NSObjectProtocol?
@@ -807,7 +808,11 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
                 player?.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             }
         case "setVolume":
-            if let vol = body["volume"] as? Float { player?.volume = vol }
+            let volNum = (body["volume"] as? NSNumber)?.floatValue ?? (body["volume"] as? Double).map(Float.init)
+            if let vol = volNum {
+                currentVolume = vol
+                player?.volume = vol
+            }
         case "setEq":
             // Settings only — it touches no player and no now-playing state, so the
             // EQ can never interfere with playback or the lock screen. The running
@@ -905,6 +910,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         teardownPlayer()
         let item = AVPlayerItem(asset: asset)
         let av = AVPlayer(playerItem: item)
+        av.volume = currentVolume
         av.allowsExternalPlayback = true
         self.player = av
         attachObservers(av)

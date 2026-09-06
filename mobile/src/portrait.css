@@ -2352,10 +2352,22 @@ html.m .eq-note {
 }
 
 /* Personal radio setup sheet on mobile */
+html.m .radio-backdrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
 html.m .radio-panel {
-  width: min(440px, 94vw);
-  max-height: 90vh;
+  width: min(420px, 94vw);
+  height: auto;
+  max-height: 85vh;
+  margin: auto;
   border-radius: 18px;
+  border: 1px solid var(--border-2);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
 }
 html.m .radio-foot {
   flex-wrap: wrap;

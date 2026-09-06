@@ -98,7 +98,7 @@ export function RadioSetup(): JSX.Element {
   ]
 
   return (
-    <div className={`modal-backdrop ${closing ? 'closing' : ''}`} onMouseDown={close}>
+    <div className={`modal-backdrop radio-backdrop ${closing ? 'closing' : ''}`} onMouseDown={close}>
       <div className="modal radio-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="radio-head">
           <span className="radio-head-icon">
