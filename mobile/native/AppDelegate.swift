@@ -786,7 +786,7 @@ final class NativePlayer: NSObject {
         let asset = AVURLAsset(url: url, options: [
             "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": NativeAudioBridge.browserUA]
         ])
-        startPlayer(asset: asset)
+        startPlayer(asset: asset, tempFile: nil)
     }
 
     func loadBase64(_ b64: String) {
@@ -795,16 +795,16 @@ final class NativePlayer: NSObject {
             .appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).mp3")
         do {
             try data.write(to: tmp)
-            tempFileURL = tmp
         } catch {
             print("NativePlayer [\(id)]: failed to write temp file: \(error)")
             return
         }
-        startPlayer(asset: AVURLAsset(url: tmp))
+        startPlayer(asset: AVURLAsset(url: tmp), tempFile: tmp)
     }
 
-    private func startPlayer(asset: AVURLAsset) {
+    private func startPlayer(asset: AVURLAsset, tempFile: URL? = nil) {
         cleanupPlayer()
+        self.tempFileURL = tempFile
         let item = AVPlayerItem(asset: asset)
         let av = AVPlayer(playerItem: item)
         av.volume = max(0.0, min(1.0, masterVolume * fadeValue))
@@ -864,7 +864,9 @@ final class NativePlayer: NSObject {
                 if it.status == .failed {
                     let e = it.error as NSError?
                     let base = e?.localizedDescription ?? "AVPlayerItem failed"
-                    let msg = "\(base) [\(e?.domain ?? "?"):\(e?.code ?? 0)]"
+                    let underlying = (e?.userInfo[NSUnderlyingErrorKey] as? NSError)?.localizedDescription
+                    let detail = underlying != nil ? " (\(underlying!))" : ""
+                    let msg = "\(base)\(detail) [\(e?.domain ?? "?"):\(e?.code ?? 0)]"
                     self.bridge?.reportError(msg, id: self.id)
                 }
             }
@@ -1092,6 +1094,11 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         case "getDuration":
             let dur = players[handleId]?.duration() ?? 0
             sendEvent("durationResult", id: handleId, data: ["duration": dur])
+        case "openAuth":
+            guard let prov = body["provider"] as? String else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.presentAuth(provider: prov)
+            }
         default:
             break
         }
@@ -1224,6 +1231,343 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             self?.webView?.evaluateJavaScript(js)
         }
     }
+
+    // MARK: - In-App OAuth Presentation
+
+    func presentAuth(provider: String) {
+        let authVC = AuthViewController(provider: provider, bridge: self)
+        let nav = UINavigationController(rootViewController: authVC)
+        nav.modalPresentationStyle = .pageSheet
+        if #available(iOS 15.0, *) {
+            if let sheet = nav.sheetPresentationController {
+                sheet.detents = [.large()]
+                sheet.prefersGrabberVisible = true
+            }
+        }
+        guard let topVC = Self.topViewController() else {
+            reportError("Could not find view controller to present auth")
+            return
+        }
+        topVC.present(nav, animated: true, completion: nil)
+    }
+
+    static func topViewController(base: UIViewController? = nil) -> UIViewController? {
+        let root = base ?? AppDelegate.shared?.window?.rootViewController ?? UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        guard let current = root else { return nil }
+        if let nav = current as? UINavigationController {
+            return topViewController(base: nav.visibleViewController)
+        }
+        if let tab = current as? UITabBarController {
+            return topViewController(base: tab.selectedViewController)
+        }
+        if let presented = current.presentedViewController {
+            return topViewController(base: presented)
+        }
+        return current
+    }
+}
+
+// MARK: - AuthViewController
+
+final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIAdaptivePresentationControllerDelegate {
+    let provider: String
+    private weak var bridge: NativeAudioBridge?
+    private var webView: WKWebView!
+    private var isDone = false
+    private var isCleanedUp = false
+    private let spinner = UIActivityIndicatorView(style: .medium)
+
+    init(provider: String, bridge: NativeAudioBridge) {
+        self.provider = provider
+        self.bridge = bridge
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+        loadAuthPage()
+    }
+
+    private func setupUI() {
+        title = provider == "yandex" ? "Яндекс Музыка" : "SoundCloud"
+        view.backgroundColor = .systemBackground
+        navigationController?.presentationController?.delegate = self
+
+        let closeItem = UIBarButtonItem(
+            title: "Закрыть",
+            style: .plain,
+            target: self,
+            action: #selector(cancelTapped)
+        )
+        navigationItem.leftBarButtonItem = closeItem
+
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = WKWebsiteDataStore.default()
+        config.preferences.javaScriptEnabled = true
+
+        let userContent = WKUserContentController()
+        userContent.add(self, name: "latencyAuthCapture")
+
+        if provider == "soundcloud" {
+            let scHook = """
+            (function() {
+                if (window.__scAuthHooked) return;
+                window.__scAuthHooked = true;
+
+                function notify(auth) {
+                    if (!auth || typeof auth !== 'string') return;
+                    var m = auth.match(/OAuth\\s+([a-zA-Z0-9\\-_]+)/i);
+                    if (m && m[1]) {
+                        try {
+                            window.webkit.messageHandlers.latencyAuthCapture.postMessage({ token: m[1] });
+                        } catch(e) {}
+                    }
+                }
+
+                var _origFetch = window.fetch;
+                if (_origFetch) {
+                    window.fetch = function(input, init) {
+                        try {
+                            if (init && init.headers) {
+                                if (typeof init.headers.get === 'function') {
+                                    notify(init.headers.get('Authorization') || init.headers.get('authorization'));
+                                } else if (typeof init.headers === 'object') {
+                                    notify(init.headers['Authorization'] || init.headers['authorization']);
+                                }
+                            }
+                        } catch(e) {}
+                        return _origFetch.apply(this, arguments);
+                    };
+                }
+
+                var _origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+                    try {
+                        if (header && header.toLowerCase() === 'authorization') {
+                            notify(value);
+                        }
+                    } catch(e) {}
+                    return _origSetHeader.apply(this, arguments);
+                };
+
+                function scan() {
+                    try {
+                        var cookies = document.cookie || '';
+                        var m = cookies.match(/oauth_token=([^;]+)/);
+                        if (m && m[1]) notify('OAuth ' + decodeURIComponent(m[1]));
+                        for (var i = 0; i < localStorage.length; i++) {
+                            var k = localStorage.key(i);
+                            if (k && /token|oauth/i.test(k)) {
+                                var v = localStorage.getItem(k);
+                                if (v && v.indexOf('2-') !== -1) notify('OAuth ' + v);
+                            }
+                        }
+                    } catch(e) {}
+                }
+                setInterval(scan, 800);
+                scan();
+            })();
+            """
+            let script = WKUserScript(
+                source: scHook,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+            userContent.addUserScript(script)
+        }
+
+        config.userContentController = userContent
+
+        webView = WKWebView(frame: view.bounds, configuration: config)
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.customUserAgent = NativeAudioBridge.browserUA
+        view.addSubview(webView)
+
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.hidesWhenStopped = true
+        view.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+
+    private func loadAuthPage() {
+        spinner.startAnimating()
+        if provider == "yandex" {
+            let clientId = "23cabbbdc6cd418abb4b39c32c41195d"
+            let urlStr = "https://oauth.yandex.ru/authorize?response_type=token&client_id=\(clientId)"
+            if let url = URL(string: urlStr) {
+                webView.load(URLRequest(url: url))
+            }
+        } else {
+            if let url = URL(string: "https://soundcloud.com/signin") {
+                webView.load(URLRequest(url: url))
+            }
+        }
+    }
+
+    private func cleanUp() {
+        guard !isCleanedUp else { return }
+        isCleanedUp = true
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "latencyAuthCapture")
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
+    }
+
+    @objc private func cancelTapped() {
+        guard !isDone else { return }
+        isDone = true
+        cleanUp()
+        dismiss(animated: true) { [weak self] in
+            guard let self = self else { return }
+            self.bridge?.sendEvent("authCanceled", data: ["provider": self.provider])
+        }
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard !isDone else { return }
+        isDone = true
+        cleanUp()
+        bridge?.sendEvent("authCanceled", data: ["provider": provider])
+    }
+
+    private func complete(token: String) {
+        guard !isDone else { return }
+        isDone = true
+        cleanUp()
+        let cleanedToken = token.replacingOccurrences(of: "^OAuth\\s+", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.dismiss(animated: true) {
+                self.bridge?.sendEvent("authSuccess", data: [
+                    "provider": self.provider,
+                    "token": cleanedToken
+                ])
+            }
+        }
+    }
+
+    // MARK: - WKScriptMessageHandler
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "latencyAuthCapture",
+           let body = message.body as? [String: Any],
+           let token = body["token"] as? String, !token.isEmpty {
+            complete(token: token)
+        }
+    }
+
+    // MARK: - WKUIDelegate
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if navigationAction.targetFrame == nil {
+            webView.load(navigationAction.request)
+        }
+        return nil
+    }
+
+    // MARK: - WKNavigationDelegate
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        spinner.stopAnimating()
+        if provider == "yandex" {
+            if let url = webView.url, let token = extractYandexToken(from: url) {
+                complete(token: token)
+                return
+            }
+        } else if provider == "soundcloud" {
+            checkSoundCloudCookies()
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url {
+            if provider == "yandex", let token = extractYandexToken(from: url) {
+                decisionHandler(.cancel)
+                complete(token: token)
+                return
+            }
+            if let scheme = url.scheme?.lowercased(), scheme != "http" && scheme != "https" && scheme != "about" {
+                if UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                }
+                decisionHandler(.cancel)
+                return
+            }
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if provider == "yandex", let url = navigationResponse.response.url, let token = extractYandexToken(from: url) {
+            decisionHandler(.cancel)
+            complete(token: token)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
+            complete(token: token)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
+            complete(token: token)
+        }
+    }
+
+    private func extractYandexToken(from url: URL) -> String? {
+        if let frag = url.fragment, let token = parseToken(from: frag) {
+            return token
+        }
+        if let query = url.query, let token = parseToken(from: query) {
+            return token
+        }
+        let str = url.absoluteString
+        if let range = str.range(of: "access_token=([^&\\s#]+)", options: .regularExpression) {
+            let match = String(str[range])
+            let parts = match.components(separatedBy: "=")
+            if parts.count > 1 && !parts[1].isEmpty {
+                return parts[1].removingPercentEncoding ?? parts[1]
+            }
+        }
+        return nil
+    }
+
+    private func parseToken(from string: String) -> String? {
+        let items = string.components(separatedBy: "&")
+        for item in items {
+            let pair = item.components(separatedBy: "=")
+            if pair.count == 2 && pair[0] == "access_token" && !pair[1].isEmpty {
+                return pair[1].removingPercentEncoding ?? pair[1]
+            }
+        }
+        return nil
+    }
+
+    private func checkSoundCloudCookies() {
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self = self, !self.isDone else { return }
+            for c in cookies {
+                if c.name == "oauth_token" && !c.value.isEmpty {
+                    self.complete(token: c.value)
+                    return
+                }
+            }
+        }
+        webView.evaluateJavaScript("(function(){ try { var m = (document.cookie || '').match(/oauth_token=([^;]+)/); return m ? decodeURIComponent(m[1]) : null; } catch(e){ return null; } })()") { [weak self] res, _ in
+            guard let self = self, !self.isDone else { return }
+            if let token = res as? String, !token.isEmpty {
+                self.complete(token: token)
+            }
+        }
+    }
 }
 
 // MARK: - AppDelegate
@@ -1231,10 +1575,13 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
+    static weak var shared: AppDelegate?
+
     var window: UIWindow?
     private var bridgeInstalled = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AppDelegate.shared = self
         NativeAudioBridge.activatePlaybackSession()
         return true
     }

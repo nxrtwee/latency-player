@@ -106,11 +106,16 @@ export function createNativeAudio(): NativeAudioHandle | null {
         try {
           const resp = await fetch(url)
           const blob = await resp.blob()
-          const buf = await blob.arrayBuffer()
-          const bytes = new Uint8Array(buf)
-          let binary = ''
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-          const b64 = btoa(binary)
+          const b64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onloadend = () => {
+              const res = (reader.result as string) || ''
+              const idx = res.indexOf(',')
+              resolve(idx >= 0 ? res.slice(idx + 1) : res)
+            }
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(blob)
+          })
           send({ action: 'loadBase64', base64: b64, mimeType: blob.type || 'audio/mpeg' })
         } catch (e) {
           console.error('NativeAudio: failed to read blob', e)
@@ -163,5 +168,55 @@ export function getNativeAudio(): NativeAudioHandle | null {
 
 export function isNativeAudioAvailable(): boolean {
   return hasWKBridge()
+}
+
+export function onNativeGlobal(event: string, cb: ListenerCallback): () => void {
+  ensureBridgeWire()
+  const list = _globalListeners.get(event) ?? []
+  list.push(cb)
+  _globalListeners.set(event, list)
+  return () => {
+    const arr = _globalListeners.get(event)
+    if (arr) {
+      const i = arr.indexOf(cb)
+      if (i >= 0) arr.splice(i, 1)
+    }
+  }
+}
+
+export function openNativeAuth(
+  provider: 'yandex' | 'soundcloud'
+): Promise<{ token?: string; canceled?: boolean }> {
+  if (!hasWKBridge()) return Promise.resolve({ canceled: true })
+  ensureBridgeWire()
+  const bridge = (
+    window as unknown as {
+      webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } }
+    }
+  ).webkit.messageHandlers.latencyAudio
+
+  return new Promise((resolve) => {
+    let unsubs: (() => void)[] = []
+    const cleanup = () => {
+      unsubs.forEach((u) => u())
+      unsubs = []
+    }
+
+    const unsubSuccess = onNativeGlobal('authSuccess', (evt) => {
+      if (evt?.provider === provider) {
+        cleanup()
+        resolve({ token: evt?.token as string })
+      }
+    })
+    const unsubCancel = onNativeGlobal('authCanceled', (evt) => {
+      if (evt?.provider === provider) {
+        cleanup()
+        resolve({ canceled: true })
+      }
+    })
+    unsubs = [unsubSuccess, unsubCancel]
+
+    bridge.postMessage({ action: 'openAuth', provider })
+  })
 }
 

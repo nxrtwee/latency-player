@@ -26,6 +26,7 @@ import { openJsonFile, saveJsonFile } from './jsonfile'
 import { pickVideoFile } from './wallpaper'
 import { requestToken } from './tokenRequest'
 import { getFreshResolve, putResolve } from './resolveCache'
+import { isNativeAudioAvailable, openNativeAuth } from './nativeAudio'
 
 // The store's own pref seeding (volume, language, visual, …) lives in
 // mobile/src/defaults.ts, which main.tsx imports before this module — the store
@@ -193,6 +194,16 @@ const api = {
       if (known) return known
       sc.setToken('') // stored token went stale — fall through and re-ask
     }
+    if (isNativeAudioAvailable()) {
+      const res = await openNativeAuth('soundcloud')
+      if (res.token) {
+        sc.setToken(res.token)
+        const me = await sc.getMe()
+        if (me) return me
+        sc.setToken('')
+      }
+      return null
+    }
     const accepted = await requestToken('sc', async (raw) => {
       sc.setToken(raw)
       if (await sc.getMe()) return true
@@ -249,6 +260,16 @@ const api = {
       const known = await ym.getMe()
       if (known) return known
       ym.setToken('')
+    }
+    if (isNativeAudioAvailable()) {
+      const res = await openNativeAuth('yandex')
+      if (res.token) {
+        ym.setToken(res.token)
+        const me = await ym.getMe()
+        if (me) return me
+        ym.setToken('')
+      }
+      return null
     }
     const accepted = await requestToken('ym', async (raw) => {
       ym.setToken(raw)
