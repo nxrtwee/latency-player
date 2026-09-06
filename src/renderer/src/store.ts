@@ -4,6 +4,24 @@ import type { PlaybackCallbacks, PlaybackHandle } from './providers/types'
 import { getProvider } from './providers/registry'
 import { makeupGainDb, DEFAULT_TARGET_LUFS } from '@shared/loudness'
 import {
+  arrangeRadio,
+  gatherCandidates,
+  inScope,
+  parseRadioConfig,
+  readSeen,
+  rememberSeen,
+  resolveSeeds,
+  DEFAULT_RADIO_CONFIG,
+  type RadioConfig
+} from './radio'
+import {
+  setLevelerConfig,
+  resetLeveler,
+  getTrebleBoost,
+  setTrebleBoost as setEqTrebleBoost,
+  type LevelerStrength
+} from './audio/analyser'
+import {
   buildLikesBundle,
   likesBundleFilename,
   mergeLikes,
@@ -62,11 +80,27 @@ export interface Mix {
   tracks: Track[]
 }
 
+/**
+ * One visited place, held as the ARGUMENT its opener takes rather than as a state
+ * snapshot: going back re-runs `openArtist`/`openAlbum`/… , which re-fetches the
+ * page. That costs a request, but it is the same path the UI already uses, so
+ * there is no second way to build a page that could drift from the first.
+ */
+export type NavEntry =
+  | { kind: 'source'; source: Source }
+  | { kind: 'playlist'; id: string }
+  | { kind: 'info'; service: InfoService }
+  | { kind: 'artist'; artist: Artist }
+  | { kind: 'album'; album: Album }
+  | { kind: 'mix'; mix: Mix }
+
 interface PlayerState {
   // navigation
   source: Source
   selectedPlaylistId: string | null
   infoService: InfoService
+  /** Places behind the current one, oldest first. Session-only (not persisted). */
+  navBack: NavEntry[]
 
   // library
   tracks: Track[]
@@ -132,6 +166,14 @@ interface PlayerState {
   /** rotor station id backing the active wave (`user:onyourwave`, `artist:<id>`,
    *  `track:<id>`) — drives top-up + feedback. null when not on a Yandex station. */
   waveStationId: string | null
+
+  // personal radio (our own, built from likes — see radio.ts)
+  /** null until the user has been through the setup sheet. */
+  radioConfig: RadioConfig | null
+  radioSetupOpen: boolean
+  /** true while the queue is our endless personal radio. */
+  radioActive: boolean
+  radioLoading: boolean
 
   // soundcloud account
   scAuth: Artist | null
@@ -264,11 +306,17 @@ interface PlayerState {
   // per-track metadata (Yandex R128 / local ReplayGain). Target in LUFS.
   normalizeVolume: boolean
   normalizeTargetLufs: number
+  /** How hard the leveler works once normalization is on. See audio/leveler.ts. */
+  levelerStrength: LevelerStrength
+  /** EQ "treble lift" preset, added on top of the user's own bands. */
+  trebleBoost: boolean
   // crossfade duration in seconds between adjacent queued tracks (0 = off).
   crossfadeSec: number
 
   // navigation actions
   setSource: (source: Source) => void
+  /** Reopen the previous place. No-op with an empty history. */
+  goBack: () => void
   openPlaylist: (id: string) => void
   openInfo: (service: InfoService) => void
 
@@ -341,6 +389,13 @@ interface PlayerState {
   startTrackRadio: (track: Track) => Promise<void>
   startArtistRadio: (track: Track) => Promise<void>
   startArtistRadioById: (artistId: string, provider: Track['providerId'], name: string) => Promise<void>
+
+  // personal radio (own, service-independent — see radio.ts)
+  openRadioSetup: () => void
+  closeRadioSetup: () => void
+  /** Save the config and (optionally) start playing straight away. */
+  saveRadioConfig: (cfg: RadioConfig, play?: boolean) => Promise<void>
+  startPersonalRadio: () => Promise<void>
 
   // profile
   setProfileName: (name: string) => void
@@ -445,6 +500,8 @@ interface PlayerState {
   toggleAutopilot: () => void
   setNormalizeVolume: (v: boolean) => void
   setNormalizeTargetLufs: (n: number) => void
+  setLevelerStrength: (s: LevelerStrength) => void
+  setTrebleBoost: (v: boolean) => void
   setCrossfadeSec: (n: number) => void
 }
 
@@ -462,6 +519,19 @@ let activeToken = 0
 let incomingToken = 0
 let crossfading = false
 let crossfadeTimer: ReturnType<typeof setTimeout> | null = null
+/**
+ * Seconds the NEXT handle should fade in over, once it actually starts producing
+ * sound. Set by loadIndex, consumed by the first position tick — see onTime.
+ */
+let pendingFadeIn = 0
+/** The same, for the incoming handle of an overlapping crossfade. */
+let pendingIncomingFadeIn = 0
+/**
+ * A sequential (no-overlap) transition waiting to hand over: which queue index to
+ * load, over how long to fade the new track in, and the position at which the
+ * outgoing track runs out. See startSequentialFade.
+ */
+let sequentialPending: { index: number; dur: number; at: number } | null = null
 
 // Real-listening-time accounting. `lastTickPos` is the previous reported play
 // position for the current track; positive deltas under 2s are summed into the
@@ -539,6 +609,11 @@ const readNum = (key: string, def: number): number => {
   if (raw === null) return def
   const v = Number(raw)
   return Number.isFinite(v) ? v : def
+}
+
+function initialLevelerStrength(): LevelerStrength {
+  const raw = localStorage.getItem('lp.levelerStrength')
+  return raw === 'light' || raw === 'strong' ? raw : 'medium'
 }
 
 export const usePlayer = create<PlayerState>((set, get) => {
@@ -733,21 +808,34 @@ export const usePlayer = create<PlayerState>((set, get) => {
   async function extendQueueWithRelated(): Promise<boolean> {
     const { queue } = get()
     if (queue.length === 0) return false
-    // Seed from the most recent SoundCloud track in the queue (newest first).
-    const seed = [...queue].reverse().find((t) => t.providerId === 'soundcloud' && t.id.startsWith('sc:'))
+    // Seed from a RANDOM one of the last few SoundCloud tracks rather than always the
+    // newest: related-tracks is deterministic, so a fixed seed walks the same path
+    // every time and the station starts repeating itself.
+    const candidates = [...queue]
+      .reverse()
+      .filter((t) => t.providerId === 'soundcloud' && t.id.startsWith('sc:'))
+      .slice(0, 5)
+    const seed = candidates.length
+      ? candidates[Math.floor(Math.random() * candidates.length)]
+      : undefined
     if (!seed) return false
 
     set({ autopilotLoading: true })
     try {
       const related = await window.api.scRelated(seed.id.slice(3))
       const have = new Set(get().queue.map((t) => t.id))
-      const fresh = related.filter((t) => !have.has(t.id))
+      const seen = readSeen()
+      let fresh = related.filter((t) => !have.has(t.id) && !seen.has(t.id))
+      // Everything already served? Better a repeat than silence.
+      if (fresh.length === 0) fresh = related.filter((t) => !have.has(t.id))
       if (fresh.length === 0) {
         set({ autopilotLoading: false })
         return false
       }
+      const arranged = arrangeRadio(fresh)
+      rememberSeen(arranged.map((t) => t.id))
       const startIndex = get().queue.length
-      set({ queue: [...get().queue, ...fresh], autopilotLoading: false })
+      set({ queue: [...get().queue, ...arranged], autopilotLoading: false })
       loadIndex(startIndex, true)
       persistQueue()
       return true
@@ -788,21 +876,36 @@ export const usePlayer = create<PlayerState>((set, get) => {
    * plus its related tracks and turn on autopilot, so it keeps extending from the
    * newest SoundCloud track as it plays. SoundCloud exposes no first-class radio,
    * so this related-seeded autopilot is the closest equivalent.
+   *
+   * `scRelated` is deterministic — the same track always answers with the same list in
+   * the same order — so a station started twice used to be the same station twice. Two
+   * things fix that without turning it into a shuffle: the pool is widened by expanding
+   * a random one of the neighbours as well, and everything the radio has served lately
+   * is skipped (radio.ts owns that memory). The clicked track still plays first.
    */
   async function startScStation(track: Track): Promise<void> {
     if (!track.id.startsWith('sc:')) return
     try {
       const related = await window.api.scRelated(track.id.slice(3))
-      const seen = new Set<string>()
-      const queue: Track[] = []
-      for (const t of [track, ...related]) {
-        if (!seen.has(t.id)) {
-          seen.add(t.id)
-          queue.push(t)
+      const seen = readSeen()
+      let pool = related.filter((t) => t.id !== track.id && !seen.has(t.id))
+      // Widen from a neighbour, so the second run explores a different corner.
+      const branch = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+      if (branch?.id.startsWith('sc:')) {
+        try {
+          const more = await window.api.scRelated(branch.id.slice(3))
+          const have = new Set([track.id, ...pool.map((t) => t.id)])
+          pool = [...pool, ...more.filter((t) => !have.has(t.id) && !seen.has(t.id))]
+        } catch {
+          /* the first batch is enough */
         }
       }
+      // Nothing new left? Fall back to the plain list rather than refusing to play.
+      if (pool.length === 0) pool = related.filter((t) => t.id !== track.id)
+      const queue = arrangeRadio(pool, track)
       if (queue.length === 0) return
-      set({ queue, waveActive: false, waveStationId: null, autopilot: true })
+      rememberSeen(queue.map((t) => t.id))
+      set({ queue, waveActive: false, waveStationId: null, radioActive: false, autopilot: true })
       try {
         localStorage.setItem('lp.autopilot', '1')
       } catch {
@@ -813,6 +916,51 @@ export const usePlayer = create<PlayerState>((set, get) => {
     } catch {
       /* best-effort */
     }
+  }
+
+  /**
+   * Personal radio: gather a batch around a random handful of the configured seeds and
+   * either start playing it or append it to what is already queued.
+   */
+  async function topUpRadio(playFirstNew: boolean): Promise<boolean> {
+    const cfg = get().radioConfig
+    if (!cfg) return false
+    const likes = mergedLikes()
+    const seeds = resolveSeeds(cfg, likes)
+    if (!seeds.length) return false
+    set({ radioLoading: true })
+    try {
+      const fresh = await gatherCandidates(seeds, cfg, window.api as never, get().ymAuth != null)
+      const have = new Set(get().queue.map((t) => t.id))
+      const pool = fresh.filter((t) => !have.has(t.id))
+      if (pool.length === 0) {
+        set({ radioLoading: false })
+        return false
+      }
+      const arranged = arrangeRadio(pool)
+      rememberSeen(arranged.map((t) => t.id))
+      const startIndex = get().queue.length
+      set({ queue: [...get().queue, ...arranged], radioLoading: false })
+      if (playFirstNew) loadIndex(startIndex, true)
+      persistQueue()
+      return true
+    } catch {
+      set({ radioLoading: false })
+      return false
+    }
+  }
+
+  /** Liked tracks from both places, newest first, deduped — the radio's raw material. */
+  function mergedLikes(): Track[] {
+    const out: Track[] = []
+    const seen = new Set<string>()
+    for (const t of [...get().likes, ...get().scLikes]) {
+      if (t?.id && !seen.has(t.id)) {
+        seen.add(t.id)
+        out.push(t)
+      }
+    }
+    return out
   }
 
   const extendQueueWithWave = (): Promise<boolean> => topUpWave(true)
@@ -860,6 +1008,21 @@ export const usePlayer = create<PlayerState>((set, get) => {
   }
 
   /**
+   * Hand the leveler its config. Metadata makeup (above) and this are two halves of
+   * one setting: the makeup uses a track's own measured loudness when the service
+   * published it, the leveler measures whatever is playing and evens it out — which
+   * is the only half that does anything for SoundCloud or an untagged file.
+   */
+  function pushLeveler(): void {
+    const { normalizeVolume, normalizeTargetLufs, levelerStrength } = get()
+    setLevelerConfig({
+      enabled: normalizeVolume,
+      targetLufs: normalizeTargetLufs,
+      strength: levelerStrength
+    })
+  }
+
+  /**
    * Build the playback callbacks for a handle tagged with `token`. Only the
    * handle whose token equals `activeToken` mutates shared state — so a still-
    * fading-in incoming handle stays inert until it's promoted.
@@ -868,7 +1031,26 @@ export const usePlayer = create<PlayerState>((set, get) => {
     const active = (): boolean => token === activeToken
     return {
       onTime: (sec) => {
-        if (!active()) return
+        // The incoming handle of a crossfade reports too, and this is the one thing
+        // it is allowed to do before promotion: start its own fade-in, for the same
+        // reason the active handle's is deferred (below).
+        if (!active()) {
+          if (token === incomingToken && pendingIncomingFadeIn > 0 && sec > 0) {
+            const rampSec = pendingIncomingFadeIn
+            pendingIncomingFadeIn = 0
+            incoming?.setFade(1, rampSec)
+          }
+          return
+        }
+        // Start a pending fade-in on the first tick that shows real progress: a
+        // handle resolves its stream asynchronously (and iOS then buffers), so a
+        // ramp begun at load time would run out while the track was still silent
+        // and the audio would arrive at full volume — the fade would be inaudible.
+        if (pendingFadeIn > 0 && sec > 0) {
+          const rampSec = pendingFadeIn
+          pendingFadeIn = 0
+          handle?.setFade(1, rampSec)
+        }
         // Accumulate REAL listened time: only positive sub-2s deltas while playing
         // count (ignores the jump from a seek or the reset on a new track).
         const d = sec - lastTickPos
@@ -889,6 +1071,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
           set({ positionSec: sec })
         }
         maybeStartCrossfade(sec)
+        // Tick-driven safety net for the sequential hand-over (see
+        // finishSequentialFade): the outgoing track has run out, so switch now even
+        // if its timer hasn't fired.
+        if (sequentialPending && sec >= sequentialPending.at - 0.05) finishSequentialFade()
         const nowMs = Date.now()
         if (nowMs - lastNpPublish > 1000) {
           lastNpPublish = nowMs
@@ -938,6 +1124,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
       },
       onEnded: () => {
         if (!active()) return
+        // A sequential fade is running and the outgoing track has just run out —
+        // hand over now instead of waiting for a timer that may be throttled.
+        if (sequentialPending) return finishSequentialFade()
         // During a crossfade the promotion timer advances us — don't double-skip.
         if (crossfading) return
         const { repeat } = get()
@@ -961,6 +1150,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
       incoming.destroy()
       incoming = null
     }
+    pendingIncomingFadeIn = 0
+    sequentialPending = null
     if (crossfading) handle?.setFade(1)
     crossfading = false
   }
@@ -977,7 +1168,60 @@ export const usePlayer = create<PlayerState>((set, get) => {
     if (nextIndex >= queue.length) return // queue end → wave/autopilot handles it
     const remaining = durationSec - sec
     if (remaining > crossfadeSec || remaining <= 0.2) return
-    startCrossfade(nextIndex, Math.min(crossfadeSec, remaining))
+    const dur = Math.min(crossfadeSec, remaining)
+    // A platform with one shared player can't have both tracks live at once, so it
+    // gets the sequential transition instead (see PlaybackHandle.canOverlap).
+    if (handle && handle.canOverlap === false) {
+      // That transition leans on JS timers, and iOS suspends those with the app. A
+      // stalled fade would mean the next track never starts, so while nobody is
+      // looking we skip it and let onEnded advance the queue the way it always does.
+      if (!document.hidden) startSequentialFade(nextIndex, dur)
+      return
+    }
+    startCrossfade(nextIndex, dur)
+  }
+
+  /**
+   * The no-overlap hand-over (iOS). Fades the outgoing track down over `dur`, and
+   * only when it's silent loads the next one, which fades in from zero.
+   *
+   * `dur` always ends where the track does (the caller starts this once the
+   * remaining time has dropped to it), so nothing is cut short and no silence is
+   * inserted — what's missing next to a real crossfade is the overlap, not the
+   * smoothness. Attempting the overlap is what broke playback here: a second
+   * handle re-points the single AVPlayer at the new item (an instant cut), and
+   * retiring the old handle then pauses the player the new track is using.
+   */
+  function startSequentialFade(nextIndex: number, dur: number): void {
+    const { queue, durationSec } = get()
+    if (!queue[nextIndex]) return
+    // Same flag the overlapping path uses: it makes onEnded defer to this timer
+    // (the outgoing track hits its natural end mid-fade) and keeps the `pause`
+    // that comes with that end from being mistaken for a user pause.
+    crossfading = true
+    sequentialPending = { index: nextIndex, dur, at: durationSec }
+    handle?.setFade(0, dur)
+    crossfadeTimer = setTimeout(finishSequentialFade, Math.round(dur * 1000))
+  }
+
+  /**
+   * Hand over to the faded-in track. Driven by the timer above and, as a fallback,
+   * by the position ticks (which come from the native player and keep arriving when
+   * a locked screen throttles timers — losing the fade is survivable, never
+   * advancing is not).
+   */
+  function finishSequentialFade(): void {
+    const pending = sequentialPending
+    if (!pending) return
+    sequentialPending = null
+    if (crossfadeTimer) {
+      clearTimeout(crossfadeTimer)
+      crossfadeTimer = null
+    }
+    crossfading = false
+    // Hidden ⇒ the fade-in's ramp would be throttled too, and a silent track is
+    // worse than an abrupt one.
+    loadIndex(pending.index, true, document.hidden ? 0 : pending.dur)
   }
 
   /** Start playing `nextIndex` behind the current track and cross-fade over `dur`. */
@@ -1002,7 +1246,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
     inc.setNormalization(normDbFor(track))
     inc.setFade(0)
     inc.play()
-    inc.setFade(1, dur)
+    // The ramp waits for the incoming track's first tick (see onTime) — starting it
+    // here would spend the fade while the stream was still resolving.
+    pendingIncomingFadeIn = dur
 
     // Tell the rotor the outgoing wave track finished, fade it out, and attribute
     // the incoming track as the one now started/recorded (it's what plays next).
@@ -1023,11 +1269,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
     const newHandle = incoming
     incoming = null
+    // If the incoming track was slow enough that its fade-in never started, it is
+    // still silent — promote it at full level rather than to nothing.
+    if (pendingIncomingFadeIn > 0) {
+      pendingIncomingFadeIn = 0
+      newHandle.setFade(1)
+    }
     handle?.destroy()
     handle = newHandle
     activeToken = incomingToken
     crossfading = false
     lastTickPos = 0
+    resetLeveler()
     const track = get().queue[nextIndex]
     // The promoted handle is already playing; its `play` event fired while it was
     // still the inactive (incoming) token and was swallowed, so force isPlaying
@@ -1044,7 +1297,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     void maybePrefetchWave()
   }
 
-  function loadIndex(index: number, autoplay: boolean): void {
+  function loadIndex(index: number, autoplay: boolean, fadeInSec = 0): void {
     cancelCrossfade()
     const { queue, volume } = get()
     // Tell the rotor the outgoing wave track finished before we switch.
@@ -1084,6 +1337,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
     handle = provider.createPlayback(playTrack, makeCallbacks(token))
     handle.setVolume(volume)
     handle.setNormalization(normDbFor(track))
+    // New track, new loudness: the leveler must measure this one rather than carry
+    // the last one's level over (audio/leveler.ts explains why that matters).
+    resetLeveler()
+    // Arriving from a fade hand-over: start silent and let the first tick ramp up.
+    pendingFadeIn = fadeInSec > 0 ? fadeInSec : 0
+    if (fadeInSec > 0) handle.setFade(0)
     if (autoplay) {
       handle.play()
       recordRecent(track)
@@ -1120,6 +1379,49 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  // ---- navigation history ----------------------------------------------------
+  // Session-only, and deliberately so: a back stack that outlived a restart would
+  // offer to return to a page last seen days ago.
+  const NAV_MAX = 24
+  /** True while goBack reopens a page, so that reopening doesn't re-push it. */
+  let navRestoring = false
+
+  /** Where we are now, in the form its opener would take. */
+  function currentNav(): NavEntry {
+    const s = get()
+    if (s.source === 'playlist' && s.selectedPlaylistId)
+      return { kind: 'playlist', id: s.selectedPlaylistId }
+    if (s.source === 'info') return { kind: 'info', service: s.infoService }
+    if (s.source === 'artist' && s.selectedArtist)
+      return { kind: 'artist', artist: s.selectedArtist }
+    if (s.source === 'album' && s.selectedAlbum) return { kind: 'album', album: s.selectedAlbum }
+    if (s.source === 'mix' && s.selectedMix) return { kind: 'mix', mix: s.selectedMix }
+    return { kind: 'source', source: s.source }
+  }
+
+  function sameNav(a: NavEntry, b: NavEntry): boolean {
+    if (a.kind === 'source' && b.kind === 'source') return a.source === b.source
+    if (a.kind === 'playlist' && b.kind === 'playlist') return a.id === b.id
+    if (a.kind === 'info' && b.kind === 'info') return a.service === b.service
+    if (a.kind === 'artist' && b.kind === 'artist') return a.artist.id === b.artist.id
+    if (a.kind === 'album' && b.kind === 'album') return a.album.id === b.album.id
+    if (a.kind === 'mix' && b.kind === 'mix') return a.mix.id === b.mix.id
+    return false
+  }
+
+  /**
+   * Record the current place before `target` takes over. Every navigation action
+   * calls this with what it is about to open, which is what keeps re-selecting the
+   * page you are already on (tapping a tab twice, reopening the same artist) out of
+   * the history — so back always moves.
+   */
+  function pushNav(target: NavEntry): void {
+    if (navRestoring) return
+    const from = currentNav()
+    if (sameNav(from, target)) return
+    set({ navBack: [...get().navBack, from].slice(-NAV_MAX) })
+  }
+
   // Register the OS media-key / overlay button handlers once at startup.
   bindMediaSessionHandlers()
 
@@ -1127,6 +1429,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     source: 'home',
     selectedPlaylistId: null,
     infoService: 'soundcloud',
+    navBack: [],
 
     tracks: [],
     folders: [],
@@ -1176,6 +1479,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
     myWave: null,
     waveActive: false,
     waveStationId: null,
+
+    radioConfig: parseRadioConfig(localStorage.getItem('lp.radio')),
+    radioSetupOpen: false,
+    radioActive: false,
+    radioLoading: false,
 
     scAuth: null,
     scConnecting: false,
@@ -1318,17 +1626,42 @@ export const usePlayer = create<PlayerState>((set, get) => {
       const n = Number(localStorage.getItem('lp.normalizeTargetLufs'))
       return Number.isFinite(n) && n >= -30 && n <= -5 ? n : DEFAULT_TARGET_LUFS
     })(),
+    levelerStrength: initialLevelerStrength(),
+    trebleBoost: getTrebleBoost(),
     crossfadeSec: Math.min(12, Math.max(0, readNum('lp.crossfadeSec', 0))),
 
     setSource(source) {
+      pushNav({ kind: 'source', source })
       set({ source })
     },
 
+    goBack() {
+      const stack = get().navBack
+      const entry = stack[stack.length - 1]
+      if (!entry) return
+      set({ navBack: stack.slice(0, -1) })
+      navRestoring = true
+      try {
+        if (entry.kind === 'source') get().setSource(entry.source)
+        else if (entry.kind === 'playlist') get().openPlaylist(entry.id)
+        else if (entry.kind === 'info') get().openInfo(entry.service)
+        else if (entry.kind === 'artist') void get().openArtist(entry.artist)
+        else if (entry.kind === 'album') void get().openAlbum(entry.album)
+        else get().openMix(entry.mix)
+      } finally {
+        // The two async openers push (if at all) before their first await, so the
+        // flag has done its job by the time this runs.
+        navRestoring = false
+      }
+    },
+
     openPlaylist(id) {
+      pushNav({ kind: 'playlist', id })
       set({ source: 'playlist', selectedPlaylistId: id })
     },
 
     openInfo(service) {
+      pushNav({ kind: 'info', service })
       set({ source: 'info', infoService: service })
     },
 
@@ -1351,11 +1684,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
     async deletePlaylist(id) {
       const playlists = await window.api.removePlaylist(id)
       const { selectedPlaylistId, source } = get()
+      // Drop it from the back history too — it would reopen as an empty page.
+      const navBack = get().navBack.filter((e) => e.kind !== 'playlist' || e.id !== id)
       // if we just deleted the open playlist, fall back to Local
       if (selectedPlaylistId === id) {
-        set({ playlists, selectedPlaylistId: null, source: source === 'playlist' ? 'local' : source })
+        set({
+          playlists,
+          navBack,
+          selectedPlaylistId: null,
+          source: source === 'playlist' ? 'local' : source
+        })
       } else {
-        set({ playlists })
+        set({ playlists, navBack })
       }
     },
 
@@ -1741,6 +2081,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     async openArtist(artist) {
+      pushNav({ kind: 'artist', artist })
       set({
         source: 'artist',
         selectedArtist: artist,
@@ -1824,6 +2165,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     async openAlbum(album) {
+      pushNav({ kind: 'album', album })
       set({ source: 'album', selectedAlbum: album, albumTracks: [], albumLoading: true, error: null })
       try {
         const tracks =
@@ -1856,9 +2198,23 @@ export const usePlayer = create<PlayerState>((set, get) => {
           })
           return
         }
-        // Some YM tracks (wave/rotor/podcast rows) carry no artistId — resolve the
-        // real Yandex artist by name instead of falling through to the `local`
-        // branch below, which would render only the 0–1 locally-matching tracks.
+        // Some YM tracks (wave/rotor/podcast rows) carry no artistId. Resolve the
+        // artist straight from the track id — same trick as the SoundCloud branch
+        // below, and for the same reason: it never involves the NAME, so an artist
+        // called `*` or `✶` still resolves. Falling through to the `local` branch
+        // would render only the 0–1 locally-matching tracks.
+        if (track.id.startsWith('ym:')) {
+          try {
+            const artist = await window.api.ymTrackArtist?.(track.id.slice(3))
+            if (artist) {
+              await get().openArtist(artist)
+              return
+            }
+          } catch {
+            /* fall through to name search */
+          }
+        }
+        // Last resort: match by name. Fragile — the search drops/normalizes symbols.
         if (track.artist) {
           try {
             const artists = await window.api.ymSearchArtists(track.artist)
@@ -2071,6 +2427,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     openMix(mix) {
+      pushNav({ kind: 'mix', mix })
       set({ source: 'mix', selectedMix: mix })
     },
 
@@ -2858,6 +3215,88 @@ export const usePlayer = create<PlayerState>((set, get) => {
       persistQueue()
     },
 
+    openRadioSetup() {
+      set({ radioSetupOpen: true })
+    },
+
+    closeRadioSetup() {
+      set({ radioSetupOpen: false })
+    },
+
+    async saveRadioConfig(cfg, play = true) {
+      const clean: RadioConfig = {
+        seedMode: cfg.seedMode,
+        seedTrackIds: cfg.seedMode === 'manual' ? [...new Set(cfg.seedTrackIds)] : [],
+        scope: cfg.scope
+      }
+      set({ radioConfig: clean, radioSetupOpen: false })
+      try {
+        localStorage.setItem('lp.radio', JSON.stringify(clean))
+      } catch {
+        /* ignore */
+      }
+      if (play) await get().startPersonalRadio()
+    },
+
+    async startPersonalRadio() {
+      const cfg = get().radioConfig ?? DEFAULT_RADIO_CONFIG
+      if (!get().radioConfig) {
+        // Nothing configured yet: ask first, and let the sheet start it.
+        set({ radioSetupOpen: true })
+        return
+      }
+      const seeds = resolveSeeds(cfg, mergedLikes())
+      if (!seeds.length) {
+        set({
+          error:
+            get().lang === 'ru'
+              ? 'Радио строится из ваших лайков — сначала лайкните несколько треков'
+              : 'The radio is built from your likes — like a few tracks first',
+          radioSetupOpen: true
+        })
+        return
+      }
+      set({ radioLoading: true })
+      try {
+        const fresh = await gatherCandidates(seeds, cfg, window.api as never, get().ymAuth != null)
+        if (!fresh.length) {
+          // Usually a scope that nothing can satisfy — e.g. Yandex only, with no
+          // Yandex likes (or no account), so there is nothing to expand from.
+          set({
+            radioLoading: false,
+            error:
+              get().lang === 'ru'
+                ? 'Не нашлось треков под эти настройки — попробуйте другой источник'
+                : 'Nothing matched these settings — try another source',
+            radioSetupOpen: true
+          })
+          return
+        }
+        // The first track is one of the seeds: the radio opens on something the user
+        // knows they like, then moves outward.
+        const playable = seeds.filter(
+          (t) => inScope(t, cfg.scope) && (t.providerId !== 'yandex' || get().ymAuth != null)
+        )
+        const opener = playable.length
+          ? playable[Math.floor(Math.random() * playable.length)]
+          : undefined
+        const queue = arrangeRadio(fresh, opener)
+        rememberSeen(queue.map((t) => t.id))
+        set({
+          queue,
+          radioActive: true,
+          radioLoading: false,
+          waveActive: false,
+          waveStationId: null,
+          autopilot: false
+        })
+        loadIndex(0, true)
+        persistQueue()
+      } catch {
+        set({ radioLoading: false })
+      }
+    },
+
     restoreQueue() {
       try {
         const raw = localStorage.getItem(QUEUE_KEY)
@@ -2898,7 +3337,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
 
     next() {
-      const { currentIndex, queue, repeat, shuffle, autopilot, waveActive } = get()
+      const { currentIndex, queue, repeat, shuffle, autopilot, waveActive, radioActive } = get()
       if (queue.length === 0) return
       if (shuffle) {
         loadIndex(Math.floor(Math.random() * queue.length), true)
@@ -2908,6 +3347,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (nextIndex >= queue.length) {
         if (repeat === 'all') {
           loadIndex(0, true)
+        } else if (radioActive) {
+          // Endless personal radio: build the next batch from the seeds and play on.
+          set({ isPlaying: false })
+          void topUpRadio(true).then((extended) => {
+            if (!extended) set({ isPlaying: false })
+          })
         } else if (waveActive) {
           // Endless My Wave: pull more radio tracks and continue.
           set({ isPlaying: false })
@@ -3049,6 +3494,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (track) {
         handle?.setNormalization(v ? makeupGainDb(track.loudnessLufs, track.peak, normalizeTargetLufs) : 0)
       }
+      pushLeveler()
     },
 
     setNormalizeTargetLufs(n) {
@@ -3064,6 +3510,25 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (track && normalizeVolume) {
         handle?.setNormalization(makeupGainDb(track.loudnessLufs, track.peak, t))
       }
+      pushLeveler()
+    },
+
+    setLevelerStrength(strength) {
+      const s: LevelerStrength = strength === 'light' || strength === 'strong' ? strength : 'medium'
+      set({ levelerStrength: s })
+      try {
+        localStorage.setItem('lp.levelerStrength', s)
+      } catch {
+        /* ignore */
+      }
+      pushLeveler()
+    },
+
+    setTrebleBoost(v) {
+      set({ trebleBoost: v })
+      // The EQ module owns the value and its persistence (it is part of the curve);
+      // this state is the reactive mirror Settings renders from.
+      setEqTrebleBoost(v)
     },
 
     setCrossfadeSec(n) {
@@ -3076,4 +3541,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
       }
     }
   }
+})
+
+// Seed the audio graph with the persisted leveling config. Done here rather than
+// inside `create` because it reads the finished state; the graph itself is built on
+// first play and re-reads this then, so ordering does not matter.
+setLevelerConfig({
+  enabled: usePlayer.getState().normalizeVolume,
+  targetLufs: usePlayer.getState().normalizeTargetLufs,
+  strength: usePlayer.getState().levelerStrength
 })

@@ -289,9 +289,59 @@ const dict: Record<string, { en: string; ru: string }> = {
   soundSection: { en: 'Sound', ru: 'Звук' },
   normalizeVolume: { en: 'Volume leveling', ru: 'Выравнивание громкости' },
   normalizeVolumeHint: {
-    en: 'Even out loudness across tracks (Yandex + local files; not SoundCloud, and on phones only for local files).',
-    ru: 'Выравнивает громкость между треками (Яндекс + локальные файлы; не работает для SoundCloud, а на телефоне — только для локальных файлов).'
+    en: 'Matches loudness between tracks and evens it out inside one — quiet passages come up instead of staying quiet. Works on every source.',
+    ru: 'Подтягивает громкость между треками и внутри трека — тихие места поднимаются, а не остаются тихими. Работает для всех источников.'
   },
+  levelerStrength: { en: 'Leveling strength', ru: 'Сила выравнивания' },
+  levelerStrengthHint: {
+    en: 'How hard quiet and loud parts are pulled together. Stronger is more even and less dynamic.',
+    ru: 'Насколько сильно тихие и громкие места сводятся к одному уровню. Сильнее — ровнее, но меньше динамики.'
+  },
+  levelerLight: { en: 'Light', ru: 'Лёгкое' },
+  levelerMedium: { en: 'Medium', ru: 'Среднее' },
+  levelerStrong: { en: 'Strong', ru: 'Сильное' },
+  trebleBoost: { en: 'Treble lift', ru: 'Усиление верхов' },
+  trebleBoostHint: {
+    en: 'An equalizer preset on top of your own bands: with the top end lifted, the moment leveling brings a quiet passage up stops being audible.',
+    ru: 'Пресет эквалайзера поверх ваших полос: с поднятыми верхами момент, когда выравнивание вытягивает тихий участок, перестаёт быть слышен.'
+  },
+  // personal radio
+  personalRadio: { en: 'Personal radio', ru: 'Персональное радио' },
+  personalRadioSub: {
+    en: 'Endless, built from your likes — across every service',
+    ru: 'Бесконечное, из ваших лайков — по всем сервисам'
+  },
+  radioSetupTitle: {
+    en: "Let's set up your personal radio",
+    ru: 'Давайте настроим ваше персональное радио'
+  },
+  radioSetupIntro: {
+    en: 'It starts from tracks you like and keeps going outward: similar tracks, and more from those artists.',
+    ru: 'Оно стартует с треков, которые вам нравятся, и расходится дальше: похожие треки и другое у этих артистов.'
+  },
+  radioSeedQuestion: { en: 'What should it be based on?', ru: 'На чём его построить?' },
+  radioSeedLast10: { en: 'Last 10 liked', ru: 'Последние 10 любимых' },
+  radioSeedLast50: { en: 'Last 50 liked', ru: 'Последние 50 любимых' },
+  radioSeedAll: { en: 'All liked tracks', ru: 'Все любимые треки' },
+  radioSeedManual: { en: 'Pick tracks / artists', ru: 'Выбрать треки/артистов' },
+  radioSourceQuestion: { en: 'Where should it look for tracks?', ru: 'Где искать треки?' },
+  radioSourceAll: { en: 'Everywhere', ru: 'Везде' },
+  radioPickHint: {
+    en: 'Pick a few. The radio also looks for their artists, not only these exact tracks.',
+    ru: 'Отметьте несколько. Радио ищет и по их артистам, не только эти треки.'
+  },
+  radioPickSearch: { en: 'Search your likes…', ru: 'Поиск по лайкам…' },
+  radioSelected: { en: 'selected', ru: 'выбрано' },
+  radioStart: { en: 'Start radio', ru: 'Включить радио' },
+  radioSave: { en: 'Save', ru: 'Сохранить' },
+  cancel: { en: 'Cancel', ru: 'Отмена' },
+  radioNeedLikes: {
+    en: 'Like a few tracks first — the radio is built out of them.',
+    ru: 'Сначала лайкните несколько треков — радио строится из них.'
+  },
+  radioReconfigure: { en: 'Reconfigure', ru: 'Перенастроить' },
+  radioPlaying: { en: 'On air', ru: 'В эфире' },
+  radioSetupTitleShort: { en: 'Yours', ru: 'Ваше' },
   crossfade: { en: 'Crossfade', ru: 'Кроссфейд' },
   crossfadeHint: {
     en: 'Smoothly blend the end of one track into the next.',
@@ -520,6 +570,58 @@ const dict: Record<string, { en: string; ru: string }> = {
   plainLyricsNote: {
     en: 'Unsynced lyrics — tap “Sync manually” to time them',
     ru: 'Текст без синхронизации — нажмите «Синхронизировать», чтобы расставить тайминги'
+  },
+  lyricsFoundCandidates: {
+    en: 'Found {n} lyric versions. Choose one:',
+    ru: 'Найдено {n} вариантов текста. Выберите нужный:'
+  },
+  lyricsFoundFallback: {
+    en: 'No artist matches. Found {n} tracks by title. Choose one:',
+    ru: 'По артисту ничего не найдено. Найдено {n} треков по названию. Выберите нужный:'
+  },
+  lyricsSearchFallbackTitle: {
+    en: 'Search by title only',
+    ru: 'Искать только по названию'
+  },
+  lyricsChooseVersion: {
+    en: 'Lyric versions',
+    ru: 'Варианты текста'
+  },
+  lyricsSyncedBadge: {
+    en: 'Synced',
+    ru: 'Синхро'
+  },
+  lyricsPlainBadge: {
+    en: 'Plain',
+    ru: 'Текст'
+  },
+  lyricsCandidatesSub: {
+    en: 'Select a version to save and display for this track',
+    ru: 'Выберите подходящий вариант, чтобы сохранить его для этого трека'
+  },
+  lyricsFallbackSub: {
+    en: 'Matches found by title only. Choose the matching track:',
+    ru: 'Совпадения найдены только по названию. Выберите нужный трек:'
+  },
+  lyricsManualSearch: {
+    en: 'Manual search',
+    ru: 'Поиск вручную'
+  },
+  lyricsSearchTitlePlaceholder: {
+    en: 'Track title…',
+    ru: 'Название трека…'
+  },
+  lyricsSearchArtistPlaceholder: {
+    en: 'Artist (optional)…',
+    ru: 'Исполнитель (необязательно)…'
+  },
+  lyricsSearchButton: {
+    en: 'Search',
+    ru: 'Найти'
+  },
+  lyricsNotFoundQuery: {
+    en: 'No results found. Try changing the title or artist name.',
+    ru: 'По этому запросу ничего не найдено. Попробуйте изменить название или исполнителя.'
   },
   // hotkeys (settings)
   hotkeys: { en: 'Hotkeys', ru: 'Горячие клавиши' },

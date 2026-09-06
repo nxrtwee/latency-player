@@ -10,13 +10,14 @@ import {
   CheckIcon,
   ImageIcon,
   PlusIcon,
-  RefreshIcon
+  RefreshIcon,
+  RadioIcon
 } from './Icons'
 import { TrackRow } from './TrackRow'
 import { ListMenu } from './ListMenu'
 import { useT } from '../i18n'
 import { useVirtualRows } from '../useVirtualRows'
-import { COARSE_POINTER, ROW_H_TOUCH } from '../touch'
+import { COARSE_POINTER, ROW_H_TOUCH, ROW_H_TOUCH_COMPACT } from '../touch'
 import type { Track } from '@shared/types'
 
 // Pinned .trow heights (see styles.css) — windowing math depends on them.
@@ -42,6 +43,8 @@ export function TrackList(): JSX.Element {
   const downloading = usePlayer((s) => s.downloading)
   const offlineIds = usePlayer((s) => s.offlineIds)
   const customTabCovers = usePlayer((s) => s.customTabCovers)
+  const openRadioSetup = usePlayer((s) => s.openRadioSetup)
+  const radioActive = usePlayer((s) => s.radioActive)
   const setTabCover = usePlayer((s) => s.setTabCover)
   const resetTabCover = usePlayer((s) => s.resetTabCover)
 
@@ -113,8 +116,16 @@ export function TrackList(): JSX.Element {
   const compact = usePlayer((s) => s.compact)
   // Touch rows are taller (they carry the artist on a second line — see
   // portrait.css), and the windowing spacers below have to agree with the CSS.
+  // Compact has its own touch height too: reading the desktop's 38px here while
+  // portrait.css drew a 64px row is what made compact mode unusable on a phone.
   // COARSE_POINTER is false for a mouse, so desktop keeps 54/38 exactly.
-  const ROW_H = compact ? ROW_H_COMPACT : COARSE_POINTER ? ROW_H_TOUCH : ROW_H_NORMAL
+  const ROW_H = COARSE_POINTER
+    ? compact
+      ? ROW_H_TOUCH_COMPACT
+      : ROW_H_TOUCH
+    : compact
+      ? ROW_H_COMPACT
+      : ROW_H_NORMAL
   const { containerRef, win } = useVirtualRows(list.length, ROW_H, '.cscroll-view')
 
   // Stable so React.memo on TrackRow can skip re-rendering rows during scroll.
@@ -218,6 +229,16 @@ export function TrackList(): JSX.Element {
                 <DownloadIcon size={18} />
               )}
             </button>
+            {source === 'likes' && (
+              <button
+                className={`btn-round ${radioActive ? 'active' : ''}`}
+                title={t('personalRadio')}
+                aria-label={t('personalRadio')}
+                onClick={() => openRadioSetup()}
+              >
+                <RadioIcon size={18} />
+              </button>
+            )}
             <ListMenu tracks={list} />
           </div>
         </div>

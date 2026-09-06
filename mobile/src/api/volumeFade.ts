@@ -11,13 +11,29 @@ export interface VolumeFader {
   destroy: () => void
 }
 
-export function makeVolumeFader(audio: HTMLAudioElement): VolumeFader {
+/**
+ * Ramp step for the iOS fader. 100ms over a 6s fade is 60 bridge messages — fine
+ * — and still fine-grained enough that the ramp is heard as a slope, not stairs.
+ */
+export const NATIVE_FADE_STEP_MS = 100
+
+/**
+ * The fade itself, independent of what it drives. `sink` receives the composed
+ * `volume × fade` level.
+ *
+ * Two users: the `<audio>` element's own `volume` (Android/browser, below) and
+ * iOS's native AVPlayer volume, which has no gain node either — see the native
+ * branches of scProvider/ymProvider/localProvider. `stepMs` is the only knob that
+ * differs: every step on iOS is a postMessage across the WKWebView bridge, so it
+ * ramps coarser than an in-page volume write.
+ */
+export function makeFader(sink: (level: number) => void, stepMs = 50): VolumeFader {
   let vol = 1
   let fade = 1
   let timer: ReturnType<typeof setInterval> | null = null
 
   const apply = (): void => {
-    audio.volume = Math.min(1, Math.max(0, vol * fade))
+    sink(Math.min(1, Math.max(0, vol * fade)))
   }
   const stop = (): void => {
     if (timer) {
@@ -39,7 +55,6 @@ export function makeVolumeFader(audio: HTMLAudioElement): VolumeFader {
         apply()
         return
       }
-      const stepMs = 50
       const steps = Math.max(1, Math.round((rampSec * 1000) / stepMs))
       const start = fade
       let i = 0
@@ -56,4 +71,10 @@ export function makeVolumeFader(audio: HTMLAudioElement): VolumeFader {
     },
     destroy: stop
   }
+}
+
+export function makeVolumeFader(audio: HTMLAudioElement): VolumeFader {
+  return makeFader((level) => {
+    audio.volume = level
+  })
 }

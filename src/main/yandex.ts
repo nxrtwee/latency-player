@@ -213,6 +213,28 @@ export async function getSimilarArtists(artistId: string, limit = 12): Promise<A
   }
 }
 
+/**
+ * The artist credited on a track, read off the track object itself.
+ *
+ * This is the Yandex twin of soundcloud.getTrackArtist: it never involves the
+ * artist's NAME, so it survives names the search cannot round-trip — a `*`, a `✶`,
+ * anything non-ASCII. Used when a track arrives without an `artistId` (rotor/wave
+ * rows, podcasts), where the alternative was a name search that quietly returned
+ * the wrong artist or nothing.
+ */
+export async function getTrackArtist(trackId: string): Promise<Artist | null> {
+  const bare = trackId.replace(/^ym:/, '')
+  const res = await fetch(`${API}/tracks?track-ids=${encodeURIComponent(bare)}`, {
+    headers: apiHeaders()
+  })
+  if (!res.ok) return null
+  const data = (await res.json()) as { result?: YmTrack[] }
+  const ref = (data.result?.[0]?.artists || []).find((a) => a.id != null && a.name)
+  if (!ref) return null
+  // A bare id+name is enough — openArtist fills in avatar/counts from brief-info.
+  return { id: String(ref.id), name: ref.name as string, provider: 'yandex' }
+}
+
 export async function getArtistTracks(artistId: string, max = 500): Promise<Track[]> {
   // Page through the artist's whole catalogue, not just the first 50. The endpoint
   // reports `pager.total`; loop until we've collected it (or hit `max`).
@@ -344,8 +366,37 @@ export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
   return out
 }
 
-/** An artist's albums (from brief-info), newest first where possible. */
-export async function getArtistAlbums(artistId: string, limit = 30): Promise<Album[]> {
+/**
+ * An artist's albums, newest first.
+ *
+ * `brief-info` (used as the fallback below) only carries Yandex's short "popular
+ * albums" list — about nine entries — which is what used to cap this page no matter
+ * what limit we passed. `direct-albums` is the real discography and pages like the
+ * track endpoint does.
+ */
+export async function getArtistAlbums(artistId: string, max = 200): Promise<Album[]> {
+  const perPage = 50
+  const out: Album[] = []
+  try {
+    for (let page = 0; out.length < max; page++) {
+      const res = await fetch(
+        `${API}/artists/${encodeURIComponent(artistId)}/direct-albums?page=${page}&page-size=${perPage}&sort-by=year`,
+        { headers: apiHeaders() }
+      )
+      if (!res.ok) break
+      const data = (await res.json()) as {
+        result?: { albums?: YmAlbum[]; pager?: { total?: number } }
+      }
+      const batch = data.result?.albums || []
+      out.push(...batch.map(toAlbum).filter((a): a is Album => a !== null))
+      const total = data.result?.pager?.total ?? out.length
+      if (batch.length === 0 || out.length >= total) break
+    }
+  } catch {
+    /* fall through to brief-info */
+  }
+  if (out.length) return out
+
   try {
     const res = await fetch(`${API}/artists/${encodeURIComponent(artistId)}/brief-info`, {
       headers: apiHeaders()
@@ -353,7 +404,7 @@ export async function getArtistAlbums(artistId: string, limit = 30): Promise<Alb
     if (!res.ok) return []
     const data = (await res.json()) as { result?: { albums?: YmAlbum[] } }
     return (data.result?.albums || [])
-      .slice(0, limit)
+      .slice(0, max)
       .map(toAlbum)
       .filter((a): a is Album => a !== null)
   } catch {

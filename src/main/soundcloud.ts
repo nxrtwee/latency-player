@@ -421,14 +421,29 @@ export async function searchPlaylists(query: string, limit = 20): Promise<Album[
 }
 
 /** Albums (and album-like sets) published by a SoundCloud user. */
-export async function getUserAlbums(userId: string, limit = 30): Promise<Album[]> {
+export async function getUserAlbums(userId: string, max = 200): Promise<Album[]> {
+  // Cursor pagination, like getUserTracks: a page is capped at 50 whatever `limit`
+  // asks for, so a prolific uploader's later albums need the `next_href` walk.
   try {
-    const res = await authedFetch(
-      (id) => `${API}/users/${encodeURIComponent(userId)}/albums?limit=${limit}&client_id=${id}`
+    const first = await authedFetch(
+      (id) =>
+        `${API}/users/${encodeURIComponent(userId)}/albums?limit=50&linked_partitioning=1&client_id=${id}`
     )
-    if (!res.ok) return []
-    const data = (await res.json()) as { collection?: ScPlaylist[] }
-    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+    if (!first.ok) return []
+    let data = (await first.json()) as { collection?: ScPlaylist[]; next_href?: string | null }
+    const raw: ScPlaylist[] = [...(data.collection || [])]
+    let next = data.next_href || null
+    while (next && raw.length < max) {
+      const url = next.includes('client_id=')
+        ? next
+        : `${next}${next.includes('?') ? '&' : '?'}client_id=${await getClientId()}`
+      const res = await fetch(url, { headers: { 'User-Agent': UA } })
+      if (!res.ok) break
+      data = (await res.json()) as { collection?: ScPlaylist[]; next_href?: string | null }
+      raw.push(...(data.collection || []))
+      next = data.next_href || null
+    }
+    return raw.filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
   } catch {
     return []
   }

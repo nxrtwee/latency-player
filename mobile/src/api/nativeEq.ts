@@ -11,7 +11,7 @@
 // filters it directly. getNativeAudio() is null off iOS and installNativeEq() is a
 // no-op.
 
-import { getEqState, onEqChange } from '@renderer/audio/analyser'
+import { getEffectiveEqState, onEqChange } from '@renderer/audio/analyser'
 import { getNativeAudio } from './nativeAudio'
 
 export function installNativeEq(): void {
@@ -22,9 +22,12 @@ export function installNativeEq(): void {
     void native.setEq(state.gains, state.enabled)
   }
 
-  // The tap reads the curve when it is created, so a track started later already
-  // gets it; this initial push covers a tap that is already running (app resumed
+  // The EFFECTIVE curve, i.e. the user's bands plus the treble preset — that is what
+  // the tap has to filter with; the raw slider values would drop the preset.
+  //
+  // The tap reads the curve when it is created, so a track started later already gets
+  // it; this initial push covers a tap that is already running (app resumed
   // mid-playback with a restored queue).
-  push(getEqState())
+  push(getEffectiveEqState())
   onEqChange(push)
 }

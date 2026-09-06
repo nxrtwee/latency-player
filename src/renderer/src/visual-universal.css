@@ -323,6 +323,8 @@
 [data-visual='universal'] .pg-tile-wave .wave-ring.r2 {
   animation-delay: 1.3s;
 }
+
+
 @keyframes pgWaveRing {
   0% {
     transform: scale(0.8);

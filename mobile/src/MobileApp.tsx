@@ -15,6 +15,7 @@ import { CommentsPage } from '@renderer/components/CommentsPage'
 import { LyricsView } from '@renderer/components/LyricsView'
 import { Settings } from '@renderer/components/Settings'
 import { Equalizer } from '@renderer/components/Equalizer'
+import { RadioSetup } from '@renderer/components/RadioSetup'
 import { BgFraming } from '@renderer/components/BgFraming'
 import { Splash } from '@renderer/components/Splash'
 import { TopBar } from './shell/TopBar'
@@ -26,6 +27,7 @@ import { installMediaSession } from './api/mediaSession'
 import { installResolvePrefetch } from './api/resolveCache'
 import { installNativeLevels } from './api/nativeLevels'
 import { installNativeEq } from './api/nativeEq'
+import { installNativeLeveler } from './api/nativeLeveler'
 import { installStatusBar } from './api/statusBar'
 import { applyUiScale } from './uiScale'
 
@@ -60,6 +62,7 @@ export function MobileApp(): JSX.Element {
   const lyricsOpen = usePlayer((s) => s.lyricsOpen)
   const settingsOpen = usePlayer((s) => s.settingsOpen)
   const eqOpen = usePlayer((s) => s.eqOpen)
+  const radioSetupOpen = usePlayer((s) => s.radioSetupOpen)
   const framingOpen = usePlayer((s) => s.framingOpen)
 
   const theme = usePlayer((s) => s.theme)
@@ -138,6 +141,7 @@ export function MobileApp(): JSX.Element {
     installResolvePrefetch()
     installNativeLevels()
     installNativeEq()
+    installNativeLeveler()
     installStatusBar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -272,6 +276,7 @@ export function MobileApp(): JSX.Element {
       {/* After Settings on purpose: it is opened FROM Settings, and with both being
           full-bleed sheets at z-index 60 the later sibling is the one on top. */}
       {eqOpen && <Equalizer />}
+      {radioSetupOpen && <RadioSetup />}
       {framingOpen && <BgFraming />}
       {/* Paste-a-token sign-in: driven imperatively by the shim's scLogin /
           ymLogin, so it renders nothing until a connect button asks. */}

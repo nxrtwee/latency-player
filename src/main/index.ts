@@ -185,6 +185,7 @@ function registerIpc(): void {
     yandex.getPlaylistTracks(playlistId)
   )
   ipcMain.handle('ym:artist', (_e, artistId: string) => yandex.getArtist(artistId))
+  ipcMain.handle('ym:trackArtist', (_e, trackId: string) => yandex.getTrackArtist(trackId))
   ipcMain.handle('ym:artistTracks', (_e, artistId: string) => yandex.getArtistTracks(artistId))
   ipcMain.handle('ym:similarArtists', (_e, artistId: string) => yandex.getSimilarArtists(artistId))
   ipcMain.handle('ym:artistAlbums', (_e, artistId: string) => yandex.getArtistAlbums(artistId))
@@ -336,6 +337,21 @@ function registerIpc(): void {
     'lyrics:deleteManual',
     (_e, title: string, artist: string, durationSec?: number) =>
       lyrics.deleteManualSync(title, artist, durationSec)
+  )
+  ipcMain.handle(
+    'lyrics:searchCandidates',
+    (_e, title: string, artist: string, durationSec?: number) =>
+      lyrics.searchLyricsCandidates(title, artist, durationSec)
+  )
+  ipcMain.handle(
+    'lyrics:applyCandidate',
+    (
+      _e,
+      title: string,
+      artist: string,
+      durationSec: number | undefined,
+      candidate: lyrics.LyricsCandidate
+    ) => lyrics.applyLyricsCandidate(title, artist, durationSec, candidate)
   )
 
   ipcMain.handle('offline:list', () => offline.listIds())

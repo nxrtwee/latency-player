@@ -224,6 +224,7 @@ const api = {
   ymSearchAlbums: (query: string): Promise<Album[]> => ym.searchAlbums(query),
   ymSearchPlaylists: (query: string): Promise<Album[]> => ym.searchPlaylists(query),
   ymArtist: (artistId: string): Promise<Artist | null> => ym.getArtist(artistId),
+  ymTrackArtist: (trackId: string): Promise<Artist | null> => ym.getTrackArtist(trackId),
   ymArtistTracks: (artistId: string): Promise<Track[]> => ym.getArtistTracks(artistId),
   ymSimilarArtists: (artistId: string): Promise<Artist[]> => ym.getSimilarArtists(artistId),
   ymArtistAlbums: (artistId: string): Promise<Album[]> => ym.getArtistAlbums(artistId),
@@ -375,8 +376,16 @@ const api = {
   openJsonFile: (): Promise<{ name: string; text: string } | null> => openJsonFile(),
 
   // lyrics — LRCLIB + Genius via the proxy / CapacitorHttp, cached locally.
-  getLyrics: (title: string, artist: string, durationSec?: number, useGenius?: boolean) =>
-    lyrics.fetchLyrics(title, artist, durationSec, useGenius),
+  getLyrics: (title: string, artist: string, durationSec?: number, useGenius?: boolean, force?: boolean) =>
+    lyrics.fetchLyrics(title, artist, durationSec, useGenius, force),
+  searchLyricsCandidates: (title: string, artist: string, durationSec?: number) =>
+    lyrics.searchLyricsCandidates(title, artist, durationSec),
+  applyLyricsCandidate: (
+    title: string,
+    artist: string,
+    durationSec: number | undefined,
+    candidate: lyrics.LyricsCandidate
+  ) => Promise.resolve(lyrics.applyLyricsCandidate(title, artist, durationSec, candidate)),
   clearLyricsCache: async (): Promise<void> => lyrics.clearCache(),
   searchByLyrics: (query: string): Promise<lyrics.LyricSearchHit[]> => lyrics.searchByLyrics(query),
   hasManualSync: async (title: string, artist: string, durationSec?: number): Promise<boolean> =>

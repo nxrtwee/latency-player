@@ -205,13 +205,35 @@ export async function getUser(userId: string): Promise<Artist | null> {
   return toArtist((await res.json()) as ScUser)
 }
 
-export async function getUserTracks(userId: string, limit = 60): Promise<Track[]> {
-  const res = await authedFetch(
-    (id) => `${API}/users/${encodeURIComponent(userId)}/tracks?limit=${limit}&client_id=${id}`
+export async function getUserTracks(userId: string, max = 500): Promise<Track[]> {
+  // The artist's WHOLE list, not the first page. SoundCloud v2 caps a page at 50
+  // however large a `limit` you ask for (the old `limit=60` here is what made every
+  // artist page stop at 50), and pages with a cursor: `linked_partitioning=1` comes
+  // back with a `next_href` — already carrying the client_id — which we follow until
+  // it runs out or we reach `max`. Mirrors src/main/soundcloud.ts.
+  const first = await authedFetch(
+    (id) =>
+      `${API}/users/${encodeURIComponent(userId)}/tracks?limit=50&linked_partitioning=1&client_id=${id}`
   )
-  if (!res.ok) throw new Error(`SoundCloud artist tracks failed (${res.status})`)
-  const data = (await res.json()) as { collection?: ScTrack[] }
-  return (data.collection || []).map(toTrack).filter((t): t is Track => t !== null)
+  if (!first.ok) throw new Error(`SoundCloud artist tracks failed (${first.status})`)
+  let data = (await first.json()) as { collection?: ScTrack[]; next_href?: string | null }
+  const raw: ScTrack[] = [...(data.collection || [])]
+  let next = data.next_href || null
+  while (next && raw.length < max) {
+    try {
+      const url = next.includes('client_id=')
+        ? next
+        : `${next}${next.includes('?') ? '&' : '?'}client_id=${await getClientId()}`
+      const res = await scFetch(url)
+      if (!res.ok) break
+      data = (await res.json()) as { collection?: ScTrack[]; next_href?: string | null }
+      raw.push(...(data.collection || []))
+      next = data.next_href || null
+    } catch {
+      break
+    }
+  }
+  return raw.map(toTrack).filter((t): t is Track => t !== null)
 }
 
 export async function relatedTracks(trackId: string, limit = 25): Promise<Track[]> {
@@ -368,14 +390,29 @@ export async function searchPlaylists(query: string, limit = 20): Promise<Album[
   }
 }
 
-export async function getUserAlbums(userId: string, limit = 30): Promise<Album[]> {
+export async function getUserAlbums(userId: string, max = 200): Promise<Album[]> {
+  // Cursor pagination, like getUserTracks: a page is capped at 50 whatever `limit`
+  // asks for. Mirrors src/main/soundcloud.ts.
   try {
-    const res = await authedFetch(
-      (id) => `${API}/users/${encodeURIComponent(userId)}/albums?limit=${limit}&client_id=${id}`
+    const first = await authedFetch(
+      (id) =>
+        `${API}/users/${encodeURIComponent(userId)}/albums?limit=50&linked_partitioning=1&client_id=${id}`
     )
-    if (!res.ok) return []
-    const data = (await res.json()) as { collection?: ScPlaylist[] }
-    return (data.collection || []).filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
+    if (!first.ok) return []
+    let data = (await first.json()) as { collection?: ScPlaylist[]; next_href?: string | null }
+    const raw: ScPlaylist[] = [...(data.collection || [])]
+    let next = data.next_href || null
+    while (next && raw.length < max) {
+      const url = next.includes('client_id=')
+        ? next
+        : `${next}${next.includes('?') ? '&' : '?'}client_id=${await getClientId()}`
+      const res = await scFetch(url)
+      if (!res.ok) break
+      data = (await res.json()) as { collection?: ScPlaylist[]; next_href?: string | null }
+      raw.push(...(data.collection || []))
+      next = data.next_href || null
+    }
+    return raw.filter((p) => p && p.title).map((p) => toAlbum(p, 'album'))
   } catch {
     return []
   }

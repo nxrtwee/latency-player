@@ -181,6 +181,10 @@ export function Settings(): JSX.Element {
   const setResumeSession = usePlayer((s) => s.setResumeSession)
   const normalizeVolume = usePlayer((s) => s.normalizeVolume)
   const setNormalizeVolume = usePlayer((s) => s.setNormalizeVolume)
+  const levelerStrength = usePlayer((s) => s.levelerStrength)
+  const setLevelerStrength = usePlayer((s) => s.setLevelerStrength)
+  const trebleBoost = usePlayer((s) => s.trebleBoost)
+  const setTrebleBoost = usePlayer((s) => s.setTrebleBoost)
   const crossfadeSec = usePlayer((s) => s.crossfadeSec)
   const setCrossfadeSec = usePlayer((s) => s.setCrossfadeSec)
   const setEqOpen = usePlayer((s) => s.setEqOpen)
@@ -590,6 +594,46 @@ export function Settings(): JSX.Element {
                 <span className="set-row-sub">{t('normalizeVolumeHint')}</span>
               </div>
               <Toggle checked={normalizeVolume} onChange={setNormalizeVolume} />
+            </div>
+            {/* Only meaningful while leveling is on, and it is the one control whose
+                effect you can hear immediately — so it sits right under the toggle. */}
+            {normalizeVolume && (
+              <div className="set-row">
+                <div>
+                  <span className="set-row-title">{t('levelerStrength')}</span>
+                  <span className="set-row-sub">{t('levelerStrengthHint')}</span>
+                </div>
+                <div className="mix-toggle">
+                  <button
+                    className={levelerStrength === 'light' ? 'active' : ''}
+                    onClick={() => setLevelerStrength('light')}
+                  >
+                    {t('levelerLight')}
+                  </button>
+                  <button
+                    className={levelerStrength === 'medium' ? 'active' : ''}
+                    onClick={() => setLevelerStrength('medium')}
+                  >
+                    {t('levelerMedium')}
+                  </button>
+                  <button
+                    className={levelerStrength === 'strong' ? 'active' : ''}
+                    onClick={() => setLevelerStrength('strong')}
+                  >
+                    {t('levelerStrong')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Sits with the leveling controls rather than in the equalizer, because
+                that is what it is for: masking the moment a quiet passage is lifted.
+                It adds to the user's own bands instead of overwriting them. */}
+            <div className="set-row">
+              <div>
+                <span className="set-row-title">{t('trebleBoost')}</span>
+                <span className="set-row-sub">{t('trebleBoostHint')}</span>
+              </div>
+              <Toggle checked={trebleBoost} onChange={setTrebleBoost} />
             </div>
             <div className="set-row">
               <div>

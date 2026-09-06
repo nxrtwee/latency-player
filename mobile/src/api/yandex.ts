@@ -326,22 +326,81 @@ export async function getSimilarArtists(artistId: string, limit = 12): Promise<A
   }
 }
 
-export async function getArtistTracks(artistId: string, limit = 50): Promise<Track[]> {
-  const res = await ymFetch(
-    `${API}/artists/${encodeURIComponent(artistId)}/tracks?page=0&page-size=${limit}`
-  )
-  if (!res.ok) throw new Error(`Yandex artist tracks failed (${res.status})`)
-  const data = (await res.json()) as { result?: { tracks?: YmTrack[] } }
-  return (data.result?.tracks || []).map(toTrack).filter((t): t is Track => t !== null)
+/**
+ * The artist credited on a track, read off the track object itself — the Yandex twin
+ * of soundcloud.getTrackArtist. It never touches the artist's NAME, so it survives
+ * names the search cannot round-trip (`*`, `✶`, anything non-ASCII), which is what
+ * used to leave rotor/wave rows with no artist page. Mirrors src/main/yandex.ts.
+ */
+export async function getTrackArtist(trackId: string): Promise<Artist | null> {
+  const bare = trackId.replace(/^ym:/, '')
+  const res = await ymFetch(`${API}/tracks?track-ids=${encodeURIComponent(bare)}`)
+  if (!res.ok) return null
+  const data = (await res.json()) as { result?: YmTrack[] }
+  const ref = (data.result?.[0]?.artists || []).find((a) => a.id != null && a.name)
+  if (!ref) return null
+  // id+name is enough — openArtist fills in avatar/counts from brief-info.
+  return { id: String(ref.id), name: ref.name as string, provider: 'yandex' }
 }
 
-export async function getArtistAlbums(artistId: string, limit = 30): Promise<Album[]> {
+export async function getArtistTracks(artistId: string, max = 500): Promise<Track[]> {
+  // The whole catalogue, not the first page: `page-size` is capped at 50, which is
+  // what used to end every artist page there. The endpoint reports `pager.total`, so
+  // page until we have it (or reach `max`). Mirrors src/main/yandex.ts.
+  const perPage = 50
+  const out: Track[] = []
+  for (let page = 0; out.length < max; page++) {
+    const res = await ymFetch(
+      `${API}/artists/${encodeURIComponent(artistId)}/tracks?page=${page}&page-size=${perPage}`
+    )
+    if (!res.ok) {
+      if (page === 0) throw new Error(`Yandex artist tracks failed (${res.status})`)
+      break
+    }
+    const data = (await res.json()) as {
+      result?: { tracks?: YmTrack[]; pager?: { total?: number } }
+    }
+    const batch = data.result?.tracks || []
+    out.push(...batch.map(toTrack).filter((t): t is Track => t !== null))
+    const total = data.result?.pager?.total ?? out.length
+    if (batch.length === 0 || out.length >= total) break
+  }
+  return out
+}
+
+/**
+ * An artist's albums, newest first. `brief-info` (the fallback) is only Yandex's
+ * short "popular albums" list — about nine — which is what capped this page;
+ * `direct-albums` is the full discography, paged. Mirrors src/main/yandex.ts.
+ */
+export async function getArtistAlbums(artistId: string, max = 200): Promise<Album[]> {
+  const perPage = 50
+  const out: Album[] = []
+  try {
+    for (let page = 0; out.length < max; page++) {
+      const res = await ymFetch(
+        `${API}/artists/${encodeURIComponent(artistId)}/direct-albums?page=${page}&page-size=${perPage}&sort-by=year`
+      )
+      if (!res.ok) break
+      const data = (await res.json()) as {
+        result?: { albums?: YmAlbum[]; pager?: { total?: number } }
+      }
+      const batch = data.result?.albums || []
+      out.push(...batch.map(toAlbum).filter((a): a is Album => a !== null))
+      const total = data.result?.pager?.total ?? out.length
+      if (batch.length === 0 || out.length >= total) break
+    }
+  } catch {
+    /* fall through to brief-info */
+  }
+  if (out.length) return out
+
   try {
     const res = await ymFetch(`${API}/artists/${encodeURIComponent(artistId)}/brief-info`)
     if (!res.ok) return []
     const data = (await res.json()) as { result?: { albums?: YmAlbum[] } }
     return (data.result?.albums || [])
-      .slice(0, limit)
+      .slice(0, max)
       .map(toAlbum)
       .filter((a): a is Album => a !== null)
   } catch {

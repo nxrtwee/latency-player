@@ -10,6 +10,7 @@ import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
 import { makeTrackAudio } from './graphAudio'
+import { makeFader, NATIVE_FADE_STEP_MS } from './volumeFade'
 import { getNativeAudio } from './nativeAudio'
 
 const scProvider: PlaybackProvider = {
@@ -70,6 +71,10 @@ function createNative(
 
   let wantPlay = false
 
+  // AVPlayer has no gain node, so the fade rides its volume — same composition the
+  // `<audio>` path does, just across the bridge (hence the coarser step).
+  const fader = makeFader((level) => void native.setVolume(level), NATIVE_FADE_STEP_MS)
+
   window.api
     .scResolveStream(track.uri)
     .then((url) => {
@@ -85,10 +90,11 @@ function createNative(
     play: () => { wantPlay = true; native.play() },
     pause: () => { wantPlay = false; native.pause() },
     seek: (sec) => native.seek(sec),
-    setVolume: (v) => native.setVolume(v),
+    setVolume: (v) => fader.setVolume(v),
     setNormalization: () => {},
-    setFade: () => {},
-    destroy: () => { destroyed = true; for (const u of unsubs) u(); native.destroy() }
+    setFade: (value, rampSec) => fader.setFade(value, rampSec),
+    canOverlap: false,
+    destroy: () => { destroyed = true; fader.destroy(); for (const u of unsubs) u(); native.destroy() }
   }
 }
 

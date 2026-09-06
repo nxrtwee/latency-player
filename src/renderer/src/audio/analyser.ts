@@ -3,11 +3,17 @@
  * <audio>, SoundCloud <audio>) routes its output through a single AnalyserNode
  * so the visualizers can read live frequency energy.
  *
- * Each element gets its own two-node pre-chain before the shared EQ:
- *   source → fadeGain → normGain → EQ → analyser → destination
+ * Each element gets its own two-node pre-chain before the shared stages:
+ *   source → fadeGain → normGain → pre-bus ─→ AGC → compressor → EQ ─→ limiter → out
+ *                                                                  └→ analyser (tap)
  * `fadeGain` drives crossfades (two elements can be live at once during a
- * transition); `normGain` applies the per-track loudness makeup gain. Usually
- * one track plays at a time; during a crossfade exactly two do.
+ * transition); `normGain` applies the per-track loudness makeup gain from metadata.
+ * Usually one track plays at a time; during a crossfade exactly two do.
+ *
+ * The leveler wraps the EQ rather than following it, so that neither of its detectors
+ * can see the user's curve — leveler.ts explains what that fixed. The analyser is a
+ * TAP with nothing connected to its output: it reads the EQ's output, which is what
+ * the visualizer has always shown.
  *
  * Note on cross-origin: routing an element through createMediaElementSource still
  * plays its audio, but if the media is cross-origin without CORS the browser feeds
@@ -18,6 +24,7 @@
  */
 
 import { dbToLinear } from '@shared/loudness'
+import { createLeveler, type Leveler, type LevelerConfig, type LevelerStrength } from './leveler'
 
 let ctx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
@@ -38,6 +45,18 @@ let chainHead: AudioNode | null = null
 
 const EQ_GAINS_KEY = 'lp.eqGains'
 const EQ_ENABLED_KEY = 'lp.eqEnabled'
+const TREBLE_KEY = 'lp.eqTrebleBoost'
+
+/**
+ * The "treble lift" preset, in dB per band (EQ_FREQUENCIES order).
+ *
+ * Added ON TOP of whatever the user's own EQ is doing rather than replacing it — it is
+ * a separate switch in Settings, next to the leveling strength, because that is where
+ * it earns its keep: with the top end lifted, the moment the leveler brings a quiet
+ * passage up stops being audible as a change in level. Nothing below 1 kHz moves, so
+ * it cannot fight the leveler's own detectors.
+ */
+const TREBLE_TILT = [0, 0, 0, 0, 0, 1, 2, 3.5, 4.5, 4] as const
 
 function loadEqGains(): number[] {
   try {
@@ -54,17 +73,99 @@ function loadEqGains(): number[] {
 
 let eqGains: number[] = loadEqGains()
 let eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === '1'
+let trebleBoost = localStorage.getItem(TREBLE_KEY) === '1'
+
+/**
+ * The curve that actually reaches the filters: the user's bands (zeroed when the EQ is
+ * off) plus the treble preset (when that is on), clamped to the EQ's own range. This
+ * is what a native DSP mirror must be fed — see onEqChange.
+ */
+export function getEffectiveEqState(): { gains: number[]; enabled: boolean } {
+  const gains = eqGains.map((g, i) => {
+    const v = (eqEnabled ? g : 0) + (trebleBoost ? TREBLE_TILT[i] : 0)
+    return Math.max(-EQ_MAX_DB, Math.min(EQ_MAX_DB, v))
+  })
+  return { gains, enabled: eqEnabled || trebleBoost }
+}
+
+// ---- loudness leveling ------------------------------------------------------
+// The nodes live in leveler.ts; this module owns the single instance and the last
+// config, because the AudioContext is built lazily (first track) while Settings can
+// change the config at any time — including before anything has played.
+let leveler: Leveler | null = null
+let levelerCfg: LevelerConfig = { enabled: false, targetLufs: -14, strength: 'medium' }
+
+type LevelerListener = (cfg: LevelerConfig) => void
+const levelerListeners = new Set<LevelerListener>()
+
+/**
+ * Push the leveling config. Safe before the graph exists — it is re-applied when the
+ * context is created.
+ *
+ * Listeners exist for the same reason the EQ has them: on iOS playback runs in a
+ * native AVPlayer, so the phone shell mirrors the config into the native audio tap
+ * (mobile/src/api/nativeLeveler.ts) where the DSP actually happens there.
+ */
+export function setLevelerConfig(cfg: LevelerConfig): void {
+  levelerCfg = {
+    enabled: !!cfg.enabled,
+    targetLufs: Number.isFinite(cfg.targetLufs) ? cfg.targetLufs : -14,
+    strength: cfg.strength
+  }
+  leveler?.setConfig(levelerCfg)
+  for (const fn of levelerListeners) {
+    try {
+      fn({ ...levelerCfg })
+    } catch {
+      /* a broken listener must not break playback */
+    }
+  }
+}
+
+export function getLevelerConfig(): LevelerConfig {
+  return { ...levelerCfg }
+}
+
+/** Subscribe to leveling-config changes. Returns an unsubscribe fn. */
+export function onLevelerChange(fn: LevelerListener): () => void {
+  levelerListeners.add(fn)
+  return () => {
+    levelerListeners.delete(fn)
+  }
+}
+
+/** Live meter reading — what the AGC currently sees and does. For diagnostics. */
+export function readLevelerState(): {
+  measuredDbfs: number
+  outputDbfs: number
+  gainDb: number
+  reductionDb: number
+  active: boolean
+} | null {
+  return leveler ? leveler.readState() : null
+}
+
+/**
+ * Tell the leveler a new track has started, so it re-measures instead of inheriting
+ * the previous one's level. Called from the store whenever a handle is loaded.
+ */
+export function resetLeveler(): void {
+  leveler?.resetForTrack()
+}
+
+export type { LevelerConfig, LevelerStrength }
 
 function buildEqChain(context: AudioContext, output: AudioNode): void {
+  const eff = getEffectiveEqState()
   eqFilters = EQ_FREQUENCIES.map((f, i) => {
     const node = context.createBiquadFilter()
     node.type = 'peaking'
     node.frequency.value = f
     node.Q.value = 1.1
-    node.gain.value = eqEnabled ? eqGains[i] : 0
+    node.gain.value = eff.gains[i]
     return node
   })
-  // Wire the filters in series, terminating into `output` (the analyser).
+  // Wire the filters in series, terminating into `output` (the post-EQ bus).
   for (let i = 0; i < eqFilters.length - 1; i++) eqFilters[i].connect(eqFilters[i + 1])
   eqFilters[eqFilters.length - 1].connect(output)
   chainHead = eqFilters[0]
@@ -77,22 +178,54 @@ function ensure(): AudioNode {
   // Small FFT + heavy smoothing → calm, musical motion rather than jittery spikes.
   analyser.fftSize = 256
   analyser.smoothingTimeConstant = 0.82
-  analyser.connect(ctx.destination)
   freq = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount))
-  buildEqChain(ctx, analyser)
-  return chainHead as AudioNode
+  // The EQ terminates into a plain bus, and everything mixes into another one ahead
+  // of it: the leveler needs both ends (its AGC and compressor go before the EQ, its
+  // limiter after — see leveler.ts).
+  const bus = ctx.createGain()
+  const pre = ctx.createGain()
+  buildEqChain(ctx, bus)
+  bus.connect(analyser)
+  leveler = createLeveler(ctx, {
+    input: pre,
+    eqIn: chainHead as AudioNode,
+    eqOut: bus,
+    destination: ctx.destination
+  })
+  leveler.setConfig(levelerCfg)
+  // Elements now connect into the pre-EQ bus rather than straight into the EQ.
+  chainHead = pre
+  return chainHead
 }
 
 /** Apply the active gains to the live filters (0 dB on every band when disabled). */
 function applyEqGains(): void {
+  const eff = getEffectiveEqState()
   for (let i = 0; i < eqFilters.length; i++) {
-    eqFilters[i].gain.value = eqEnabled ? eqGains[i] : 0
+    eqFilters[i].gain.value = eff.gains[i]
   }
 }
 
-/** Current EQ state (band gains in dB + enabled flag). */
+/** Current EQ state (band gains in dB + enabled flag) as the USER set it. */
 export function getEqState(): { gains: number[]; enabled: boolean } {
   return { gains: [...eqGains], enabled: eqEnabled }
+}
+
+/** Is the treble preset on? */
+export function getTrebleBoost(): boolean {
+  return trebleBoost
+}
+
+/** Turn the treble preset on/off. Leaves the user's own band values untouched. */
+export function setTrebleBoost(enabled: boolean): void {
+  trebleBoost = enabled
+  applyEqGains()
+  notifyEqChange()
+  try {
+    localStorage.setItem(TREBLE_KEY, enabled ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
 }
 
 // Change observers. The Web Audio filters above are not the only consumer of the
@@ -111,7 +244,9 @@ export function onEqChange(fn: EqListener): () => void {
 }
 
 function notifyEqChange(): void {
-  const state = getEqState()
+  // Listeners are DSP mirrors (iOS), so they get the curve that the filters get —
+  // user bands plus the treble preset — not the raw slider values.
+  const state = getEffectiveEqState()
   for (const fn of eqListeners) {
     try {
       fn(state)

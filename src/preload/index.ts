@@ -44,6 +44,8 @@ const api = {
     ipcRenderer.invoke('ym:searchArtists', query),
   ymArtist: (artistId: string): Promise<Artist | null> =>
     ipcRenderer.invoke('ym:artist', artistId),
+  ymTrackArtist: (trackId: string): Promise<Artist | null> =>
+    ipcRenderer.invoke('ym:trackArtist', trackId),
   ymArtistTracks: (artistId: string): Promise<Track[]> =>
     ipcRenderer.invoke('ym:artistTracks', artistId),
   ymSimilarArtists: (artistId: string): Promise<Artist[]> =>
@@ -138,6 +140,50 @@ const api = {
     lines: { timeSec: number; text: string }[]
     plain: string | null
   } | null> => ipcRenderer.invoke('lyrics:get', title, artist, durationSec, useGenius, force),
+  searchLyricsCandidates: (
+    title: string,
+    artist: string,
+    durationSec?: number
+  ): Promise<{
+    candidates: Array<{
+      id: number
+      trackName: string
+      artistName: string
+      albumName?: string
+      duration?: number
+      synced: boolean
+      plain: boolean
+      score: number
+      syncedLyrics?: string | null
+      plainLyrics?: string | null
+    }>
+    isFallbackTitleOnly: boolean
+  }> => ipcRenderer.invoke('lyrics:searchCandidates', title, artist, durationSec),
+  applyLyricsCandidate: (
+    title: string,
+    artist: string,
+    durationSec: number | undefined,
+    candidate: {
+      id: number
+      trackName: string
+      artistName: string
+      albumName?: string
+      duration?: number
+      synced: boolean
+      plain: boolean
+      score: number
+      syncedLyrics?: string | null
+      plainLyrics?: string | null
+    }
+  ): Promise<{
+    source: string
+    synced: boolean
+    manual?: boolean
+    lines: { timeSec: number; text: string }[]
+    plain: string | null
+    trackName?: string
+    artistName?: string
+  }> => ipcRenderer.invoke('lyrics:applyCandidate', title, artist, durationSec, candidate),
   clearLyricsCache: (): Promise<void> => ipcRenderer.invoke('lyrics:clearCache'),
   searchByLyrics: (
     query: string

@@ -168,6 +168,32 @@ export const CompassIcon = (p: IconProps): JSX.Element => (
   </Svg>
 )
 
+/** Back navigation (components/BackButton.tsx). Arrow, not a bare chevron: a
+    chevron alone reads as "collapse" here — Sidebar already uses one for that. */
+export const BackIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path d="M19 12H5" />
+    <path d="m11 18-6-6 6-6" />
+  </Svg>
+)
+
+/**
+ * Personal radio. Broadcast arcs coming off a heart: the station is built out of what
+ * you liked, which is the one thing that distinguishes it from RadioIcon above (a
+ * receiver — a station someone else programmed).
+ */
+export const PersonalRadioIcon = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <path
+      d="M12 20s-5.5-3.6-7.2-6.5A4.2 4.2 0 0 1 12 8.6a4.2 4.2 0 0 1 7.2 4.9C17.5 16.4 12 20 12 20z"
+      fill="currentColor"
+      stroke="none"
+    />
+    <path d="M5.6 6.1a9 9 0 0 1 12.8 0" opacity="0.85" />
+    <path d="M8.4 3.1a13 13 0 0 1 7.2 0" opacity="0.5" />
+  </Svg>
+)
+
 export const ActivityIcon = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <path d="M3 12h4l2.5 7 5-16 2.5 9H21" />

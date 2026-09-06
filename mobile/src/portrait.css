@@ -60,6 +60,40 @@ html.m {
   --m-bottom-chrome: calc(
     var(--m-tabbar-h) + var(--m-safe-pad) + 6px + var(--m-bar-h) + 18px
   );
+
+  /* Track-row geometry (§10). Two sizes, and `data-compact` picks between them —
+     the desktop's own compact rules can't do it here (`html.m .trow` outranks
+     `[data-compact='1'] .trow`, so its 38px height never applied), and a row
+     height has to be told to the JS anyway: TrackList windows the list from a
+     fixed number. --m-row-h MUST equal ROW_H_TOUCH / ROW_H_TOUCH_COMPACT in
+     src/renderer/src/touch.ts.
+     The row is taller than its cover on purpose: that difference is the air
+     between one track and the next. */
+  --m-row-h: 76px;
+  --m-row-cover: 48px;
+  --m-row-title: 15.5px;
+  --m-row-artist: 12.5px;
+  --m-row-time: 12px;
+  --m-row-btn: 44px;
+  --m-row-btn-w: 30px;
+  --m-row-icon: 18px;
+  /* [title/artist | duration | like | download+menu] — the three right-hand columns
+     hold the buttons, so they follow their width. */
+  --m-row-cols: minmax(0, 1fr) 40px 36px 60px;
+}
+
+/* Compact = what the normal size used to be, with the air taken back out (the
+   rows sit closer than they did). */
+html.m[data-compact='1'] {
+  --m-row-h: 56px;
+  --m-row-cover: 40px;
+  --m-row-title: 14px;
+  --m-row-artist: 11.5px;
+  --m-row-time: 11px;
+  --m-row-btn: 36px;
+  --m-row-btn-w: 28px;
+  --m-row-icon: 16px;
+  --m-row-cols: minmax(0, 1fr) 36px 32px 56px;
 }
 
 /* Touch scrolling: momentum on, overscroll chaining off so a bounce at the end
@@ -722,13 +756,13 @@ html.m .ph-desc {
    outlined circles is the most legible button on the page. */
 html.m .ph-actions {
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 5px;
   margin-top: 10px;
 }
 html.m .ph-actions .btn-play {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 35px;
+  height: 35px;
   min-width: 0;
   padding: 0;
   gap: 0;
@@ -738,10 +772,38 @@ html.m .ph-actions .btn-play {
 html.m .ph-actions .btn-play span {
   display: none;
 }
+html.m .ph-actions .list-menu {
+  flex: 0 0 auto;
+}
+html.m .ph-actions .btn-round {
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+}
 /* Buttons are flex rows, so an icon with no explicit basis is shrinkable. */
 html.m .ph-actions .btn-play svg,
 html.m .ph-actions .btn-round svg {
   flex: 0 0 auto;
+}
+@media (max-width: 370px) {
+  html.m .ph-actions {
+    gap: 4px;
+  }
+  html.m .ph-actions .btn-play,
+  html.m .ph-actions .btn-round {
+    width: 32px;
+    height: 32px;
+  }
+}
+@media (max-width: 340px) {
+  html.m .ph-actions {
+    gap: 3px;
+  }
+  html.m .ph-actions .btn-play,
+  html.m .ph-actions .btn-round {
+    width: 29px;
+    height: 29px;
+  }
 }
 /* 42px round buttons and a 22px-padded play pill would wrap one-per-line in the
    narrower column. */
@@ -786,37 +848,71 @@ html.m .home-sub {
   margin-top: 10px;
 }
 
-/* ---------- 8. Card grids → a fixed two-column phone grid ---------- */
+/* ---------- 8. Card grids → a fixed column count ---------- */
 
 /* Every desktop card grid is `repeat(auto-fill, minmax(150…186px, 1fr))`. At
    374px of usable width the 150px ones happen to land on two columns, but the
    170px mix grid and nextgen's 186px one fall back to ONE full-width column —
-   a wall of giant tiles. Pinning two columns keeps the desktop proportions and
-   is deterministic at every phone width. */
+   a wall of giant tiles. Pinning the count keeps the desktop proportions and is
+   deterministic at every phone width. */
 html.m .home-quick,
-html.m .mix-grid,
-html.m .act-stats,
-html.m .profile-tracks {
+html.m .act-stats {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-/* …except the home card grid ("Jump back in", playlists), which is a grid of
-   square covers: two columns make each cover 170px, so six cards are 700px of
-   artwork and the section alone is two screens tall. Three columns put the cover
-   back at a thumbnail's size, which is what it is. */
-html.m .home-grid {
+/* …except the grids of square covers — the home cards ("Jump back in", playlists),
+   the mixes and the profile's recent tracks. Two columns make each cover ~170px, so
+   six cards are 700px of artwork and the section alone is two screens tall. Three
+   columns put the cover back at a thumbnail's size, which is what it is. */
+html.m .home-grid,
+html.m .mix-grid,
+html.m .profile-tracks {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
-html.m .home-grid .home-card-title {
+html.m .home-grid .home-card-title,
+html.m .mix-grid .home-card-title,
+html.m .pt-title {
   font-size: 12px;
 }
-html.m .home-grid .home-card-sub {
+html.m .home-grid .home-card-sub,
+html.m .mix-grid .home-card-sub,
+html.m .pt-artist {
   font-size: 11px;
 }
 html.m .home-grid .home-card-art {
   margin-bottom: 4px;
   font-size: 24px;
+}
+/* The base skin boxes a mix card (border + 12px padding) and a profile track card
+   (10px); at a third of the screen that padding is all cover. nextgen already drops
+   both — its cards are box-less — so this only levels the two skins up. */
+html.m .mix-card:not(.skeleton),
+html.m .pt-card {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+html.m .mix-grid .mix-art,
+html.m .pt-cover {
+  margin-bottom: 4px;
+}
+html.m .pt-cover {
+  font-size: 22px;
+}
+/* The loading placeholder is a fixed 240px on the desktop, which at a third of the
+   width is a tower. Follow the real card instead: square cover + two text lines. */
+html.m .mix-card.skeleton {
+  height: auto;
+  aspect-ratio: 3 / 4;
+}
+
+/* Sections need more air between them than the desktop's 28px: the phone stacks
+   them in one column, so each heading has the previous section's cards directly
+   above it instead of beside them. (Default visual only — under Universal these
+   same sections are bento cells and the grid's gap spaces them; see §11.) */
+html.m .home-section {
+  margin-bottom: 36px;
 }
 
 /* Horizontal card rails.
@@ -1120,29 +1216,38 @@ html.m .tl-toolbar {
    visibly sags next to the artwork, which is exactly the "текст съезжает" bug.
    Now both rows are `auto` and `align-content: center` centres the pair as a
    block against a cover centred by `translateY(-50%)`: one shared centre line.
-   `padding-left` = cover (8 + 40) + 8px gap, and `.c-artist` drops its own
-   indent, so title and artist share one left edge.
+   `padding-left` = the cover's 8px offset + the cover + an 8px gap, and `.c-artist`
+   drops its own indent, so title and artist share one left edge.
 
-   The 64px height is NOT free-form — TrackList's windowing does its spacer math
-   from ROW_H, so `src/renderer/src/touch.ts` feeds the same 64 to the JS side on
+   Every size here comes from the --m-row-* variables at the top of the file, which
+   is also where the compact/normal split lives — including the row height, which is
+   NOT free-form: TrackList's windowing does its spacer math from ROW_H, so
+   `src/renderer/src/touch.ts` feeds the same two numbers to the JS side on
    coarse-pointer devices. Change one and you must change the other. */
 html.m .trow,
 html.m .trow.with-plays {
   position: relative;
-  grid-template-columns: minmax(0, 1fr) 36px 32px 56px;
+  grid-template-columns: var(--m-row-cols);
   grid-template-rows: auto auto;
   align-content: center;
   align-items: center;
   column-gap: 4px;
   row-gap: 2px;
-  height: 64px;
-  padding: 0 4px 0 56px;
+  height: var(--m-row-h);
+  padding: 0 4px 0 calc(var(--m-row-cover) + 16px);
 }
 html.m .thumb-wrap {
   position: absolute;
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
+}
+html.m .thumb {
+  width: var(--m-row-cover);
+  height: var(--m-row-cover);
+}
+html.m .thumb.placeholder {
+  font-size: calc(var(--m-row-cover) * 0.4);
 }
 
 /* The index column is a mouse affordance (row number that swaps to a play
@@ -1163,20 +1268,39 @@ html.m .c-title {
   gap: 10px;
 }
 html.m .t-title {
-  font-size: 14px;
+  font-size: var(--m-row-title);
+}
+/* Both text lines get a line box roomy enough for descenders. `line-height: 1`
+   makes the box exactly the em square, and `.t-title`/`.c-artist` clip
+   (`overflow: hidden` for the ellipsis) — so the tails of y/g/p/д/ц were cut off
+   mid-stroke. The row height is untouched: the two auto rows plus their 2px gap
+   still leave ~30px spare inside the row, and `align-content: center` keeps the
+   pair centred against the cover. */
+html.m .t-title,
+html.m .c-artist {
+  line-height: 1.35;
 }
 html.m .c-artist {
   grid-area: 2 / 1 / 3 / 2;
   padding-left: 0;
-  font-size: 11.5px;
-  line-height: 1;
+  font-size: var(--m-row-artist);
+}
+/* …and the names in it stop being links. On the desktop each one is a button that
+   opens its artist; here the whole row is already one target — it plays the track
+   (TrackRow's COARSE_POINTER branch) — and the artist line sits exactly where the
+   thumb lands, so taps meant for play kept opening an artist page instead. The way
+   to an artist on the phone is the fullscreen player, where the name stands alone.
+   Search's artist results are NOT this: those are `.profile-chip` cards whose whole
+   point is to open the artist, and they keep working. */
+html.m .trow .c-artist .artist-link {
+  pointer-events: none;
 }
 /* Duration and both buttons span the two text rows, so they centre on the same
    line as the cover instead of hanging off one row. */
 html.m .c-time {
   grid-area: 1 / 2 / 3 / 3;
-  font-size: 11px;
-  line-height: 1;
+  font-size: var(--m-row-time);
+  line-height: 1.35;
 }
 html.m .c-like {
   grid-area: 1 / 3 / 3 / 4;
@@ -1196,18 +1320,25 @@ html.m .pl-del {
 }
 
 /* …and they were mouse-sized: 19x19 for the download glyph, 32x18 for the heart.
-   The glyphs keep their desktop size; only the button box grows to fill the 40px
-   grid row, so the three sit shoulder to shoulder with no dead space between
-   them and a thumb cannot land between two of them. */
+   The button box fills the row's button height, so the three sit shoulder to
+   shoulder with no dead space between them and a thumb cannot land between two of
+   them. The glyphs are sized here rather than at the call site — TrackRow passes
+   one `size` for both shells. */
 html.m .row-like,
 html.m .row-dl,
 html.m .row-add {
-  height: 40px;
-  min-width: 28px;
+  height: var(--m-row-btn);
+  min-width: var(--m-row-btn-w);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+}
+html.m .trow .row-like svg,
+html.m .trow .row-dl svg,
+html.m .trow .row-add svg {
+  width: var(--m-row-icon);
+  height: var(--m-row-icon);
 }
 
 /* ---------- 11. Universal bento home ---------- */
@@ -1222,6 +1353,33 @@ html.m .pg-home {
 html.m .pg-bento {
   gap: 10px;
   grid-auto-rows: minmax(104px, auto);
+}
+/* 10px is the right gap between tiles, but between two full-width native sections
+   it puts a heading right under the previous section's covers ("Jump back in"
+   against the mixes). Those cells get the extra air; the tiles keep the tight gap.
+   (visual-universal.css zeroes the sections' own margin because the bento is meant
+   to do the spacing — this is that spacing, retuned for one column.) */
+html.m .pg-native + .pg-native {
+  margin-top: 14px;
+}
+
+/* Reading order on a phone. The bento is one column here, so "beside" becomes
+   "below" and the row the desktop reads left-to-right has to be spelled out: the
+   personal radio goes ABOVE the Yandex wave (it is ours, and it works without an
+   account), then the wave, then the read-only widgets, then the card sections.
+   Everything not listed keeps order 0 — hero and quick tiles stay on top. */
+html.m .pg-tile-radio {
+  order: 1;
+  grid-column: 1 / -1;
+}
+html.m .pg-tile-wave {
+  order: 2;
+}
+html.m .pg-tile-stats {
+  order: 3;
+}
+html.m .pg-native {
+  order: 4;
 }
 html.m .pg-hero-inner {
   padding: 16px;
@@ -1868,6 +2026,12 @@ html.m .m-token .sync-btn {
     background: transparent;
     box-shadow: none;
   }
+  /* The back button wears the rail's clothes (§3 sizes it), so all its hover has
+     left to stick is the brightened glyph. */
+  html.m .nav-back:hover {
+    color: var(--muted);
+    border-color: transparent;
+  }
   /* nextgen paints this tile with a gradient at rest and a brighter one on hover,
      so the resting look has to be restated rather than zeroed. */
   html.m .quick-tile:hover {
@@ -2054,19 +2218,21 @@ html.m .app-bg video {
    portrait (the widest is ~430px) and below an iPad, so no phone sees this. */
 @media (min-width: 640px) {
   html.m .home-quick,
-  html.m .mix-grid,
-  html.m .act-stats,
-  html.m .profile-tracks {
+  html.m .act-stats {
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   }
-  /* Square covers, so this one keeps the tighter minimum §8 gives it. */
-  html.m .home-grid {
+  /* Square covers, so these keep the tighter minimum §8 gives them. */
+  html.m .home-grid,
+  html.m .mix-grid,
+  html.m .profile-tracks {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
-  html.m .home-grid .home-card-title {
+  html.m .home-grid .home-card-title,
+  html.m .mix-grid .home-card-title {
     font-size: 13px;
   }
-  html.m .home-grid .home-card-sub {
+  html.m .home-grid .home-card-sub,
+  html.m .mix-grid .home-card-sub {
     font-size: 12px;
   }
   /* The hero cover is the other count-free thing that grows: `.ph` is a row, so it
@@ -2183,5 +2349,55 @@ html.m .eq-preset-chip {
 }
 html.m .eq-note {
   margin-top: 14px;
+}
+
+/* Personal radio setup sheet on mobile */
+html.m .radio-panel {
+  width: min(440px, 94vw);
+  max-height: 90vh;
+  border-radius: 18px;
+}
+html.m .radio-foot {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+}
+html.m .radio-foot .btn-play,
+html.m .radio-foot .sync-btn {
+  flex: 1 1 calc(50% - 4px);
+  justify-content: center;
+  text-align: center;
+}
+
+/* Lyrics candidate picker on mobile */
+html.m .lyrics-picker {
+  width: 94%;
+  max-height: 75vh;
+  padding: 16px;
+  border-radius: 16px;
+}
+html.m .lyrics-cand-card {
+  padding: 10px 12px;
+}
+html.m .lyrics-cand-title {
+  font-size: 13.5px;
+}
+html.m .lyrics-cand-artist {
+  font-size: 11.5px;
+}
+html.m .lyrics-cand-list {
+  max-height: 50vh;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+html.m .lyrics-manual-search {
+  flex-direction: column;
+  gap: 8px;
+}
+html.m .lyrics-search-submit {
+  justify-content: center;
+  padding: 10px 14px;
 }
 

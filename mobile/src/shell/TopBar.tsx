@@ -1,6 +1,7 @@
 import { usePlayer } from '@renderer/store'
 import { useT } from '@renderer/i18n'
 import { Logo } from '@renderer/components/Logo'
+import { BackButton } from '@renderer/components/BackButton'
 import {
   SearchIcon,
   SettingsIcon,
@@ -63,9 +64,15 @@ export function TopBar({ onMenu }: { onMenu: () => void }): JSX.Element {
   // My Wave is a Yandex-account feature — the sidebar hides it without a token,
   // and so does the rail.
   const ymAuth = usePlayer((s) => s.ymAuth)
+  // Back goes in the rail: the left half of this bar is the title, and on a pushed
+  // page (which is the only time the button exists) that title is the longest it
+  // ever gets. The brand mark stands down for it — an eighth 34px button would take
+  // the row past its budget, and with an arrow on screen the logo is the one thing
+  // here that says nothing about where you are.
+  const canGoBack = usePlayer((s) => s.navBack.length > 0)
 
   // On 'home' the brand IS the title (like the desktop sidebar's brand); every
-  // other page names itself, so the back-less drawer navigation stays legible.
+  // other page names itself, so tab and drawer navigation stays legible.
   const title =
     source === 'home'
       ? 'Latency'
@@ -105,10 +112,11 @@ export function TopBar({ onMenu }: { onMenu: () => void }): JSX.Element {
   return (
     <div className="m-topbar">
       <div className="m-tb-brand">
-        <Logo size={22} />
+        {!canGoBack && <Logo size={22} />}
         <span className="m-tb-title">{title}</span>
       </div>
       <div className="m-tb-rail">
+        <BackButton className="m-tb-btn" />
         <button
           className={`m-tb-btn ${source === 'activity' ? 'active' : ''}`}
           onClick={() => setSource('activity')}

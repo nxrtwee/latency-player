@@ -13,6 +13,7 @@ import {
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
+import { MixBadge } from './ProviderBadge'
 import { HomeBento } from './HomeBento'
 
 function greeting(): string {
@@ -242,7 +243,7 @@ export function HomePage(): JSX.Element {
                 >
                   <div className="mix-art">
                     {mix.cover ? <img src={mix.cover} alt="" /> : <span>♪</span>}
-                    <span className="mix-badge">{mixesReal ? 'SC' : 'MIX'}</span>
+                    <MixBadge real={mixesReal} />
                   </div>
                   <span className="home-card-title">{mix.title}</span>
                   <span className="home-card-sub">{mix.subtitle}</span>

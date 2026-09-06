@@ -30,6 +30,18 @@ export interface PlaybackHandle {
    * the user volume. Drives smooth track-to-track transitions.
    */
   setFade: (value: number, rampSec?: number) => void
+  /**
+   * Whether a second handle from this provider can play AT THE SAME TIME as this
+   * one. Default (undefined) is yes — every `<audio>`-based path makes one element
+   * per track.
+   *
+   * iOS is the exception: playback there is a single process-wide AVPlayer
+   * (mobile/src/api/nativeAudio.ts), so a second handle does not add a voice, it
+   * REPLACES the item on the one player — and tearing the old handle down pauses
+   * the player the new track is now using. A `false` here tells the core to fade
+   * out, switch, then fade in instead of overlapping the two.
+   */
+  canOverlap?: boolean
   /** Tear down resources (detach elements, stop network, etc.). */
   destroy: () => void
 }

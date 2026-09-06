@@ -15,6 +15,7 @@ import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@rende
 import { registerProvider } from '@renderer/providers/registry'
 import { connectElement, resumeAudio } from '@renderer/audio/analyser'
 import { resolveUrl } from './localfiles'
+import { makeFader, NATIVE_FADE_STEP_MS } from './volumeFade'
 import { getNativeAudio } from './nativeAudio'
 
 const MISSING = 'Файл недоступен — переимпортируйте его в Библиотеке.'
@@ -57,6 +58,8 @@ function createNativeLocal(
   native.setMetadata({ title: track.title, artist: track.artist || 'Local', artwork: track.artwork || undefined })
 
   let wantPlay = false
+  // See scProvider: the fade rides AVPlayer's volume, there being no gain node.
+  const fader = makeFader((level) => void native.setVolume(level), NATIVE_FADE_STEP_MS)
   void url.then((u) => {
     if (destroyed) return
     if (!u) return cb.onError(MISSING)
@@ -67,10 +70,11 @@ function createNativeLocal(
     play: () => { wantPlay = true; native.play() },
     pause: () => { wantPlay = false; native.pause() },
     seek: (sec) => native.seek(sec),
-    setVolume: (v) => native.setVolume(v),
+    setVolume: (v) => fader.setVolume(v),
     setNormalization: () => {},
-    setFade: () => {},
-    destroy: () => { destroyed = true; for (const u of unsubs) u(); native.destroy() }
+    setFade: (value, rampSec) => fader.setFade(value, rampSec),
+    canOverlap: false,
+    destroy: () => { destroyed = true; fader.destroy(); for (const u of unsubs) u(); native.destroy() }
   }
 }
 

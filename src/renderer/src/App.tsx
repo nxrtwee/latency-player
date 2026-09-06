@@ -30,6 +30,8 @@ import { BgFraming } from './components/BgFraming'
 import { ProfilePage } from './components/ProfilePage'
 import { Equalizer } from './components/Equalizer'
 import { CommentsPage } from './components/CommentsPage'
+import { BackButton } from './components/BackButton'
+import { RadioSetup } from './components/RadioSetup'
 import { Splash } from './components/Splash'
 
 // True when the given element (or the currently focused element) is a text-entry
@@ -77,6 +79,7 @@ export function App(): JSX.Element {
   const rightOpen = usePlayer((s) => s.rightOpen)
   const settingsOpen = usePlayer((s) => s.settingsOpen)
   const eqOpen = usePlayer((s) => s.eqOpen)
+  const radioSetupOpen = usePlayer((s) => s.radioSetupOpen)
   const theme = usePlayer((s) => s.theme)
   const skin = usePlayer((s) => s.skin)
   const visual = usePlayer((s) => s.visual)
@@ -377,6 +380,7 @@ export function App(): JSX.Element {
       {settingsOpen && <Settings />}
       {framingOpen && <BgFraming />}
       {eqOpen && <Equalizer />}
+      {radioSetupOpen && <RadioSetup />}
       {!splashDone && <Splash onDone={() => setSplashDone(true)} />}
     </>
   )
@@ -439,6 +443,9 @@ export function App(): JSX.Element {
           />
         )}
         <main className="content">
+          {/* Not on home: it is the root of every path here, and its hero glow sits
+              in exactly this corner. */}
+          {source !== 'home' && <BackButton className="content-back" />}
           {error && <div className="error-banner">{error}</div>}
           {page}
         </main>

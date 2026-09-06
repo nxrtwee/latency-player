@@ -1052,6 +1052,41 @@ aside.sidebar.collapsed {
   z-index: 5;
 }
 
+/* Back button (components/BackButton.tsx) — the look only. Each shell positions
+   its own copy: `.content-back` floats in the top-right of the centre panel here,
+   where no page puts anything (the heroes all run from the left), while the phone
+   hands the button its top-bar rail class instead (portrait.css §3). */
+.nav-back {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.16s, border-color 0.16s, background 0.16s;
+}
+.nav-back:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+/* The extra `.app` is specificity, not decoration: two rules lift EVERY child of
+   `.content` into the flow to sit above a glass layer — `.app.has-bg .content > *`
+   above and `[data-skin='nextgen'] .content > *` in the skin — and either one turns
+   this `absolute` back into `relative`. The button then becomes a 32px block at the
+   top of the column: it lands in the wrong corner AND pushes the page down. */
+.app .content > .nav-back.content-back {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  /* Above the page (.tracklist and .ph are z-index 1), below the scrollbar (6) —
+     which lives in the last 12px on this side and so passes behind it. */
+  z-index: 5;
+}
+
 .tracklist {
   position: relative;
   min-height: 100%;
@@ -2933,8 +2968,10 @@ button:disabled {
 .lm-back:hover {
   color: var(--text);
 }
-.btn-round.done {
+.btn-round.done,
+.btn-round.active {
   color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .btn-spin {
   width: 16px;
@@ -3206,6 +3243,230 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Personal radio banner — the Wave banner's twin (same block, same geometry), with
+   the branding swapped: the wave is Yandex's station and wears its gold, this one is
+   ours and wears the accent. Both live in the Default home; Universal has its own
+   tile pair in visual-universal.css. */
+
+
+/* ---------- Personal radio setup sheet (components/RadioSetup.tsx) ---------- */
+.radio-panel {
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.radio-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--border-2);
+}
+.radio-head-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+}
+.radio-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.radio-head-text h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+.radio-head-sub {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.radio-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.radio-warn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.radio-q {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.radio-q-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.radio-hint,
+.radio-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+.radio-count {
+  white-space: nowrap;
+}
+.radio-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.radio-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--border-2);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+.radio-opt:hover {
+  color: var(--text);
+}
+.radio-opt.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+}
+.radio-search {
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-2);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.radio-seeds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.radio-seed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.radio-seed:hover {
+  background: var(--row-hover);
+}
+.radio-seed.on {
+  background: var(--accent-soft);
+}
+.radio-seed-art {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--art-ph);
+  color: var(--accent);
+  font-size: 14px;
+}
+.radio-seed-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.radio-seed-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.radio-seed-title,
+.radio-seed-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.radio-seed-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.radio-seed-artist {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.radio-seed-mark {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.radio-seed.on .radio-seed-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--panel);
+}
+.radio-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-2);
+}
+.radio-go {
+  gap: 8px;
+}
+.radio-foot .sync-btn.ghost {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border: 1px solid var(--border-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.radio-foot .sync-btn.ghost:hover:not(:disabled) {
+  background: var(--row-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.radio-foot .sync-btn.ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .home-h2 {
   position: relative;
   z-index: 1;
@@ -3364,6 +3625,21 @@ button:disabled {
   background: var(--accent);
   border-radius: 6px;
   padding: 2px 7px;
+}
+/* The SoundCloud variant (components/ProviderBadge.tsx → MixBadge): a logo, not a
+   word, so the chip becomes square and tucks further into the corner — the covers
+   are small enough on a phone that the old 8px inset read as floating. Dark glass
+   rather than the accent fill, because the mark is a fixed white. */
+.mix-badge.brand {
+  top: 6px;
+  left: 6px;
+  padding: 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #fff;
+  background: rgba(8, 6, 14, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 .mix-card.skeleton {
   height: 240px;
@@ -4500,6 +4776,254 @@ button:disabled {
   margin-top: 24px;
   font-size: 12px;
   color: var(--muted-2);
+}
+
+.lyrics-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lyrics-fallback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-radius: 16px;
+}
+
+.lyrics-picker {
+  width: min(520px, 92%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  animation: modalIn 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  backdrop-filter: blur(20px);
+  z-index: 10;
+}
+
+.lyrics-picker-head {
+  margin-bottom: 14px;
+}
+
+.lyrics-picker-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.lyrics-picker-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.lyrics-manual-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.lyrics-search-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.lyrics-search-input:focus {
+  border-color: var(--accent);
+  background: var(--row-hover);
+}
+
+.lyrics-search-input::placeholder {
+  color: var(--muted-2);
+}
+
+.lyrics-search-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.lyrics-search-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lyrics-search-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.lyrics-picker-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  background: var(--panel-2);
+  border: 1px dashed var(--border-2);
+  border-radius: 12px;
+  margin: 4px 0 8px;
+}
+
+.lyrics-cand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 52vh;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+  user-select: none;
+  cursor: grab;
+}
+
+.lyrics-cand-list.grabbing {
+  cursor: grabbing;
+}
+
+.lyrics-cand-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.lyrics-cand-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+}
+
+.lyrics-cand-list::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 3px;
+}
+
+.lyrics-cand-list::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.lyrics-cand-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.lyrics-cand-card:hover {
+  background: var(--row-hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.lyrics-cand-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.lyrics-cand-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyrics-cand-artist {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.lyrics-cand-album {
+  color: var(--muted-2);
+}
+
+.lyrics-cand-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.lyrics-cand-dur {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.lyrics-cand-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.lyrics-cand-badge.synced {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.lyrics-cand-badge.plain {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  border: 1px solid var(--border-2);
+}
+
+.lyrics-cand-score {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-2);
+  min-width: 28px;
+  text-align: right;
+}
+
+.lyrics-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-2);
 }
 
 /* ---------------- Global animations ---------------- */

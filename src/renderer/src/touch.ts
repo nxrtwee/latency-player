@@ -19,5 +19,12 @@
 export const COARSE_POINTER =
   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
-/** Touch row height; mirrors `html.m .trow { height: 64px }` in portrait.css. */
-export const ROW_H_TOUCH = 64
+/**
+ * Touch row heights; these mirror `--m-row-h` in portrait.css §10 — the normal one
+ * and the one `html.m[data-compact='1']` swaps in. The desktop's own compact rule
+ * can't be reused: `html.m .trow` (0,2,1) outranks `[data-compact='1'] .trow`
+ * (0,2,0), so on a phone the row is whatever portrait.css says and the JS has to
+ * agree, or the windowing spacers drift by the difference on every row.
+ */
+export const ROW_H_TOUCH = 76
+export const ROW_H_TOUCH_COMPACT = 56

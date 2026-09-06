@@ -36,7 +36,8 @@ import {
   HeartFilledIcon,
   ShuffleIcon,
   RepeatIcon,
-  RepeatOneIcon
+  RepeatOneIcon,
+  SearchIcon
 } from './Icons'
 
 interface Lyrics {
@@ -45,6 +46,19 @@ interface Lyrics {
   manual?: boolean
   lines: { timeSec: number; text: string }[]
   plain: string | null
+}
+
+interface LyricsCandidate {
+  id: number
+  trackName: string
+  artistName: string
+  albumName?: string
+  duration?: number
+  synced: boolean
+  plain: boolean
+  score: number
+  syncedLyrics?: string | null
+  plainLyrics?: string | null
 }
 
 /** Idle delay before the immersive karaoke view drops everything but the text. */
@@ -154,6 +168,15 @@ const KaryLine = memo(function KaryLine({
   )
 })
 
+function cleanQueryTitle(rawTitle: string): string {
+  return (rawTitle || '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/[\(\[\{][^\)\]\}]*[\)\]\}]/g, ' ')
+    .replace(/[\[\]\(\)\{\}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || (rawTitle || '').trim()
+}
+
 export function LyricsView(): JSX.Element {
   const tr = useT()
   const track = usePlayer((s) => (s.currentIndex >= 0 ? s.queue[s.currentIndex] : undefined))
@@ -225,7 +248,12 @@ export function LyricsView(): JSX.Element {
   const showFsBg = !!customBg && bgScope !== 'interface'
 
   const [lyrics, setLyrics] = useState<Lyrics | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'none' | 'ok'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'none' | 'ok' | 'candidates'>('idle')
+  const [candidates, setCandidates] = useState<LyricsCandidate[]>([])
+  const [isFallback, setIsFallback] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+  const [manualTitle, setManualTitle] = useState('')
+  const [manualArtist, setManualArtist] = useState('')
   const [offset, setOffset] = useState(0)
   const [palette, setPalette] = useState<Palette | null>(null)
   const [editing, setEditing] = useState(false)
@@ -313,10 +341,10 @@ export function LyricsView(): JSX.Element {
   const bumpChrome = useCallback(() => {
     setChromeOn(true)
     window.clearTimeout(hideRef.current)
-    if (immersive && !kbgMenu && !eqOpen && status === 'ok') {
+    if (immersive && !kbgMenu && !eqOpen && !showPicker && status === 'ok') {
       hideRef.current = window.setTimeout(() => setChromeOn(false), CHROME_IDLE_MS)
     }
-  }, [immersive, kbgMenu, eqOpen, status])
+  }, [immersive, kbgMenu, eqOpen, showPicker, status])
   useEffect(() => {
     bumpChrome()
     return () => window.clearTimeout(hideRef.current)
@@ -394,36 +422,262 @@ export function LyricsView(): JSX.Element {
     if (!track) {
       setLyrics(null)
       setStatus('idle')
+      setCandidates([])
+      setIsFallback(false)
+      setShowPicker(false)
+      setManualTitle('')
+      setManualArtist('')
       return
     }
+    setManualTitle(cleanQueryTitle(track.title))
+    setManualArtist(track.artist || '')
     let cancelled = false
     const force = forceRef.current
     forceRef.current = false
     setStatus('loading')
     setLyrics(null)
-    window.api
-      .getLyrics(
-        track.title,
-        track.artist || '',
-        track.durationSec,
-        usePlayer.getState().geniusFallback,
-        force
-      )
-      .then((res) => {
-        if (cancelled) return
-        if (res && (res.synced || res.plain)) {
-          setLyrics(res as Lyrics)
-          setStatus('ok')
-        } else {
-          setStatus('none')
+    setCandidates([])
+    setIsFallback(false)
+    setShowPicker(false)
+
+    async function loadLyrics(): Promise<void> {
+      if (!track) return
+
+      // 1. If not forcing reload, check if an authoritative synced or manual cache exists
+      if (!force) {
+        try {
+          const cached = await window.api.getLyrics(
+            track.title,
+            track.artist || '',
+            track.durationSec,
+            false,
+            false
+          )
+          if (cancelled) return
+          if (cached && (cached.synced || cached.manual)) {
+            setLyrics(cached as Lyrics)
+            setStatus('ok')
+            return
+          }
+        } catch {}
+      }
+
+      // 2. Search candidates via smart letter-based matching
+      try {
+        if (!window.api?.searchLyricsCandidates) {
+          const res = await window.api.getLyrics(track.title, track.artist || '', track.durationSec)
+          if (cancelled) return
+          if (res && (res.synced || res.plain)) {
+            setLyrics(res as Lyrics)
+            setStatus('ok')
+          } else {
+            setStatus('none')
+          }
+          return
         }
-      })
-      .catch(() => !cancelled && setStatus('none'))
+
+        const candRes = await window.api.searchLyricsCandidates(
+          track.title,
+          track.artist || '',
+          track.durationSec
+        )
+        if (cancelled) return
+
+        const cands = (candRes?.candidates || []) as LyricsCandidate[]
+        const fallback = !!candRes?.isFallbackTitleOnly
+
+        if (cands.length === 0) {
+          if (usePlayer.getState().geniusFallback) {
+            const geniusRes = await window.api.getLyrics(
+              track.title,
+              track.artist || '',
+              track.durationSec,
+              true,
+              true
+            )
+            if (cancelled) return
+            if (geniusRes && (geniusRes.synced || geniusRes.plain)) {
+              setLyrics(geniusRes as Lyrics)
+              setStatus('ok')
+              return
+            }
+          }
+          setStatus('none')
+          return
+        }
+
+        setCandidates(cands)
+        setIsFallback(fallback)
+
+        // If not a fallback title-only search, and top candidate has strong confidence (score >= 0.75),
+        // apply it immediately so playback and karaoke are seamless without blocking the user!
+        if (!fallback && cands[0].score >= 0.75) {
+          const applied = await window.api.applyLyricsCandidate(
+            track.title,
+            track.artist || '',
+            track.durationSec,
+            cands[0]
+          )
+          if (cancelled) return
+          if (applied && (applied.synced || applied.plain)) {
+            setLyrics(applied as Lyrics)
+            setStatus('ok')
+            return
+          }
+        }
+
+        // Multiple candidates or title-only fallback: prompt user to pick
+        setStatus('candidates')
+        setShowPicker(true)
+      } catch {
+        try {
+          const fallbackRes = await window.api.getLyrics(
+            track.title,
+            track.artist || '',
+            track.durationSec
+          )
+          if (cancelled) return
+          if (fallbackRes && (fallbackRes.synced || fallbackRes.plain)) {
+            setLyrics(fallbackRes as Lyrics)
+            setStatus('ok')
+            return
+          }
+        } catch {}
+
+        if (!cancelled) setStatus('none')
+      }
+    }
+
+    void loadLyrics()
+
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackKey, reloadKey])
+
+  async function selectCandidate(cand: LyricsCandidate): Promise<void> {
+    if (!track) return
+    setStatus('loading')
+    setShowPicker(false)
+    try {
+      const res = await window.api.applyLyricsCandidate(
+        track.title,
+        track.artist || '',
+        track.durationSec,
+        cand
+      )
+      if (res && (res.synced || res.plain)) {
+        setLyrics(res as Lyrics)
+        setStatus('ok')
+      } else {
+        setStatus('none')
+      }
+    } catch {
+      setStatus('none')
+    }
+  }
+
+  async function searchOnlyByTitle(): Promise<void> {
+    if (!track) return
+    setStatus('loading')
+    try {
+      const cleanTitle =
+        track.title
+          .replace(/\[[^\]]*\]/g, ' ')
+          .replace(/[\(\[\{][^\)\]\}]*[\)\]\}]/g, ' ')
+          .replace(/[\[\]\(\)\{\}]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim() || track.title
+      let cands: LyricsCandidate[] = []
+      if (window.api?.searchLyricsCandidates) {
+        const res = await window.api.searchLyricsCandidates(cleanTitle, '', track.durationSec)
+        cands = (res?.candidates || []) as LyricsCandidate[]
+      }
+      if (cands.length > 0) {
+        setCandidates(cands)
+        setIsFallback(true)
+        setShowPicker(true)
+        setStatus('candidates')
+      } else {
+        const fallbackRes = await window.api.getLyrics(cleanTitle, '', track.durationSec, false, true)
+        if (fallbackRes && (fallbackRes.synced || fallbackRes.plain)) {
+          setLyrics(fallbackRes as Lyrics)
+          setStatus('ok')
+        } else {
+          setStatus('none')
+        }
+      }
+    } catch {
+      setStatus('none')
+    }
+  }
+
+  async function executeManualSearch(e?: React.FormEvent): Promise<void> {
+    if (e) e.preventDefault()
+    const qTitle = manualTitle.trim()
+    const qArtist = manualArtist.trim()
+    if (!qTitle) return
+
+    setStatus('loading')
+    try {
+      let cands: LyricsCandidate[] = []
+      let fallback = false
+      if (window.api?.searchLyricsCandidates) {
+        const res = await window.api.searchLyricsCandidates(qTitle, qArtist, track?.durationSec)
+        cands = (res?.candidates || []) as LyricsCandidate[]
+        fallback = !qArtist || !!res?.isFallbackTitleOnly
+      }
+
+      setCandidates(cands)
+      setIsFallback(fallback)
+      setShowPicker(true)
+      setStatus('candidates')
+    } catch {
+      setCandidates([])
+      setShowPicker(true)
+      setStatus('candidates')
+    }
+  }
+
+  async function openPickerManual(): Promise<void> {
+    if (!track) return
+    if (showPicker) {
+      setShowPicker(false)
+      setStatus(lyrics ? 'ok' : 'none')
+      return
+    }
+    setManualTitle(cleanQueryTitle(track.title))
+    setManualArtist(track.artist || '')
+    if (candidates.length > 0) {
+      setShowPicker(true)
+      setStatus('candidates')
+      return
+    }
+    setStatus('loading')
+    try {
+      if (window.api?.searchLyricsCandidates) {
+        const res = await window.api.searchLyricsCandidates(
+          track.title,
+          track.artist || '',
+          track.durationSec
+        )
+        const cands = (res?.candidates || []) as LyricsCandidate[]
+        if (cands.length > 0) {
+          setCandidates(cands)
+          setIsFallback(!!res?.isFallbackTitleOnly)
+          setShowPicker(true)
+          setStatus('candidates')
+          return
+        }
+      }
+      setShowPicker(true)
+      setStatus('candidates')
+    } catch {
+      setShowPicker(true)
+      setStatus('candidates')
+    }
+  }
 
   // Karaoke only for REAL synced lyrics (LRCLIB-synced or a manual sync). Genius
   // and other plain lyrics have no timestamps, so we no longer fake the timing —
@@ -595,7 +849,7 @@ export function LyricsView(): JSX.Element {
               <LyricsIcon size={19} />
             </button>
           )}
-          {(status === 'ok' || status === 'none') && (
+          {(status === 'ok' || status === 'none' || status === 'candidates') && (
             <>
               {isManual && (
                 <button
@@ -606,6 +860,13 @@ export function LyricsView(): JSX.Element {
                   <CloseIcon size={18} />
                 </button>
               )}
+              <button
+                className={`fsplayer-bg-btn ${showPicker ? 'on' : ''}`}
+                onClick={() => void openPickerManual()}
+                title={tr('lyricsChooseVersion')}
+              >
+                <SearchIcon size={17} />
+              </button>
               <button
                 className="fsplayer-bg-btn"
                 onClick={() => {
@@ -760,13 +1021,135 @@ export function LyricsView(): JSX.Element {
         {lyricsMode && (
         <div className="fsplayer-lyrics" ref={lyricsAreaRef}>
           {status === 'loading' && <div className="lyrics-msg">{tr('searchingLyrics')}</div>}
-          {status === 'none' && (
+          {status === 'none' && !showPicker && (
             <div className="lyrics-msg">
               {tr('noLyrics')}
               <span className="lyrics-sub">{tr('checkedSources')}</span>
+              <div className="lyrics-msg-actions">
+                <button
+                  type="button"
+                  className="sync-btn ghost lyrics-fallback-btn"
+                  onClick={() => void searchOnlyByTitle()}
+                >
+                  <SearchIcon size={15} />
+                  {tr('lyricsSearchFallbackTitle')}
+                </button>
+                <button
+                  type="button"
+                  className="sync-btn ghost lyrics-fallback-btn"
+                  onClick={() => void openPickerManual()}
+                >
+                  <SearchIcon size={15} />
+                  {tr('lyricsManualSearch')}
+                </button>
+              </div>
             </div>
           )}
-          {status === 'ok' && karyLines.length > 0 && (
+          {(status === 'candidates' || showPicker) && (
+            <div className="lyrics-picker">
+              <div className="lyrics-picker-head">
+                <div className="lyrics-picker-title">
+                  {candidates.length > 0
+                    ? isFallback
+                      ? tr('lyricsFoundFallback').replace('{n}', String(candidates.length))
+                      : tr('lyricsFoundCandidates').replace('{n}', String(candidates.length))
+                    : tr('lyricsManualSearch')}
+                </div>
+                <div className="lyrics-picker-sub">
+                  {candidates.length > 0
+                    ? isFallback
+                      ? tr('lyricsFallbackSub')
+                      : tr('lyricsCandidatesSub')
+                    : tr('lyricsNotFoundQuery')}
+                </div>
+              </div>
+
+              <form className="lyrics-manual-search" onSubmit={(e) => void executeManualSearch(e)}>
+                <input
+                  type="text"
+                  className="lyrics-search-input"
+                  placeholder={tr('lyricsSearchTitlePlaceholder')}
+                  value={manualTitle}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="lyrics-search-input"
+                  placeholder={tr('lyricsSearchArtistPlaceholder')}
+                  value={manualArtist}
+                  onChange={(e) => setManualArtist(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="lyrics-search-submit"
+                  disabled={!manualTitle.trim()}
+                >
+                  <SearchIcon size={15} />
+                  {tr('lyricsSearchButton')}
+                </button>
+              </form>
+
+              {candidates.length > 0 ? (
+                <div className="lyrics-cand-list" onMouseDown={grabScroll}>
+                  {candidates.map((cand) => (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      className="lyrics-cand-card"
+                      onClick={() => void selectCandidate(cand)}
+                    >
+                      <div className="lyrics-cand-main">
+                        <div className="lyrics-cand-title">{cand.trackName}</div>
+                        <div className="lyrics-cand-artist">
+                          {cand.artistName}
+                          {cand.albumName ? (
+                            <span className="lyrics-cand-album"> • {cand.albumName}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="lyrics-cand-meta">
+                        {cand.duration ? (
+                          <span className="lyrics-cand-dur">{formatTime(cand.duration)}</span>
+                        ) : null}
+                        <span className={`lyrics-cand-badge ${cand.synced ? 'synced' : 'plain'}`}>
+                          {cand.synced ? tr('lyricsSyncedBadge') : tr('lyricsPlainBadge')}
+                        </span>
+                        <span className="lyrics-cand-score">{Math.round(cand.score * 100)}%</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="lyrics-picker-empty">
+                  {tr('lyricsNotFoundQuery')}
+                </div>
+              )}
+
+              <div className="lyrics-picker-actions">
+                {!isFallback && (
+                  <button
+                    type="button"
+                    className="sync-btn ghost"
+                    onClick={() => void searchOnlyByTitle()}
+                  >
+                    <SearchIcon size={15} />
+                    {tr('lyricsSearchFallbackTitle')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="sync-btn ghost"
+                  onClick={() => {
+                    setShowPicker(false)
+                    setStatus(lyrics ? 'ok' : 'none')
+                  }}
+                >
+                  {tr('cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+          {!showPicker && status === 'ok' && karyLines.length > 0 && (
             <div className="kary-viewport" ref={viewportRef}>
               <div className="kary" style={{ transform: `translateY(${offset}px)` }}>
                 {karyLines.map((line, i) => (
@@ -786,7 +1169,7 @@ export function LyricsView(): JSX.Element {
               </div>
             </div>
           )}
-          {status === 'ok' && karyLines.length === 0 && plainLines.length > 0 && (
+          {!showPicker && status === 'ok' && karyLines.length === 0 && plainLines.length > 0 && (
             <div className="kary-viewport static">
               <div className="kary-scroll" ref={karyScrollRef} onMouseDown={grabScroll}>
                 <div className="kary-static">

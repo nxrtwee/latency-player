@@ -9,6 +9,9 @@
 //   3. A 10-band equalizer inside the audio tap. Because playback is AVPlayer, the
 //      renderer's Web Audio EQ is not in the path at all; the tap's PCM is, so the
 //      filtering happens here and JS only forwards the slider values ("setEq").
+//   4. Loudness leveling in the same tap, for the same reason: AGC → compressor →
+//      limiter, mirroring src/renderer/src/audio/leveler.ts. JS forwards the config
+//      ("setLeveler") and nothing else.
 import UIKit
 import Capacitor
 import AVFoundation
@@ -75,6 +78,395 @@ final class EqSettings {
     }
 }
 
+// MARK: - Loudness leveling settings (shared between the bridge and the audio thread)
+
+/// What Settings last asked of the leveler. Same lock discipline as EqSettings: the
+/// audio thread only ever *tries* the lock and keeps its previous copy on a miss.
+///
+/// The presets mirror src/renderer/src/audio/leveler.ts one for one — one behaviour
+/// described in two languages, so a track sounds the same however it is playing.
+final class LevelerSettings {
+    static let shared = LevelerSettings()
+
+    struct Preset {
+        let threshold: Float   // dBFS where the compressor starts holding back
+        let knee: Float        // dB of soft knee
+        let ratio: Float
+        let attack: Float      // seconds
+        let release: Float     // seconds
+        let maxBoost: Float    // dB the AGC may add
+        let maxCut: Float      // dB the AGC may take away
+    }
+
+    static let presets: [Preset] = [
+        /* light  */ Preset(threshold: -18, knee: 10, ratio: 2, attack: 0.02, release: 0.35, maxBoost: 9, maxCut: 12),
+        /* medium */ Preset(threshold: -22, knee: 12, ratio: 3, attack: 0.012, release: 0.28, maxBoost: 12, maxCut: 15),
+        /* strong */ Preset(threshold: -28, knee: 12, ratio: 5, attack: 0.008, release: 0.2, maxBoost: 15, maxCut: 18)
+    ]
+
+    struct State {
+        var enabled = false
+        var target: Float = -14   // program loudness to aim for
+        var strength = 1          // index into `presets`
+    }
+
+    private let lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+    private var state = State()
+
+    private init() { lock.initialize(to: os_unfair_lock()) }
+
+    func tryRead() -> State? {
+        guard os_unfair_lock_trylock(lock) else { return nil }
+        let copy = state
+        os_unfair_lock_unlock(lock)
+        return copy
+    }
+
+    func read() -> State {
+        os_unfair_lock_lock(lock)
+        let copy = state
+        os_unfair_lock_unlock(lock)
+        return copy
+    }
+
+    func update(enabled: Bool, target: Double, strength: String) {
+        let idx = strength == "light" ? 0 : (strength == "strong" ? 2 : 1)
+        let t = target.isFinite ? Float(max(-30, min(-5, target))) : -14
+        os_unfair_lock_lock(lock)
+        state = State(enabled: enabled, target: t, strength: idx)
+        os_unfair_lock_unlock(lock)
+    }
+}
+
+/// The leveling chain, per tap: AGC → compressor → limiter, exactly the stages the
+/// renderer builds out of Web Audio nodes (audio/leveler.ts).
+///
+/// Everything is per-sample scalar maths on the tap's own buffer — no allocation, no
+/// locking beyond the one `tryRead`, so it is safe on the real-time thread. Stereo is
+/// LINKED: one gain for all channels, computed from the loudest channel, otherwise the
+/// image would wander as the two sides were reduced by different amounts.
+final class Leveler {
+    /// Max channels the pointer table is sized for. A wider buffer is left alone
+    /// rather than half-processed (no real player item hands the tap more than this).
+    private static let maxChannels = 8
+
+    private var sampleRate: Float = 44100
+    private var channels = 0
+    /// This buffer's channel base pointers. Allocated in prepare() so that process()
+    /// — a real-time callback — never allocates (the EQ above follows the same rule).
+    private var chans: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>?
+
+    // AGC
+    private var envDb: Float = -30        // slow envelope of program level
+    private var agcGain: Float = 1        // smoothed, what we actually multiply by
+    private var agcTarget: Float = 1
+    // Compressor / limiter envelopes, in linear gain (1 = no reduction).
+    private var compGain: Float = 1
+    private var limGain: Float = 1
+
+    private var envUp: Float = 0          // per-buffer smoothing coefficients
+    private var envDown: Float = 0
+    private var agcSmooth: Float = 0      // per-sample
+    private var attackCoef: Float = 0
+    private var releaseCoef: Float = 0
+    private var limRelease: Float = 0
+    private var lastStrength = -1
+    private var lastFrames = 0
+    /// Re-seed the envelope from the next buffer instead of gliding to it.
+    private var seedNext = true
+    /// Last config seen. The audio thread only *tries* the settings lock; on a miss it
+    /// keeps working from this rather than letting a buffer through unprocessed, which
+    /// would be an audible step in level.
+    private var cfg = LevelerSettings.State()
+
+    // K-weighted measurement (ITU-R BS.1770): channels are summed into `scratch`, then
+    // run through a ~38 Hz high-pass and a +4 dB shelf above ~1.7 kHz before the RMS.
+    // That is roughly how loud a band SOUNDS rather than how much energy it carries —
+    // without it bass dominates the measurement and a bass-heavy track gets pushed
+    // down too far. The measurement happens BEFORE the EQ (see TapContext.process), so
+    // the user's own curve never feeds back into the AGC.
+    private static let scratchCapacity = 8192
+    private var scratch: UnsafeMutablePointer<Float>?
+    private var hp = (b0: Float(1), b1: Float(0), b2: Float(0), a1: Float(0), a2: Float(0))
+    private var shelf = (b0: Float(1), b1: Float(0), b2: Float(0), a1: Float(0), a2: Float(0))
+    private var hpState = (x1: Float(0), x2: Float(0), y1: Float(0), y2: Float(0))
+    private var shelfState = (x1: Float(0), x2: Float(0), y1: Float(0), y2: Float(0))
+
+    /// Below this a buffer is a gap, not music — hold the gain instead of boosting
+    /// the noise floor and then slamming back down when the track returns.
+    private let gateDb: Float = -55
+
+    func prepare(sampleRate: Double, channels: Int) {
+        self.sampleRate = Float(sampleRate > 0 ? sampleRate : 44100)
+        self.channels = min(max(1, channels), Leveler.maxChannels)
+        chans?.deallocate()
+        let table = UnsafeMutablePointer<UnsafeMutablePointer<Float>?>.allocate(capacity: Leveler.maxChannels)
+        table.initialize(repeating: nil, count: Leveler.maxChannels)
+        chans = table
+        cfg = LevelerSettings.shared.read()
+        envDb = cfg.target
+        agcGain = 1
+        agcTarget = 1
+        compGain = 1
+        limGain = 1
+        lastStrength = -1
+        lastFrames = 0
+        // A tap is created per player item, so this runs once per track — which is
+        // exactly when the envelope should forget the previous one.
+        seedNext = true
+        // 0.4 s gain glide, as on the desktop: fast enough to follow a section, slow
+        // enough that the ear hears level rather than movement.
+        agcSmooth = 1 - exp(-1 / (0.4 * self.sampleRate))
+        limRelease = 1 - exp(-1 / (0.1 * self.sampleRate))
+
+        scratch?.deallocate()
+        let sc = UnsafeMutablePointer<Float>.allocate(capacity: Leveler.scratchCapacity)
+        sc.initialize(repeating: 0, count: Leveler.scratchCapacity)
+        scratch = sc
+        buildWeighting()
+    }
+
+    /// RBJ-cookbook coefficients for the two K-weighting sections, normalized by a0.
+    private func buildWeighting() {
+        hpState = (0, 0, 0, 0)
+        shelfState = (0, 0, 0, 0)
+
+        // Stage 2 of BS.1770: high-pass, 38 Hz, Q 0.5.
+        var w0 = 2 * Float.pi * 38 / sampleRate
+        var cosw = cos(w0)
+        var alpha = sin(w0) / (2 * 0.5)
+        var a0 = 1 + alpha
+        hp = (
+            b0: ((1 + cosw) / 2) / a0,
+            b1: (-(1 + cosw)) / a0,
+            b2: ((1 + cosw) / 2) / a0,
+            a1: (-2 * cosw) / a0,
+            a2: (1 - alpha) / a0
+        )
+
+        // Stage 1: high shelf, 1681 Hz, +4 dB, S = 1.
+        let A: Float = pow(10, 4 / 40)
+        w0 = 2 * Float.pi * 1681 / sampleRate
+        cosw = cos(w0)
+        alpha = sin(w0) / 2 * sqrt(2)
+        let sqrtA = sqrt(A)
+        a0 = (A + 1) - (A - 1) * cosw + 2 * sqrtA * alpha
+        shelf = (
+            b0: (A * ((A + 1) + (A - 1) * cosw + 2 * sqrtA * alpha)) / a0,
+            b1: (-2 * A * ((A - 1) + (A + 1) * cosw)) / a0,
+            b2: (A * ((A + 1) + (A - 1) * cosw - 2 * sqrtA * alpha)) / a0,
+            a1: (2 * ((A - 1) - (A + 1) * cosw)) / a0,
+            a2: ((A + 1) - (A - 1) * cosw - 2 * sqrtA * alpha) / a0
+        )
+    }
+
+    func teardown() {
+        chans?.deallocate()
+        chans = nil
+        scratch?.deallocate()
+        scratch = nil
+        channels = 0
+    }
+
+    private func refreshCoefficients(_ preset: LevelerSettings.Preset, frames: Int) {
+        // Envelope constants are expressed as time, then converted for this buffer
+        // size — the renderer ticks on a 100 ms timer, the tap on ~23 ms buffers, and
+        // both have to end up with the same rise/fall in seconds.
+        let dt = Float(max(1, frames)) / sampleRate
+        envUp = 1 - exp(-dt / 0.3)
+        envDown = 1 - exp(-dt / 5.0)
+        attackCoef = 1 - exp(-1 / (max(0.001, preset.attack) * sampleRate))
+        releaseCoef = 1 - exp(-1 / (max(0.001, preset.release) * sampleRate))
+    }
+
+    /// AGC + compressor, in place, BEFORE the EQ (see TapContext.process). Measuring and
+    /// detecting ahead of the EQ is what keeps a bass boost from turning the whole track
+    /// down and from ducking the vocal on every kick — leveler.ts has the same split.
+    func preProcess(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int, isFloat: Bool) {
+        guard isFloat, channels > 0, frames > 0, let chans = chans else { return }
+        if let fresh = LevelerSettings.shared.tryRead() { cfg = fresh }
+        let preset = LevelerSettings.presets[min(max(cfg.strength, 0), LevelerSettings.presets.count - 1)]
+        if cfg.strength != lastStrength || frames != lastFrames {
+            refreshCoefficients(preset, frames: frames)
+            lastStrength = cfg.strength
+            lastFrames = frames
+        }
+
+        // Resolve this buffer's channel pointers into the preallocated table. The two
+        // layouts the tap uses (one buffer per channel, or one interleaved buffer)
+        // differ only here.
+        let abl = UnsafeMutableAudioBufferListPointer(bufferList)
+        var step = 1
+        if abl.count >= channels {
+            for ch in 0..<channels {
+                guard let raw = abl[ch].mData else { return }
+                chans[ch] = raw.assumingMemoryBound(to: Float.self)
+            }
+        } else if abl.count == 1, Int(abl[0].mNumberChannels) == channels, let raw = abl[0].mData {
+            let base = raw.assumingMemoryBound(to: Float.self)
+            step = channels
+            for ch in 0..<channels { chans[ch] = base + ch }
+        } else {
+            return
+        }
+
+        if !cfg.enabled {
+            // Glide back to unity rather than jumping, so switching the setting off
+            // mid-track is not a step in level.
+            guard abs(agcGain - 1) > 0.0005 || abs(compGain - 1) > 0.0005 || abs(limGain - 1) > 0.0005
+            else { return }
+            agcTarget = 1
+            var idx = 0
+            for _ in 0..<frames {
+                agcGain += (agcTarget - agcGain) * agcSmooth
+                compGain += (1 - compGain) * releaseCoef
+                limGain += (1 - limGain) * limRelease
+                let g = agcGain * compGain * limGain
+                for ch in 0..<channels {
+                    if let p = chans[ch] { p[idx] = max(-1, min(1, p[idx] * g)) }
+                }
+                idx += step
+            }
+            return
+        }
+
+        // ---- AGC: where should the whole program sit? ----
+        // Mono sum into the scratch buffer, K-weighted, then RMS. A buffer larger than
+        // the scratch (never seen in practice) just keeps the previous envelope.
+        if let sc = scratch, frames <= Leveler.scratchCapacity {
+            var idx = 0
+            for i in 0..<frames {
+                var sum: Float = 0
+                for ch in 0..<channels {
+                    if let p = chans[ch] { sum += p[idx] }
+                }
+                sc[i] = sum / Float(channels)
+                idx += step
+            }
+            // Two biquad sections in series, state carried across buffers.
+            var s = hpState
+            for i in 0..<frames {
+                let x = sc[i]
+                let y = hp.b0 * x + hp.b1 * s.x1 + hp.b2 * s.x2 - hp.a1 * s.y1 - hp.a2 * s.y2
+                s.x2 = s.x1; s.x1 = x
+                s.y2 = s.y1; s.y1 = y
+                sc[i] = y
+            }
+            hpState = s
+            var t = shelfState
+            for i in 0..<frames {
+                let x = sc[i]
+                let y = shelf.b0 * x + shelf.b1 * t.x1 + shelf.b2 * t.x2 - shelf.a1 * t.y1 - shelf.a2 * t.y2
+                t.x2 = t.x1; t.x1 = x
+                t.y2 = t.y1; t.y1 = y
+                sc[i] = y
+            }
+            shelfState = t
+
+            var meanSq: Float = 0
+            vDSP_measqv(sc, 1, &meanSq, vDSP_Length(frames))
+            let db: Float = 20 * log10(max(sqrt(meanSq), 1e-7))
+            if db > gateDb {
+                if seedNext {
+                    // First real buffer of a new track: start the envelope AT it (see
+                    // the JS twin's resetForTrack) so the level is right in one glide.
+                    seedNext = false
+                    envDb = db
+                } else {
+                    envDb += (db - envDb) * (db > envDb ? envUp : envDown)
+                }
+                let want = max(-preset.maxCut, min(preset.maxBoost, cfg.target - envDb))
+                agcTarget = pow(10, want / 20)
+            }
+        }
+
+        // ---- Per sample: compressor → makeup ----
+        let slope: Float = 1 - 1 / preset.ratio
+        let kneeLo: Float = preset.threshold - preset.knee / 2
+        let kneeHi: Float = preset.threshold + preset.knee / 2
+
+        var idx = 0
+        for _ in 0..<frames {
+            // Linked detector: the loudest channel decides the reduction, or the
+            // stereo image would wander as the two sides were ducked differently.
+            var peak: Float = 0
+            for ch in 0..<channels {
+                if let p = chans[ch] { peak = max(peak, abs(p[idx])) }
+            }
+
+            // Static curve with a soft knee, in dB, then smoothed with
+            // attack/release — the shape DynamicsCompressorNode implements.
+            var reductionDb: Float = 0
+            if peak > 1e-7 {
+                let peakDb: Float = 20 * log10(peak)
+                if peakDb > kneeHi {
+                    reductionDb = (peakDb - preset.threshold) * slope
+                } else if peakDb > kneeLo, preset.knee > 0 {
+                    let x = peakDb - kneeLo
+                    reductionDb = slope * x * x / (2 * preset.knee)
+                }
+            }
+            let compWant: Float = pow(10, -reductionDb / 20)
+            compGain += (compWant - compGain) * (compWant < compGain ? attackCoef : releaseCoef)
+
+            agcGain += (agcTarget - agcGain) * agcSmooth
+            let g = compGain * agcGain
+
+            for ch in 0..<channels {
+                if let p = chans[ch] { p[idx] = p[idx] * g }
+            }
+            idx += step
+        }
+    }
+
+    /// The brickwall, AFTER the EQ. It has to be last: a boosted band is exactly what
+    /// pushes a levelled track past full scale, and clipping there would be the one
+    /// thing worse than the level being slightly off.
+    func limit(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int, isFloat: Bool) {
+        guard isFloat, channels > 0, frames > 0, let chans = chans else { return }
+        let abl = UnsafeMutableAudioBufferListPointer(bufferList)
+        var step = 1
+        if abl.count >= channels {
+            for ch in 0..<channels {
+                guard let raw = abl[ch].mData else { return }
+                chans[ch] = raw.assumingMemoryBound(to: Float.self)
+            }
+        } else if abl.count == 1, Int(abl[0].mNumberChannels) == channels, let raw = abl[0].mData {
+            let base = raw.assumingMemoryBound(to: Float.self)
+            step = channels
+            for ch in 0..<channels { chans[ch] = base + ch }
+        } else {
+            return
+        }
+
+        let limitLin: Float = pow(10, -1.5 / 20)
+        var idx = 0
+        for _ in 0..<frames {
+            var peak: Float = 0
+            for ch in 0..<channels {
+                if let p = chans[ch] { peak = max(peak, abs(p[idx])) }
+            }
+            // Instant attack, 100 ms release: it ducks the overshoot instead of
+            // colouring the whole passage.
+            if peak > limitLin {
+                limGain = min(limGain, limitLin / peak)
+            } else {
+                limGain += (1 - limGain) * limRelease
+            }
+            if limGain < 0.999 {
+                for ch in 0..<channels {
+                    if let p = chans[ch] { p[idx] = max(-1, min(1, p[idx] * limGain)) }
+                }
+            } else {
+                for ch in 0..<channels {
+                    if let p = chans[ch] { p[idx] = max(-1, min(1, p[idx])) }
+                }
+            }
+            idx += step
+        }
+    }
+}
+
 // MARK: - Audio tap (equalizer + real visualizer levels)
 
 // Streamed/offline audio on iOS plays through AVPlayer (outside Web Audio), so the
@@ -110,6 +502,9 @@ final class TapContext {
     private var eqState: UnsafeMutablePointer<Float>?    // 4 per (channel, band)
     private var eqActive = false
 
+    // Loudness leveling runs after the EQ on the same buffer (see process).
+    private let leveler = Leveler()
+
     init(bridge: NativeAudioBridge) { self.bridge = bridge }
 
     func prepare(format: AudioStreamBasicDescription) {
@@ -143,6 +538,7 @@ final class TapContext {
         eqState = state
         updateCoefficients()
         eqActive = (0..<eqBands).contains { current[$0] != 0 }
+        leveler.prepare(sampleRate: eqSampleRate, channels: eqChannels)
     }
 
     func teardown() {
@@ -158,12 +554,19 @@ final class TapContext {
         eqState?.deallocate(); eqState = nil
         eqChannels = 0
         eqActive = false
+        leveler.teardown()
     }
 
     func process(_ bufferList: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
         guard frames > 0 else { return }
+        // Order matters and mirrors the desktop graph (audio/analyser.ts):
+        //   AGC + compressor → EQ → FFT for the visualizer → limiter.
+        // The leveler's detectors run BEFORE the EQ so the user's curve cannot feed
+        // back into them, and the limiter runs after it so a boosted band cannot clip.
+        leveler.preProcess(bufferList, frames: frames, isFloat: eqFloat)
         applyEq(bufferList, frames: frames)
         analyse(bufferList, frames: frames)
+        leveler.limit(bufferList, frames: frames, isFloat: eqFloat)
     }
 
     // MARK: EQ
@@ -411,6 +814,14 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             // tap picks the new curve up on its next buffer.
             let gains = (body["gains"] as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } ?? []
             EqSettings.shared.update(gains: gains, enabled: body["enabled"] as? Bool ?? false)
+        case "setLeveler":
+            // Same contract as setEq: settings only, read by the tap on its next
+            // buffer, nothing here can reach the player or the now-playing info.
+            LevelerSettings.shared.update(
+                enabled: body["enabled"] as? Bool ?? false,
+                target: (body["target"] as? NSNumber)?.doubleValue ?? -14,
+                strength: body["strength"] as? String ?? "medium"
+            )
         case "setMetadata":
             setMetadata(
                 title: body["title"] as? String ?? "",

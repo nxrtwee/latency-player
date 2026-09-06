@@ -508,6 +508,12 @@
   -webkit-backdrop-filter: blur(8px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
+/* The logo variant sits closer to the corner (see styles.css); nextgen's own inset
+   would otherwise win it back on equal specificity. */
+[data-skin='nextgen'] .mix-badge.brand {
+  top: 7px;
+  left: 7px;
+}
 
 /* staggered cinematic rise-in for the cover grids */
 [data-skin='nextgen'] .mix-card:not(.skeleton),
@@ -600,10 +606,14 @@
     color 0.2s var(--ng-ease),
     border-color 0.2s var(--ng-ease);
 }
-[data-skin='nextgen'] .btn-round:hover:not(:disabled) {
+[data-skin='nextgen'] .btn-round:hover:not(:disabled),
+[data-skin='nextgen'] .btn-round.active {
   transform: scale(1.08);
   border-color: var(--accent);
   color: var(--accent);
+}
+[data-skin='nextgen'] .btn-round.active {
+  box-shadow: 0 0 16px -2px var(--accent-soft);
 }
 
 /* Glass search pill */

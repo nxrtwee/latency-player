@@ -17,6 +17,7 @@ import {
 } from './Icons'
 import type { Track } from '@shared/types'
 import type { Source } from '../store'
+import { MixBadge } from './ProviderBadge'
 
 function greeting(t: ReturnType<typeof useT>): string {
   const h = new Date().getHours()
@@ -303,7 +304,10 @@ export function HomeBento(): JSX.Element {
                 )}
               </div>
               <div className="mix-grid">
-                {mixes.slice(0, 6).map((mix) => (
+                {/* Nine, not six: SoundCloud hands us ten personal mixes, and the
+                    phone lays these out three to a row (portrait.css §8) — so nine
+                    is three full rows instead of two plus a widow. */}
+                {mixes.slice(0, 9).map((mix) => (
                   <button
                     key={mix.id}
                     className="mix-card"
@@ -312,7 +316,7 @@ export function HomeBento(): JSX.Element {
                   >
                     <div className="mix-art">
                       {mix.cover ? <img src={mix.cover} alt="" /> : <span>♪</span>}
-                      <span className="mix-badge">{mixesReal ? 'SC' : 'MIX'}</span>
+                      <MixBadge real={mixesReal} />
                     </div>
                     <span className="home-card-title">{mix.title}</span>
                     <span className="home-card-sub">{mix.subtitle}</span>

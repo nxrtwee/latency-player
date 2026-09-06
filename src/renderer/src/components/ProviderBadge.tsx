@@ -24,3 +24,18 @@ export function ProviderBadge({
   }
   return null
 }
+
+/**
+ * The corner mark on a mix cover. A real personal mix carries SoundCloud's own
+ * logo (it IS a SoundCloud mix, so the brand says more than the letters "SC" did);
+ * a generated one keeps the plain word, because it is assembled here out of likes
+ * and recents and branding it would claim otherwise.
+ */
+export function MixBadge({ real }: { real: boolean }): JSX.Element {
+  if (!real) return <span className="mix-badge">MIX</span>
+  return (
+    <span className="mix-badge brand" title="SoundCloud">
+      <RealSoundCloudIcon size={13} color="#fff" />
+    </span>
+  )
+}
