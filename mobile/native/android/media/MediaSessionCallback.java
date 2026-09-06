@@ -1,4 +1,4 @@
-﻿package io.github.jofr.capacitor.mediasessionplugin;
+package io.github.jofr.capacitor.mediasessionplugin;
 
 import android.os.Bundle;
 import android.support.v4.media.session.MediaSessionCompat;

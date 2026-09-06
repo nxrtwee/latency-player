@@ -1,4 +1,4 @@
-﻿package io.github.jofr.capacitor.mediasessionplugin;
+package io.github.jofr.capacitor.mediasessionplugin;
 
 import android.annotation.SuppressLint;
 import android.app.NotificationChannel;
