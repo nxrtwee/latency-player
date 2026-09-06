@@ -232,24 +232,46 @@ export function openNativeAuth(
       unsubs = []
     }
 
+    const triedTokens = new Set<string>()
+    let checking = false
+
     const handleCandidate = async (evt?: Record<string, unknown>) => {
       if (resolved || evt?.provider !== provider) return
-      const token = evt?.token as string | undefined
-      if (!token) return
+      let raw = evt?.token as string | undefined
+      if (!raw) return
+      let token = raw.replace(/^OAuth\s+/i, '').trim()
+      if (token.startsWith('%22') && token.endsWith('%22') && token.length >= 6) {
+        try {
+          token = decodeURIComponent(token)
+        } catch {
+          /* ignore */
+        }
+      }
+      if (token.startsWith('"') && token.endsWith('"') && token.length >= 2) {
+        token = token.slice(1, -1).trim()
+      }
+      if (!token || triedTokens.has(token)) return
+      if (checking) return
+      triedTokens.add(token)
+      checking = true
 
-      if (onCandidate) {
-        const ok = await onCandidate(token)
-        if (ok && !resolved) {
+      try {
+        if (onCandidate) {
+          const ok = await onCandidate(token)
+          if (ok && !resolved) {
+            resolved = true
+            cleanup()
+            closeNativeAuth()
+            resolve({ token })
+          }
+        } else {
           resolved = true
           cleanup()
           closeNativeAuth()
           resolve({ token })
         }
-      } else {
-        resolved = true
-        cleanup()
-        closeNativeAuth()
-        resolve({ token })
+      } finally {
+        checking = false
       }
     }
 

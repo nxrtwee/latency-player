@@ -1286,13 +1286,14 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 
 // MARK: - AuthViewController
 
-final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIAdaptivePresentationControllerDelegate {
+final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIAdaptivePresentationControllerDelegate, WKHTTPCookieStoreObserver {
     let provider: String
     private weak var bridge: NativeAudioBridge?
     private var webView: WKWebView!
     private var isDone = false
     private var isCleanedUp = false
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private var checkTimer: Timer?
 
     init(provider: String, bridge: NativeAudioBridge) {
         self.provider = provider
@@ -1305,7 +1306,23 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
+        if provider == "soundcloud" {
+            WKWebsiteDataStore.default().httpCookieStore.add(self)
+            startPeriodicCheck()
+        }
         loadAuthPage()
+    }
+
+    private func startPeriodicCheck() {
+        checkTimer?.invalidate()
+        checkTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
+            self?.checkSoundCloudAuth()
+        }
+    }
+
+    private func stopPeriodicCheck() {
+        checkTimer?.invalidate()
+        checkTimer = nil
     }
 
     private func setupUI() {
@@ -1336,10 +1353,11 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
                 function notify(auth) {
                     if (!auth || typeof auth !== 'string') return;
-                    var m = auth.match(/OAuth\\s+(2-[a-zA-Z0-9\\-_]{15,})/i);
-                    if (m && m[1]) {
+                    var m = auth.match(/OAuth\\s+([^\\s]+)/i);
+                    var tok = m ? m[1] : (auth.indexOf('2-') !== -1 ? auth : null);
+                    if (tok) {
                         try {
-                            window.webkit.messageHandlers.latencyAuthCapture.postMessage({ token: m[1] });
+                            window.webkit.messageHandlers.latencyAuthCapture.postMessage({ token: tok });
                         } catch(e) {}
                     }
                 }
@@ -1348,6 +1366,10 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
                 if (_origFetch) {
                     window.fetch = function(input, init) {
                         try {
+                            if (typeof input === 'string') {
+                                var qm = input.match(/[?&](?:oauth_token|access_token)=([^&#]+)/i);
+                                if (qm && qm[1]) notify(decodeURIComponent(qm[1]));
+                            }
                             if (init && init.headers) {
                                 if (typeof init.headers.get === 'function') {
                                     notify(init.headers.get('Authorization') || init.headers.get('authorization'));
@@ -1415,6 +1437,10 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
     func cleanUp() {
         guard !isCleanedUp else { return }
         isCleanedUp = true
+        stopPeriodicCheck()
+        if provider == "soundcloud" {
+            WKWebsiteDataStore.default().httpCookieStore.remove(self)
+        }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "latencyAuthCapture")
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -1438,12 +1464,78 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
     }
 
     private func onCandidateToken(_ token: String) {
-        let cleanedToken = token.replacingOccurrences(of: "^OAuth\\s+", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanedToken.isEmpty else { return }
+        var cleaned = token.replacingOccurrences(of: "^OAuth\\s+", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("%22") && cleaned.hasSuffix("%22") && cleaned.count >= 6 {
+            cleaned = cleaned.removingPercentEncoding ?? cleaned
+        }
+        if cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"") && cleaned.count >= 2 {
+            cleaned = String(cleaned.dropFirst().dropLast())
+        }
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
         bridge?.sendEvent("authCandidate", data: [
             "provider": self.provider,
-            "token": cleanedToken
+            "token": cleaned
         ])
+    }
+
+    private func checkSoundCloudAuth() {
+        guard !isDone, provider == "soundcloud" else { return }
+
+        // 1. Check HTTP cookies
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self = self, !self.isDone else { return }
+            for cookie in cookies {
+                let name = cookie.name.lowercased()
+                if cookie.domain.contains("soundcloud.com") && (name == "oauth_token" || name == "_sc_auth_token") && !cookie.value.isEmpty {
+                    self.onCandidateToken(cookie.value)
+                }
+            }
+        }
+
+        // 2. Also evaluate JavaScript to inspect document.cookie, localStorage and sessionStorage
+        let extractJs = """
+        (function() {
+            try {
+                var m = document.cookie.match(/(?:^|;\\s*)oauth_token=([^;]+)/);
+                if (m && m[1]) return decodeURIComponent(m[1]);
+                for (var i = 0; i < localStorage.length; i++) {
+                    var k = localStorage.key(i);
+                    if (k && (k === 'oauth_token' || k.indexOf('token') !== -1 || k.indexOf('oauth') !== -1)) {
+                        var v = localStorage.getItem(k);
+                        if (v && typeof v === 'string') {
+                            var tok = v.match(/2-[a-zA-Z0-9\\-_]{15,}/);
+                            if (tok) return tok[0];
+                        }
+                    }
+                }
+                for (var j = 0; j < sessionStorage.length; j++) {
+                    var sk = sessionStorage.key(j);
+                    if (sk && (sk === 'oauth_token' || sk.indexOf('token') !== -1 || sk.indexOf('oauth') !== -1)) {
+                        var sv = sessionStorage.getItem(sk);
+                        if (sv && typeof sv === 'string') {
+                            var stok = sv.match(/2-[a-zA-Z0-9\\-_]{15,}/);
+                            if (stok) return stok[0];
+                        }
+                    }
+                }
+            } catch(e) {}
+            return null;
+        })();
+        """
+        webView?.evaluateJavaScript(extractJs) { [weak self] result, _ in
+            guard let self = self, !self.isDone else { return }
+            if let token = result as? String, !token.isEmpty {
+                self.onCandidateToken(token)
+            }
+        }
+    }
+
+    // MARK: - WKHTTPCookieStoreObserver
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        if provider == "soundcloud" {
+            checkSoundCloudAuth()
+        }
     }
 
     // MARK: - WKScriptMessageHandler
@@ -1470,6 +1562,8 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
             if let url = webView.url, let token = extractYandexToken(from: url) {
                 onCandidateToken(token)
             }
+        } else if provider == "soundcloud" {
+            checkSoundCloudAuth()
         }
     }
 
@@ -1479,6 +1573,9 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
                 decisionHandler(.cancel)
                 onCandidateToken(token)
                 return
+            }
+            if provider == "soundcloud" {
+                checkSoundCloudAuth()
             }
             if let scheme = url.scheme?.lowercased(), scheme != "http" && scheme != "https" && scheme != "about" {
                 if UIApplication.shared.canOpenURL(url) {
@@ -1497,18 +1594,25 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
             onCandidateToken(token)
             return
         }
+        if provider == "soundcloud" {
+            checkSoundCloudAuth()
+        }
         decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
             onCandidateToken(token)
+        } else if provider == "soundcloud" {
+            checkSoundCloudAuth()
         }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
             onCandidateToken(token)
+        } else if provider == "soundcloud" {
+            checkSoundCloudAuth()
         }
     }
 

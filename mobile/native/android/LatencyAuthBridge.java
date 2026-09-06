@@ -5,11 +5,14 @@ import android.app.Dialog;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -23,6 +26,9 @@ public class LatencyAuthBridge {
     private final WebView mainWebView;
     private Dialog currentDialog;
     private WebView authWebView;
+    private String currentProvider;
+    private final Handler checkHandler = new Handler(Looper.getMainLooper());
+    private Runnable checkRunnable;
 
     public LatencyAuthBridge(Activity activity, WebView mainWebView) {
         this.activity = activity;
@@ -44,6 +50,7 @@ public class LatencyAuthBridge {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                stopPeriodicCheck();
                 if (currentDialog != null && currentDialog.isShowing()) {
                     currentDialog.dismiss();
                     currentDialog = null;
@@ -56,8 +63,30 @@ public class LatencyAuthBridge {
         closeAuth();
     }
 
+    private void startPeriodicCheck() {
+        stopPeriodicCheck();
+        checkRunnable = new Runnable() {
+            @Override
+            public void run() {
+                checkSoundCloudAuth();
+                if (currentDialog != null && currentDialog.isShowing()) {
+                    checkHandler.postDelayed(this, 1200);
+                }
+            }
+        };
+        checkHandler.postDelayed(checkRunnable, 1200);
+    }
+
+    private void stopPeriodicCheck() {
+        if (checkRunnable != null) {
+            checkHandler.removeCallbacks(checkRunnable);
+            checkRunnable = null;
+        }
+    }
+
     private void showAuthDialog(final String provider) {
         closeAuth();
+        currentProvider = provider;
 
         currentDialog = new Dialog(activity, android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen);
         Window window = currentDialog.getWindow();
@@ -110,7 +139,7 @@ public class LatencyAuthBridge {
             @JavascriptInterface
             public void onCaptured(String token) {
                 if (token != null && !token.isEmpty()) {
-                    sendEventToJS("authCandidate", provider, token);
+                    sendCandidateToken(provider, token);
                 }
             }
         }, "LatencyAuthCapture");
@@ -123,9 +152,11 @@ public class LatencyAuthBridge {
                 if ("yandex".equals(provider)) {
                     String token = extractYandexToken(url);
                     if (token != null) {
-                        sendEventToJS("authCandidate", provider, token);
+                        sendCandidateToken(provider, token);
                         return true;
                     }
+                } else if ("soundcloud".equals(provider)) {
+                    checkSoundCloudAuth();
                 }
                 return false;
             }
@@ -136,11 +167,12 @@ public class LatencyAuthBridge {
                 if ("yandex".equals(provider)) {
                     String token = extractYandexToken(url);
                     if (token != null) {
-                        sendEventToJS("authCandidate", provider, token);
+                        sendCandidateToken(provider, token);
                         return;
                     }
                 } else if ("soundcloud".equals(provider)) {
                     injectSoundCloudHook(view);
+                    checkSoundCloudAuth();
                 }
             }
         });
@@ -159,8 +191,74 @@ public class LatencyAuthBridge {
             String clientId = "23cabbbdc6cd418abb4b39c32c41195d";
             authWebView.loadUrl("https://oauth.yandex.ru/authorize?response_type=token&client_id=" + clientId);
         } else {
+            startPeriodicCheck();
             authWebView.loadUrl("https://soundcloud.com/signin");
         }
+    }
+
+    private void checkSoundCloudAuth() {
+        if (!"soundcloud".equals(currentProvider) || authWebView == null) return;
+
+        // 1. Check cookies via CookieManager
+        try {
+            String cookieHeader = CookieManager.getInstance().getCookie("https://soundcloud.com");
+            String token = extractSoundCloudTokenFromCookies(cookieHeader);
+            if (token != null) {
+                sendCandidateToken("soundcloud", token);
+            }
+        } catch (Exception ignored) {}
+
+        // 2. Evaluate script in WebView
+        try {
+            String script = "(function() {" +
+                "  try {" +
+                "    var m = document.cookie.match(/(?:^|;\\s*)oauth_token=([^;]+)/);" +
+                "    if (m && m[1]) return decodeURIComponent(m[1]);" +
+                "    for (var i = 0; i < localStorage.length; i++) {" +
+                "      var k = localStorage.key(i);" +
+                "      if (k && (k === 'oauth_token' || k.indexOf('token') !== -1 || k.indexOf('oauth') !== -1)) {" +
+                "        var v = localStorage.getItem(k);" +
+                "        if (v && typeof v === 'string') {" +
+                "          var tok = v.match(/2-[a-zA-Z0-9\\-_]{15,}/);" +
+                "          if (tok) return tok[0];" +
+                "        }" +
+                "      }" +
+                "    }" +
+                "    for (var j = 0; j < sessionStorage.length; j++) {" +
+                "      var sk = sessionStorage.key(j);" +
+                "      if (sk && (sk === 'oauth_token' || sk.indexOf('token') !== -1 || sk.indexOf('oauth') !== -1)) {" +
+                "        var sv = sessionStorage.getItem(sk);" +
+                "        if (sv && typeof sv === 'string') {" +
+                "          var stok = sv.match(/2-[a-zA-Z0-9\\-_]{15,}/);" +
+                "          if (stok) return stok[0];" +
+                "        }" +
+                "      }" +
+                "    }" +
+                "  } catch(e) {}" +
+                "  return null;" +
+                "})();";
+            authWebView.evaluateJavascript(script, new ValueCallback<String>() {
+                @Override
+                public void onReceiveValue(String value) {
+                    if (value != null && !value.isEmpty() && !"null".equals(value)) {
+                        sendCandidateToken("soundcloud", value);
+                    }
+                }
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private String extractSoundCloudTokenFromCookies(String cookieHeader) {
+        if (cookieHeader == null || cookieHeader.isEmpty()) return null;
+        String[] parts = cookieHeader.split(";");
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (trimmed.startsWith("oauth_token=")) {
+                String val = trimmed.substring("oauth_token=".length()).trim();
+                return sanitizeToken(val);
+            }
+        }
+        return null;
     }
 
     private void injectSoundCloudHook(WebView view) {
@@ -169,15 +267,20 @@ public class LatencyAuthBridge {
             "window.__scHooked = true;" +
             "function notify(auth) {" +
             "  if (!auth || typeof auth !== 'string') return;" +
-            "  var m = auth.match(/OAuth\\s+(2-[a-zA-Z0-9\\-_]{15,})/i);" +
-            "  if (m && m[1]) {" +
-            "    try { window.LatencyAuthCapture.onCaptured(m[1]); } catch(e){}" +
+            "  var m = auth.match(/OAuth\\s+([^\\s]+)/i);" +
+            "  var tok = m ? m[1] : (auth.indexOf('2-') !== -1 ? auth : null);" +
+            "  if (tok) {" +
+            "    try { window.LatencyAuthCapture.onCaptured(tok); } catch(e){}" +
             "  }" +
             "}" +
             "var _origFetch = window.fetch;" +
             "if (_origFetch) {" +
             "  window.fetch = function(input, init) {" +
             "    try {" +
+            "      if (typeof input === 'string') {" +
+            "        var qm = input.match(/[?&](?:oauth_token|access_token)=([^&#]+)/i);" +
+            "        if (qm && qm[1]) notify(decodeURIComponent(qm[1]));" +
+            "      }" +
             "      if (init && init.headers) {" +
             "        if (typeof init.headers.get === 'function') {" +
             "          notify(init.headers.get('Authorization') || init.headers.get('authorization'));" +
@@ -208,6 +311,28 @@ public class LatencyAuthBridge {
         int hash = sub.indexOf('#');
         if (hash != -1) sub = sub.substring(0, hash);
         return sub.isEmpty() ? null : Uri.decode(sub);
+    }
+
+    private String sanitizeToken(String token) {
+        if (token == null) return null;
+        String cleaned = token.replaceFirst("(?i)^OAuth\\s+", "").trim();
+        if (cleaned.startsWith("%22") && cleaned.endsWith("%22") && cleaned.length() >= 6) {
+            try {
+                cleaned = Uri.decode(cleaned);
+            } catch (Exception ignored) {}
+        }
+        if (cleaned.startsWith("\"") && cleaned.endsWith("\"") && cleaned.length() >= 2) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1);
+        }
+        cleaned = cleaned.trim();
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private void sendCandidateToken(String provider, String token) {
+        String cleaned = sanitizeToken(token);
+        if (cleaned != null) {
+            sendEventToJS("authCandidate", provider, cleaned);
+        }
     }
 
     private void sendEventToJS(final String event, final String provider, final String token) {

@@ -472,7 +472,18 @@ let oauthToken: string | null = (() => {
 let myUserId: number | null = null
 
 export function setToken(token: string): void {
-  oauthToken = token ? token.replace(/^OAuth\s+/i, '').trim() : null
+  let cleaned = token ? token.replace(/^OAuth\s+/i, '').trim() : ''
+  if (cleaned.startsWith('%22') && cleaned.endsWith('%22') && cleaned.length >= 6) {
+    try {
+      cleaned = decodeURIComponent(cleaned)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length >= 2) {
+    cleaned = cleaned.slice(1, -1).trim()
+  }
+  oauthToken = cleaned || null
   myUserId = null
   try {
     if (oauthToken) localStorage.setItem(TOKEN_KEY, oauthToken)
@@ -494,8 +505,16 @@ function authHeaders(): Record<string, string> {
 export async function getMe(): Promise<Artist | null> {
   if (!oauthToken) return null
   try {
-    const id = await getClientId()
-    const res = await scFetch(`${API}/me?client_id=${id}`, authHeaders())
+    let id = await getClientId()
+    let res = await scFetch(`${API}/me?client_id=${id}`, authHeaders())
+    if (res.status === 401) {
+      try {
+        id = await getClientId(true)
+        res = await scFetch(`${API}/me?client_id=${id}`, authHeaders())
+      } catch {
+        /* retry failed */
+      }
+    }
     if (!res.ok) return null
     const u = (await res.json()) as ScUser
     myUserId = u.id
