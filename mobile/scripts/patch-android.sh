@@ -77,6 +77,19 @@ if [ -d "$NATIVE_ANDROID_SRC" ]; then
   echo "==> native Android auth files installed to $JAVA_DEST"
 fi
 
+# ---------------------------------------------------------------------------
+# Native Android media notification like button support
+# ---------------------------------------------------------------------------
+MEDIA_PLUGIN_SRC="$NATIVE_ANDROID_SRC/media"
+MEDIA_PLUGIN_DEST="$MOBILE_DIR/node_modules/@jofr/capacitor-media-session/android/src/main"
+if [ -d "$MEDIA_PLUGIN_SRC" ] && [ -d "$MEDIA_PLUGIN_DEST" ]; then
+  mkdir -p "$MEDIA_PLUGIN_DEST/java/io/github/jofr/capacitor/mediasessionplugin"
+  cp -rf "$MEDIA_PLUGIN_SRC"/*.java "$MEDIA_PLUGIN_DEST/java/io/github/jofr/capacitor/mediasessionplugin/"
+  mkdir -p "$MEDIA_PLUGIN_DEST/res/drawable"
+  cp -rf "$MEDIA_PLUGIN_SRC"/res/drawable/*.xml "$MEDIA_PLUGIN_DEST/res/drawable/"
+  echo "==> patched capacitor-media-session with like button support"
+fi
+
 echo "==> patch-android: done"
 echo "----- granted permissions -----"
 grep "uses-permission" "$MANIFEST" || true

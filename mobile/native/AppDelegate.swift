@@ -993,6 +993,7 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     private var playHandler: NSObjectProtocol?
     private var pauseHandler: NSObjectProtocol?
     private var togglePlayPauseHandler: NSObjectProtocol?
+    private var likeHandler: NSObjectProtocol?
 
     private override init() { super.init() }
 
@@ -1080,8 +1081,13 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
                 title: body["title"] as? String ?? "",
                 artist: body["artist"] as? String ?? "",
                 artwork: body["artwork"] as? String,
-                duration: body["duration"] as? Double
+                duration: body["duration"] as? Double,
+                liked: body["liked"] as? Bool ?? false
             )
+        case "setLiked":
+            if let liked = body["liked"] as? Bool {
+                MPRemoteCommandCenter.shared().likeCommand.isActive = liked
+            }
         case "setPlaybackState":
             updateNowPlayingProgress(
                 position: body["position"] as? Double,
@@ -1181,12 +1187,23 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         } as? NSObjectProtocol
         cc.nextTrackCommand.isEnabled = true
         cc.previousTrackCommand.isEnabled = true
+        cc.likeCommand.isEnabled = true
+        cc.likeCommand.localizedTitle = "Нравится"
+        cc.likeCommand.localizedShortTitle = "Нравится"
+        likeHandler = cc.likeCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remoteLike", data: [:])
+            return .success
+        } as? NSObjectProtocol
     }
 
     // MARK: - Metadata
 
-    private func setMetadata(title: String, artist: String, artwork: String?, duration: Double?) {
+    private func setMetadata(title: String, artist: String, artwork: String?, duration: Double?, liked: Bool = false) {
         if let d = duration, d.isFinite, d > 0 { currentDuration = d } else { currentDuration = 0 }
+
+        let cc = MPRemoteCommandCenter.shared()
+        cc.likeCommand.isEnabled = true
+        cc.likeCommand.isActive = liked
 
         var info: [String: Any] = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyTitle] = title

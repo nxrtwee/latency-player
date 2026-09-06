@@ -62,6 +62,10 @@ function installNativeIOS(): void {
     const name = evt._event as string | undefined
     if (name === 'nextTrack') get().next()
     else if (name === 'previousTrack') get().prev()
+    else if (name === 'remoteLike') {
+      const current = get().queue[get().currentIndex]
+      if (current) void get().toggleLike(current)
+    }
   }
 
   // Push track metadata to the native bridge for lock-screen display.
@@ -79,20 +83,27 @@ function installNativeIOS(): void {
   let lastTrackId = ''
   let lastPlaying: boolean | null = null
   let lastPosWhole = -1
+  let lastLiked: boolean | null = null
   usePlayer.subscribe((s) => {
     const track = s.queue[s.currentIndex]
-    if (!track) { lastTrackId = ''; lastPlaying = null; return }
+    if (!track) { lastTrackId = ''; lastPlaying = null; lastLiked = null; return }
+    const liked = s.likes.some((x) => x.id === track.id) || s.scLikes.some((x) => x.id === track.id)
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
+      lastLiked = liked
       const art = offlineArtForUri(track.uri) || track.artwork
       sendToNative({
         action: 'setMetadata',
         title: track.title,
         artist: track.artist || 'SoundCloud',
         artwork: art || undefined,
-        duration: track.durationSec
+        duration: track.durationSec,
+        liked
       })
       lastPlaying = null // force a playback-state push for the new track
+    } else if (liked !== lastLiked) {
+      lastLiked = liked
+      sendToNative({ action: 'setLiked', liked })
     }
     // Push elapsed + rate to the lock screen so its progress bar animates. iOS
     // extrapolates between updates from the rate, so we only need to push on a
@@ -126,20 +137,28 @@ function installAndroid(ms: NativeMediaSession): void {
   })
   void ms.setActionHandler({ action: 'previoustrack' }, () => get().prev())
   void ms.setActionHandler({ action: 'nexttrack' }, () => get().next())
+  void ms.setActionHandler({ action: 'like' }, () => {
+    const current = get().queue[get().currentIndex]
+    if (current) void get().toggleLike(current)
+  })
   void ms.setActionHandler({ action: 'seekto' }, (d) => {
     if (typeof d?.seekTime === 'number') get().seek(d.seekTime)
   })
 
   let lastTrackId = ''
+  let lastLiked: boolean | null = null
   usePlayer.subscribe((s) => {
     const track = s.queue[s.currentIndex]
     if (!track) {
       void ms.setPlaybackState({ playbackState: 'none' })
       lastTrackId = ''
+      lastLiked = null
       return
     }
+    const liked = s.likes.some((x) => x.id === track.id) || s.scLikes.some((x) => x.id === track.id)
     if (track.id !== lastTrackId) {
       lastTrackId = track.id
+      lastLiked = liked
       // Native code draws this notification, so a locally cached cover has to be
       // handed over as file:// — the local-server URL the WebView uses is
       // unreachable from outside it (see capfs.toFileUri). A downloaded track
@@ -152,6 +171,10 @@ function installAndroid(ms: NativeMediaSession): void {
         album: 'Latency',
         artwork: art ? [{ src: art, sizes: '512x512', type: 'image/jpeg' }] : []
       })
+      void (ms as unknown as { setLiked?: (o: { liked: boolean }) => Promise<void> }).setLiked?.({ liked })
+    } else if (liked !== lastLiked) {
+      lastLiked = liked
+      void (ms as unknown as { setLiked?: (o: { liked: boolean }) => Promise<void> }).setLiked?.({ liked })
     }
     void ms.setPlaybackState({ playbackState: s.isPlaying ? 'playing' : 'paused' })
     if (s.durationSec > 0) {
