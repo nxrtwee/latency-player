@@ -26,7 +26,7 @@ import { openJsonFile, saveJsonFile } from './jsonfile'
 import { pickVideoFile } from './wallpaper'
 import { requestToken } from './tokenRequest'
 import { getFreshResolve, putResolve } from './resolveCache'
-import { isNativeAudioAvailable, openNativeAuth } from './nativeAudio'
+import { hasNativeAuth, openNativeAuth } from './nativeAudio'
 
 // The store's own pref seeding (volume, language, visual, …) lives in
 // mobile/src/defaults.ts, which main.tsx imports before this module — the store
@@ -194,14 +194,19 @@ const api = {
       if (known) return known
       sc.setToken('') // stored token went stale — fall through and re-ask
     }
-    if (isNativeAudioAvailable()) {
-      const res = await openNativeAuth('soundcloud')
-      if (res.token) {
-        sc.setToken(res.token)
+    if (hasNativeAuth()) {
+      let verifiedUser: Artist | null = null
+      const res = await openNativeAuth('soundcloud', async (token) => {
+        sc.setToken(token)
         const me = await sc.getMe()
-        if (me) return me
+        if (me) {
+          verifiedUser = me
+          return true
+        }
         sc.setToken('')
-      }
+        return false
+      })
+      if (res.token && verifiedUser) return verifiedUser
       return null
     }
     const accepted = await requestToken('sc', async (raw) => {
@@ -261,14 +266,19 @@ const api = {
       if (known) return known
       ym.setToken('')
     }
-    if (isNativeAudioAvailable()) {
-      const res = await openNativeAuth('yandex')
-      if (res.token) {
-        ym.setToken(res.token)
+    if (hasNativeAuth()) {
+      let verifiedUser: Artist | null = null
+      const res = await openNativeAuth('yandex', async (token) => {
+        ym.setToken(token)
         const me = await ym.getMe()
-        if (me) return me
+        if (me) {
+          verifiedUser = me
+          return true
+        }
         ym.setToken('')
-      }
+        return false
+      })
+      if (res.token && verifiedUser) return verifiedUser
       return null
     }
     const accepted = await requestToken('ym', async (raw) => {

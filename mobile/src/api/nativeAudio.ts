@@ -170,6 +170,29 @@ export function isNativeAudioAvailable(): boolean {
   return hasWKBridge()
 }
 
+export function hasNativeAuth(): boolean {
+  if (typeof (window as unknown as { LatencyAuthBridge?: unknown }).LatencyAuthBridge !== 'undefined') {
+    return true
+  }
+  return hasWKBridge()
+}
+
+export function closeNativeAuth(): void {
+  const androidBridge = (window as unknown as { LatencyAuthBridge?: { closeAuth?: () => void } }).LatencyAuthBridge
+  if (androidBridge?.closeAuth) {
+    androidBridge.closeAuth()
+    return
+  }
+  if (hasWKBridge()) {
+    const bridge = (
+      window as unknown as {
+        webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } }
+      }
+    ).webkit.messageHandlers.latencyAudio
+    bridge.postMessage({ action: 'closeAuth' })
+  }
+}
+
 export function onNativeGlobal(event: string, cb: ListenerCallback): () => void {
   ensureBridgeWire()
   const list = _globalListeners.get(event) ?? []
@@ -185,38 +208,72 @@ export function onNativeGlobal(event: string, cb: ListenerCallback): () => void 
 }
 
 export function openNativeAuth(
-  provider: 'yandex' | 'soundcloud'
+  provider: 'yandex' | 'soundcloud',
+  onCandidate?: (token: string) => Promise<boolean>
 ): Promise<{ token?: string; canceled?: boolean }> {
-  if (!hasWKBridge()) return Promise.resolve({ canceled: true })
+  if (!hasNativeAuth()) return Promise.resolve({ canceled: true })
   ensureBridgeWire()
-  const bridge = (
-    window as unknown as {
-      webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } }
-    }
-  ).webkit.messageHandlers.latencyAudio
+
+  const androidBridge = (window as unknown as { LatencyAuthBridge?: { openAuth?: (p: string) => void } }).LatencyAuthBridge
+  const wkBridge = hasWKBridge()
+    ? (
+        window as unknown as {
+          webkit: { messageHandlers: { latencyAudio: { postMessage: (msg: unknown) => void } } }
+        }
+      ).webkit.messageHandlers.latencyAudio
+    : null
 
   return new Promise((resolve) => {
     let unsubs: (() => void)[] = []
+    let resolved = false
+
     const cleanup = () => {
       unsubs.forEach((u) => u())
       unsubs = []
     }
 
-    const unsubSuccess = onNativeGlobal('authSuccess', (evt) => {
-      if (evt?.provider === provider) {
+    const handleCandidate = async (evt?: Record<string, unknown>) => {
+      if (resolved || evt?.provider !== provider) return
+      const token = evt?.token as string | undefined
+      if (!token) return
+
+      if (onCandidate) {
+        const ok = await onCandidate(token)
+        if (ok && !resolved) {
+          resolved = true
+          cleanup()
+          closeNativeAuth()
+          resolve({ token })
+        }
+      } else {
+        resolved = true
         cleanup()
-        resolve({ token: evt?.token as string })
+        closeNativeAuth()
+        resolve({ token })
       }
+    }
+
+    const unsubCand = onNativeGlobal('authCandidate', (evt) => {
+      void handleCandidate(evt)
+    })
+    const unsubSuccess = onNativeGlobal('authSuccess', (evt) => {
+      void handleCandidate(evt)
     })
     const unsubCancel = onNativeGlobal('authCanceled', (evt) => {
-      if (evt?.provider === provider) {
-        cleanup()
-        resolve({ canceled: true })
-      }
+      if (resolved || evt?.provider !== provider) return
+      resolved = true
+      cleanup()
+      resolve({ canceled: true })
     })
-    unsubs = [unsubSuccess, unsubCancel]
 
-    bridge.postMessage({ action: 'openAuth', provider })
+    unsubs = [unsubCand, unsubSuccess, unsubCancel]
+
+    if (androidBridge?.openAuth) {
+      androidBridge.openAuth(provider)
+    } else if (wkBridge) {
+      wkBridge.postMessage({ action: 'openAuth', provider })
+    }
   })
 }
+
 

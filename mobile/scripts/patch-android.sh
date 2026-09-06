@@ -66,6 +66,18 @@ else
   echo "==> MainActivity locked to portrait"
 fi
 
+# ---------------------------------------------------------------------------
+# Native Android auth bridge (MainActivity + LatencyAuthBridge)
+# ---------------------------------------------------------------------------
+NATIVE_ANDROID_SRC="$MOBILE_DIR/native/android"
+JAVA_DEST="$APP_MAIN/java/com/latency/app"
+if [ -d "$NATIVE_ANDROID_SRC" ]; then
+  mkdir -p "$JAVA_DEST"
+  cp -rf "$NATIVE_ANDROID_SRC"/*.java "$JAVA_DEST/"
+  echo "==> native Android auth files installed to $JAVA_DEST"
+fi
+
 echo "==> patch-android: done"
 echo "----- granted permissions -----"
 grep "uses-permission" "$MANIFEST" || true
+

@@ -160,7 +160,11 @@ function toTrack(sc: ScTrack): Track | null {
     artist: sc.user?.username,
     artistId: sc.user?.id != null ? String(sc.user.id) : undefined,
     durationSec: sc.duration ? sc.duration / 1000 : undefined,
-    artwork: sc.artwork_url ? sc.artwork_url.replace('-large', '-t500x500') : undefined,
+    artwork: (sc.artwork_url || sc.user?.avatar_url)
+      ? (sc.artwork_url || sc.user?.avatar_url)!
+          .replace(/-(large|badge|small|tiny|mini)\./, '-t500x500.')
+          .replace('-large', '-t500x500')
+      : undefined,
     playCount: sc.playback_count
   }
 }

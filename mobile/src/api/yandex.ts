@@ -175,7 +175,7 @@ function toTrack(t: YmTrack): Track | null {
       ? refs.map((a) => ({ id: a.id != null ? String(a.id) : undefined, name: a.name as string }))
       : undefined,
     durationSec: t.durationMs ? t.durationMs / 1000 : undefined,
-    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '400x400'),
+    artwork: cover(t.coverUri || t.albums?.[0]?.coverUri, '1000x1000'),
     // R128 loudness for volume normalization (tp is dBTP → linear peak).
     loudnessLufs: typeof t.r128?.i === 'number' ? t.r128.i : undefined,
     peak: typeof t.r128?.tp === 'number' ? Math.pow(10, t.r128.tp / 20) : undefined
@@ -187,7 +187,7 @@ function toArtist(a: YmArtist): Artist {
     id: String(a.id),
     name: a.name || 'Unknown',
     provider: 'yandex',
-    avatar: cover(a.cover?.uri || a.ogImage, '200x200'),
+    avatar: cover(a.cover?.uri || a.ogImage, '400x400'),
     trackCount: a.counts?.tracks
   }
 }
@@ -209,7 +209,7 @@ function toAlbum(a: YmAlbum): Album | null {
     kind: 'album',
     title: a.title,
     artist: (a.artists || []).map((ar) => ar.name).filter(Boolean).join(', ') || undefined,
-    cover: cover(a.coverUri, '400x400'),
+    cover: cover(a.coverUri, '1000x1000'),
     year: a.year,
     trackCount: a.trackCount
   }
@@ -233,7 +233,7 @@ function toPlaylist(p: YmPlaylist): Album | null {
     kind: 'playlist',
     title: p.title,
     artist: p.owner?.name || p.owner?.login,
-    cover: cover(p.cover?.uri || p.ogImage, '400x400'),
+    cover: cover(p.cover?.uri || p.ogImage, '1000x1000'),
     trackCount: p.trackCount
   }
 }

@@ -1099,6 +1099,10 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             DispatchQueue.main.async { [weak self] in
                 self?.presentAuth(provider: prov)
             }
+        case "closeAuth":
+            DispatchQueue.main.async { [weak self] in
+                self?.closeAuth()
+            }
         default:
             break
         }
@@ -1234,10 +1238,15 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 
     // MARK: - In-App OAuth Presentation
 
+    private weak var currentAuthVC: AuthViewController?
+
     func presentAuth(provider: String) {
+        closeAuth()
         let authVC = AuthViewController(provider: provider, bridge: self)
+        self.currentAuthVC = authVC
         let nav = UINavigationController(rootViewController: authVC)
         nav.modalPresentationStyle = .pageSheet
+        authVC.presentationController?.delegate = authVC
         if #available(iOS 15.0, *) {
             if let sheet = nav.sheetPresentationController {
                 sheet.detents = [.large()]
@@ -1249,6 +1258,14 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
             return
         }
         topVC.present(nav, animated: true, completion: nil)
+    }
+
+    func closeAuth() {
+        if let auth = currentAuthVC {
+            auth.cleanUp()
+            auth.dismiss(animated: true, completion: nil)
+            currentAuthVC = nil
+        }
     }
 
     static func topViewController(base: UIViewController? = nil) -> UIViewController? {
@@ -1319,7 +1336,7 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
                 function notify(auth) {
                     if (!auth || typeof auth !== 'string') return;
-                    var m = auth.match(/OAuth\\s+([a-zA-Z0-9\\-_]+)/i);
+                    var m = auth.match(/OAuth\\s+(2-[a-zA-Z0-9\\-_]{15,})/i);
                     if (m && m[1]) {
                         try {
                             window.webkit.messageHandlers.latencyAuthCapture.postMessage({ token: m[1] });
@@ -1352,23 +1369,6 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
                     } catch(e) {}
                     return _origSetHeader.apply(this, arguments);
                 };
-
-                function scan() {
-                    try {
-                        var cookies = document.cookie || '';
-                        var m = cookies.match(/oauth_token=([^;]+)/);
-                        if (m && m[1]) notify('OAuth ' + decodeURIComponent(m[1]));
-                        for (var i = 0; i < localStorage.length; i++) {
-                            var k = localStorage.key(i);
-                            if (k && /token|oauth/i.test(k)) {
-                                var v = localStorage.getItem(k);
-                                if (v && v.indexOf('2-') !== -1) notify('OAuth ' + v);
-                            }
-                        }
-                    } catch(e) {}
-                }
-                setInterval(scan, 800);
-                scan();
             })();
             """
             let script = WKUserScript(
@@ -1412,7 +1412,7 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
         }
     }
 
-    private func cleanUp() {
+    func cleanUp() {
         guard !isCleanedUp else { return }
         isCleanedUp = true
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "latencyAuthCapture")
@@ -1437,20 +1437,13 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
         bridge?.sendEvent("authCanceled", data: ["provider": provider])
     }
 
-    private func complete(token: String) {
-        guard !isDone else { return }
-        isDone = true
-        cleanUp()
+    private func onCandidateToken(_ token: String) {
         let cleanedToken = token.replacingOccurrences(of: "^OAuth\\s+", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.dismiss(animated: true) {
-                self.bridge?.sendEvent("authSuccess", data: [
-                    "provider": self.provider,
-                    "token": cleanedToken
-                ])
-            }
-        }
+        guard !cleanedToken.isEmpty else { return }
+        bridge?.sendEvent("authCandidate", data: [
+            "provider": self.provider,
+            "token": cleanedToken
+        ])
     }
 
     // MARK: - WKScriptMessageHandler
@@ -1458,7 +1451,7 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
         if message.name == "latencyAuthCapture",
            let body = message.body as? [String: Any],
            let token = body["token"] as? String, !token.isEmpty {
-            complete(token: token)
+            onCandidateToken(token)
         }
     }
 
@@ -1475,11 +1468,8 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
         spinner.stopAnimating()
         if provider == "yandex" {
             if let url = webView.url, let token = extractYandexToken(from: url) {
-                complete(token: token)
-                return
+                onCandidateToken(token)
             }
-        } else if provider == "soundcloud" {
-            checkSoundCloudCookies()
         }
     }
 
@@ -1487,7 +1477,7 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
         if let url = navigationAction.request.url {
             if provider == "yandex", let token = extractYandexToken(from: url) {
                 decisionHandler(.cancel)
-                complete(token: token)
+                onCandidateToken(token)
                 return
             }
             if let scheme = url.scheme?.lowercased(), scheme != "http" && scheme != "https" && scheme != "about" {
@@ -1504,7 +1494,7 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if provider == "yandex", let url = navigationResponse.response.url, let token = extractYandexToken(from: url) {
             decisionHandler(.cancel)
-            complete(token: token)
+            onCandidateToken(token)
             return
         }
         decisionHandler(.allow)
@@ -1512,13 +1502,13 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
-            complete(token: token)
+            onCandidateToken(token)
         }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if provider == "yandex", let url = webView.url, let token = extractYandexToken(from: url) {
-            complete(token: token)
+            onCandidateToken(token)
         }
     }
 
@@ -1549,24 +1539,6 @@ final class AuthViewController: UIViewController, WKNavigationDelegate, WKUIDele
             }
         }
         return nil
-    }
-
-    private func checkSoundCloudCookies() {
-        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self = self, !self.isDone else { return }
-            for c in cookies {
-                if c.name == "oauth_token" && !c.value.isEmpty {
-                    self.complete(token: c.value)
-                    return
-                }
-            }
-        }
-        webView.evaluateJavaScript("(function(){ try { var m = (document.cookie || '').match(/oauth_token=([^;]+)/); return m ? decodeURIComponent(m[1]) : null; } catch(e){ return null; } })()") { [weak self] res, _ in
-            guard let self = self, !self.isDone else { return }
-            if let token = res as? String, !token.isEmpty {
-                self.complete(token: token)
-            }
-        }
     }
 }
 
