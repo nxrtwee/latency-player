@@ -15,8 +15,7 @@ import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@rende
 import { registerProvider } from '@renderer/providers/registry'
 import { connectElement, resumeAudio } from '@renderer/audio/analyser'
 import { resolveUrl } from './localfiles'
-import { makeFader, NATIVE_FADE_STEP_MS } from './volumeFade'
-import { getNativeAudio } from './nativeAudio'
+import { createNativeAudio } from './nativeAudio'
 
 const MISSING = 'Файл недоступен — переимпортируйте его в Библиотеке.'
 
@@ -25,7 +24,7 @@ const localProvider: PlaybackProvider = {
   name: 'Local files',
 
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
-    const native = getNativeAudio()
+    const native = createNativeAudio()
     // A blob: uri on the track itself is this session's import — resolveUrl finds
     // it by id too, so it only matters for tracks built outside the library.
     const url = resolveUrl(track.id).then((u) => u || track.uri || null)
@@ -37,7 +36,7 @@ const localProvider: PlaybackProvider = {
 function createNativeLocal(
   track: Track,
   cb: PlaybackCallbacks,
-  native: NonNullable<ReturnType<typeof getNativeAudio>>,
+  native: NonNullable<ReturnType<typeof createNativeAudio>>,
   url: Promise<string | null>
 ): PlaybackHandle {
   let destroyed = false
@@ -58,8 +57,6 @@ function createNativeLocal(
   native.setMetadata({ title: track.title, artist: track.artist || 'Local', artwork: track.artwork || undefined })
 
   let wantPlay = false
-  // See scProvider: the fade rides AVPlayer's volume, there being no gain node.
-  const fader = makeFader((level) => void native.setVolume(level), NATIVE_FADE_STEP_MS)
   void url.then((u) => {
     if (destroyed) return
     if (!u) return cb.onError(MISSING)
@@ -70,11 +67,11 @@ function createNativeLocal(
     play: () => { wantPlay = true; native.play() },
     pause: () => { wantPlay = false; native.pause() },
     seek: (sec) => native.seek(sec),
-    setVolume: (v) => fader.setVolume(v),
+    setVolume: (v) => native.setVolume(v),
     setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
-    canOverlap: false,
-    destroy: () => { destroyed = true; fader.destroy(); for (const u of unsubs) u(); native.destroy() }
+    setFade: (value, rampSec) => native.setFade(value, rampSec),
+    canOverlap: true,
+    destroy: () => { destroyed = true; for (const u of unsubs) u(); native.destroy() }
   }
 }
 

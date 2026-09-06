@@ -519,6 +519,7 @@ let activeToken = 0
 let incomingToken = 0
 let crossfading = false
 let crossfadeTimer: ReturnType<typeof setTimeout> | null = null
+let crossfadeTargetIndex = -1
 /**
  * Seconds the NEXT handle should fade in over, once it actually starts producing
  * sound. Set by loadIndex, consumed by the first position tick — see onTime.
@@ -1127,8 +1128,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
         // A sequential fade is running and the outgoing track has just run out —
         // hand over now instead of waiting for a timer that may be throttled.
         if (sequentialPending) return finishSequentialFade()
-        // During a crossfade the promotion timer advances us — don't double-skip.
-        if (crossfading) return
+        // During a crossfade the promotion timer advances us. If the outgoing
+        // track ends mid-fade, finish the handover immediately if incoming is ready.
+        if (crossfading) {
+          if (incoming && crossfadeTargetIndex >= 0) {
+            finishCrossfade(crossfadeTargetIndex)
+          }
+          return
+        }
         const { repeat } = get()
         if (repeat === 'one') {
           handle?.seek(0)
@@ -1146,6 +1153,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       clearTimeout(crossfadeTimer)
       crossfadeTimer = null
     }
+    crossfadeTargetIndex = -1
     if (incoming) {
       incoming.destroy()
       incoming = null
@@ -1160,12 +1168,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
   function maybeStartCrossfade(sec: number): void {
     const { crossfadeSec, durationSec, repeat, shuffle, currentIndex, queue, isPlaying } = get()
     if (!isPlaying || crossfading) return
-    // Shuffle picks the next track at random (unknown ahead of time) and repeat-one
-    // loops the same track — neither supports a deterministic crossfade target.
-    if (crossfadeSec <= 0 || repeat === 'one' || shuffle) return
+    if (crossfadeSec <= 0 || repeat === 'one') return
     if (!Number.isFinite(durationSec) || durationSec <= 0) return
-    const nextIndex = currentIndex + 1
-    if (nextIndex >= queue.length) return // queue end → wave/autopilot handles it
+    let nextIndex = currentIndex + 1
+    if (shuffle && queue.length > 1) {
+      do {
+        nextIndex = Math.floor(Math.random() * queue.length)
+      } while (nextIndex === currentIndex && queue.length > 1)
+    } else if (nextIndex >= queue.length) {
+      if (repeat === 'all') nextIndex = 0
+      else return // queue end → wave/autopilot handles it
+    }
     const remaining = durationSec - sec
     if (remaining > crossfadeSec || remaining <= 0.2) return
     const dur = Math.min(crossfadeSec, remaining)
@@ -1257,12 +1270,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
     recordRecent(track)
     reportWaveStarted(track)
 
+    crossfadeTargetIndex = nextIndex
     crossfadeTimer = setTimeout(() => finishCrossfade(nextIndex), Math.round(dur * 1000))
   }
 
   /** Promote the incoming handle to be the active track once the fade completes. */
   function finishCrossfade(nextIndex: number): void {
-    crossfadeTimer = null
+    if (crossfadeTimer) {
+      clearTimeout(crossfadeTimer)
+      crossfadeTimer = null
+    }
+    crossfadeTargetIndex = -1
     if (!incoming) {
       crossfading = false
       return

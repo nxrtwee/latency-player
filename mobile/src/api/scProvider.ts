@@ -10,15 +10,14 @@ import type { Track } from '@shared/types'
 import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@renderer/providers/types'
 import { registerProvider } from '@renderer/providers/registry'
 import { makeTrackAudio } from './graphAudio'
-import { makeFader, NATIVE_FADE_STEP_MS } from './volumeFade'
-import { getNativeAudio } from './nativeAudio'
+import { createNativeAudio } from './nativeAudio'
 
 const scProvider: PlaybackProvider = {
   id: 'soundcloud',
   name: 'SoundCloud',
 
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
-    const native = getNativeAudio()
+    const native = createNativeAudio()
     if (native) return createNative(track, cb, native)
     return createWeb(track, cb)
   }
@@ -28,7 +27,7 @@ const scProvider: PlaybackProvider = {
 function createNative(
   track: Track,
   cb: PlaybackCallbacks,
-  native: NonNullable<ReturnType<typeof getNativeAudio>>
+  native: NonNullable<ReturnType<typeof createNativeAudio>>
 ): PlaybackHandle {
   let destroyed = false
   const unsubs: (() => void)[] = []
@@ -71,17 +70,13 @@ function createNative(
 
   let wantPlay = false
 
-  // AVPlayer has no gain node, so the fade rides its volume — same composition the
-  // `<audio>` path does, just across the bridge (hence the coarser step).
-  const fader = makeFader((level) => void native.setVolume(level), NATIVE_FADE_STEP_MS)
-
   window.api
     .scResolveStream(track.uri)
     .then((url) => {
       if (destroyed) return
       // load() handles both network URLs and blob: URLs (converts blob to base64)
       native.load(url).then(() => {
-        if (wantPlay) native.play()
+        if (wantPlay && !destroyed) native.play()
       })
     })
     .catch((e) => cb.onError(`SoundCloud: ${e instanceof Error ? e.message : String(e)}`))
@@ -90,11 +85,11 @@ function createNative(
     play: () => { wantPlay = true; native.play() },
     pause: () => { wantPlay = false; native.pause() },
     seek: (sec) => native.seek(sec),
-    setVolume: (v) => fader.setVolume(v),
+    setVolume: (v) => native.setVolume(v),
     setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
-    canOverlap: false,
-    destroy: () => { destroyed = true; fader.destroy(); for (const u of unsubs) u(); native.destroy() }
+    setFade: (value, rampSec) => native.setFade(value, rampSec),
+    canOverlap: true,
+    destroy: () => { destroyed = true; for (const u of unsubs) u(); native.destroy() }
   }
 }
 

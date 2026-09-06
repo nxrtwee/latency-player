@@ -505,7 +505,12 @@ final class TapContext {
     // Loudness leveling runs after the EQ on the same buffer (see process).
     private let leveler = Leveler()
 
-    init(bridge: NativeAudioBridge) { self.bridge = bridge }
+    private weak var player: NativePlayer?
+
+    init(bridge: NativeAudioBridge, player: NativePlayer?) {
+        self.bridge = bridge
+        self.player = player
+    }
 
     func prepare(format: AudioStreamBasicDescription) {
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
@@ -721,8 +726,11 @@ final class TapContext {
         let now = CFAbsoluteTimeGetCurrent()
         if now - lastSend < 0.033 { return }
         lastSend = now
-        DispatchQueue.main.async { [weak bridge] in
-            bridge?.sendLevels(bars)
+        DispatchQueue.main.async { [weak bridge, weak player] in
+            guard let bridge = bridge, let player = player else { return }
+            if bridge.activePlayerId == nil || bridge.activePlayerId == player.id {
+                bridge.sendLevels(bars)
+            }
         }
     }
 }
@@ -751,181 +759,68 @@ private let tapProcess: MTAudioProcessingTapProcessCallback = { tap, numberFrame
         .process(bufferListInOut, frames: Int(numberFramesOut.pointee))
 }
 
-// MARK: - NativeAudioBridge
+// MARK: - NativePlayer
 
-class NativeAudioBridge: NSObject, WKScriptMessageHandler {
-
-    static let handlerName = "latencyAudio"
-    static let shared = NativeAudioBridge()
-
-    private weak var webView: WKWebView?
-    private var player: AVPlayer?
+final class NativePlayer: NSObject {
+    let id: String
+    private weak var bridge: NativeAudioBridge?
+    var player: AVPlayer?
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
     private var didEndObserver: NSObjectProtocol?
-    /// Duration (seconds) from the JS track metadata — AVPlayerItem.duration is NaN
-    /// for progressive MP3, so we can't rely on it for the lock-screen progress bar.
-    private var currentDuration: Double = 0
-    private var currentVolume: Float = 1.0
-    private var nextHandler: NSObjectProtocol?
-    private var prevHandler: NSObjectProtocol?
-    private var playHandler: NSObjectProtocol?
-    private var pauseHandler: NSObjectProtocol?
+    var currentDuration: Double = 0
+    var masterVolume: Float = 1.0
+    var fadeValue: Float = 1.0
+    var isPlaying: Bool = false
+    private var tempFileURL: URL?
+    private var fadeTimer: DispatchSourceTimer?
+    private var tapContext: TapContext?
 
-    private override init() { super.init() }
-
-    func install(on webView: WKWebView) {
-        self.webView = webView
-        webView.configuration.userContentController.add(self, name: Self.handlerName)
-        setupRemoteCommands()
+    init(id: String, bridge: NativeAudioBridge) {
+        self.id = id
+        self.bridge = bridge
+        super.init()
     }
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == Self.handlerName,
-              let body = message.body as? [String: Any],
-              let action = body["action"] as? String else { return }
-
-        switch action {
-        case "load":
-            guard let urlStr = body["url"] as? String, let url = URL(string: urlStr) else { return }
-            loadURL(url)
-        case "loadBase64":
-            guard let b64 = body["base64"] as? String else { return }
-            loadBase64(b64)
-        case "play":
-            // Re-assert the playback session right before playing. If the session
-            // isn't active / in the .playback category at this moment, a native
-            // AVPlayer produces NO audio (and obeys the ring/silent switch). This
-            // is the usual cause of "it switches tracks but there's no sound".
-            Self.activatePlaybackSession()
-            player?.play()
-            sendEvent("playingChange", data: ["playing": true])
-        case "pause":
-            player?.pause()
-            sendEvent("playingChange", data: ["playing": false])
-        case "seek":
-            if let time = body["time"] as? Double {
-                player?.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-            }
-        case "setVolume":
-            let volNum = (body["volume"] as? NSNumber)?.floatValue ?? (body["volume"] as? Double).map(Float.init)
-            if let vol = volNum {
-                currentVolume = vol
-                player?.volume = vol
-            }
-        case "setEq":
-            // Settings only — it touches no player and no now-playing state, so the
-            // EQ can never interfere with playback or the lock screen. The running
-            // tap picks the new curve up on its next buffer.
-            let gains = (body["gains"] as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } ?? []
-            EqSettings.shared.update(gains: gains, enabled: body["enabled"] as? Bool ?? false)
-        case "setLeveler":
-            // Same contract as setEq: settings only, read by the tap on its next
-            // buffer, nothing here can reach the player or the now-playing info.
-            LevelerSettings.shared.update(
-                enabled: body["enabled"] as? Bool ?? false,
-                target: (body["target"] as? NSNumber)?.doubleValue ?? -14,
-                strength: body["strength"] as? String ?? "medium"
-            )
-        case "setMetadata":
-            setMetadata(
-                title: body["title"] as? String ?? "",
-                artist: body["artist"] as? String ?? "",
-                artwork: body["artwork"] as? String,
-                duration: body["duration"] as? Double
-            )
-        case "setPlaybackState":
-            updateNowPlayingProgress(
-                position: body["position"] as? Double,
-                playing: body["playing"] as? Bool ?? false,
-                duration: body["duration"] as? Double
-            )
-        case "getPosition":
-            let sec = player?.currentTime().seconds ?? 0
-            sendEvent("positionResult", data: ["position": sec.isFinite ? sec : 0])
-        case "getDuration":
-            let dur = player?.currentItem?.duration.seconds ?? 0
-            sendEvent("durationResult", data: ["duration": dur.isFinite ? dur : 0])
-        default:
-            break
-        }
-    }
-
-    // MARK: - Audio session
-
-    /// Force the app's audio session into .playback and activate it. Safe to call
-    /// repeatedly. Reports failures to JS so they surface in-app instead of being
-    /// silent. `.playback` is what makes audio ignore the ring/silent switch and
-    /// keep going when the screen locks.
-    @discardableResult
-    static func activatePlaybackSession() -> Bool {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-            return true
-        } catch {
-            NativeAudioBridge.shared.reportError("audio session: \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    func reportError(_ message: String) {
-        sendEvent("nativeError", data: ["message": message])
-    }
-
-    // MARK: - Audio Loading
-
-    // A desktop-browser User-Agent. SoundCloud / Yandex CDNs reject AVPlayer's
-    // default "AppleCoreMedia" UA (→ 403 → "Cannot Open"); the same URL plays in a
-    // web <audio> element because it sends a browser UA. Pass it via AVURLAsset.
-    private static let browserUA =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-
-    private func loadURL(_ url: URL) {
+    func loadURL(_ url: URL) {
         let asset = AVURLAsset(url: url, options: [
-            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": Self.browserUA]
+            "AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": NativeAudioBridge.browserUA]
         ])
         startPlayer(asset: asset)
     }
 
-    /// Load from base64-encoded audio data (for blob: URLs that AVPlayer can't handle).
-    private func loadBase64(_ b64: String) {
+    func loadBase64(_ b64: String) {
         guard let data = Data(base64Encoded: b64) else { return }
-        // Write to a temp file — AVPlayer needs a file or network URL
-        // SoundCloud / Yandex progressive downloads are MP3 — name the temp file
-        // .mp3 so AVPlayer's container sniffing doesn't choke on a wrong extension.
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).mp3")
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lp_audio_\(ProcessInfo.processInfo.globallyUniqueString).mp3")
         do {
             try data.write(to: tmp)
+            tempFileURL = tmp
         } catch {
-            print("NativeAudioBridge: failed to write temp file: \(error)")
+            print("NativePlayer [\(id)]: failed to write temp file: \(error)")
             return
         }
         startPlayer(asset: AVURLAsset(url: tmp))
     }
 
     private func startPlayer(asset: AVURLAsset) {
-        teardownPlayer()
+        cleanupPlayer()
         let item = AVPlayerItem(asset: asset)
         let av = AVPlayer(playerItem: item)
-        av.volume = currentVolume
+        av.volume = max(0.0, min(1.0, masterVolume * fadeValue))
         av.allowsExternalPlayback = true
         self.player = av
         attachObservers(av)
         attachTap(to: item, asset: asset)
     }
 
-    /// Attach an MTAudioProcessingTap to the item's audio track so we can compute
-    /// real visualizer levels. The audio track loads asynchronously (streaming), so
-    /// we wait for it, then set the item's audioMix.
     private func attachTap(to item: AVPlayerItem, asset: AVURLAsset) {
         asset.loadValuesAsynchronously(forKeys: ["tracks"]) { [weak self, weak item] in
             guard let self = self else { return }
             guard asset.statusOfValue(forKey: "tracks", error: nil) == .loaded,
                   let track = asset.tracks(withMediaType: .audio).first else { return }
-            let ctx = TapContext(bridge: self)
+            let ctx = TapContext(bridge: self.bridge, player: self)
+            self.tapContext = ctx
             var callbacks = MTAudioProcessingTapCallbacks(
                 version: kMTAudioProcessingTapCallbacksVersion_0,
                 clientInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(ctx).toOpaque()),
@@ -947,44 +842,282 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
-    func sendLevels(_ bars: [Double]) {
-        sendEvent("levels", data: ["bars": bars])
-    }
-
     private func attachObservers(_ av: AVPlayer) {
         let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
         timeObserver = av.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self else { return }
             let sec = time.seconds
             guard sec.isFinite else { return }
             let dur = av.currentItem?.duration.seconds ?? 0
-            self?.sendEvent("timeUpdate", data: ["position": sec, "duration": dur.isFinite ? dur : 0])
+            let effectiveDur = (dur.isFinite && dur > 0) ? dur : (self.currentDuration > 0 ? self.currentDuration : 0)
+            self.bridge?.sendEvent("timeUpdate", id: self.id, data: ["position": sec, "duration": effectiveDur])
         }
         if let item = av.currentItem {
             didEndObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
             ) { [weak self] _ in
-                self?.sendEvent("ended", data: [:])
+                guard let self = self else { return }
+                self.bridge?.sendEvent("ended", id: self.id, data: [:])
             }
-            // Surface load failures (bad URL, unsupported codec, offline file with
-            // wrong extension, expired signed URL, …) to JS instead of failing mute.
             statusObserver = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+                guard let self = self else { return }
                 if it.status == .failed {
                     let e = it.error as NSError?
                     let base = e?.localizedDescription ?? "AVPlayerItem failed"
                     let msg = "\(base) [\(e?.domain ?? "?"):\(e?.code ?? 0)]"
-                    self?.reportError(msg)
+                    self.bridge?.reportError(msg, id: self.id)
                 }
             }
         }
     }
 
-    private func teardownPlayer() {
+    func play() {
+        isPlaying = true
+        player?.play()
+        bridge?.sendEvent("playingChange", id: id, data: ["playing": true])
+    }
+
+    func pause() {
+        isPlaying = false
+        player?.pause()
+        bridge?.sendEvent("playingChange", id: id, data: ["playing": false])
+    }
+
+    func seek(to seconds: Double) {
+        player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func applyEffectiveVolume() {
+        let effective = max(0.0, min(1.0, masterVolume * fadeValue))
+        player?.volume = effective
+    }
+
+    func setMasterVolume(_ vol: Float) {
+        masterVolume = max(0.0, min(1.0, vol))
+        applyEffectiveVolume()
+    }
+
+    func setFade(to target: Float, duration: Double) {
+        fadeTimer?.cancel()
+        fadeTimer = nil
+
+        let clampedTarget = max(0.0, min(1.0, target))
+        if duration <= 0 {
+            fadeValue = clampedTarget
+            applyEffectiveVolume()
+            return
+        }
+
+        let startFade = fadeValue
+        let startTime = CACurrentMediaTime()
+        let stepInterval = 0.05 // 50ms = 20 steps per second
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        timer.schedule(deadline: .now() + stepInterval, repeating: stepInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            let elapsed = CACurrentMediaTime() - startTime
+            let progress = min(1.0, Float(elapsed / duration))
+            self.fadeValue = startFade + (clampedTarget - startFade) * progress
+            self.applyEffectiveVolume()
+            if progress >= 1.0 {
+                self.fadeValue = clampedTarget
+                self.applyEffectiveVolume()
+                self.fadeTimer?.cancel()
+                self.fadeTimer = nil
+            }
+        }
+        fadeTimer = timer
+        timer.resume()
+    }
+
+    func currentTime() -> Double {
+        let sec = player?.currentTime().seconds ?? 0
+        return sec.isFinite ? sec : 0
+    }
+
+    func duration() -> Double {
+        if currentDuration > 0 { return currentDuration }
+        let dur = player?.currentItem?.duration.seconds ?? 0
+        return dur.isFinite ? dur : 0
+    }
+
+    private func cleanupPlayer() {
+        fadeTimer?.cancel()
+        fadeTimer = nil
         if let obs = timeObserver, let p = player { p.removeTimeObserver(obs) }
         timeObserver = nil
         if let obs = didEndObserver { NotificationCenter.default.removeObserver(obs) }
         didEndObserver = nil
-        statusObserver?.invalidate(); statusObserver = nil
-        player?.pause(); player = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+        player?.pause()
+        player = nil
+        tapContext = nil
+        if let tmp = tempFileURL {
+            try? FileManager.default.removeItem(at: tmp)
+            tempFileURL = nil
+        }
+    }
+
+    func teardown() {
+        cleanupPlayer()
+        isPlaying = false
+    }
+}
+
+// MARK: - NativeAudioBridge
+
+class NativeAudioBridge: NSObject, WKScriptMessageHandler {
+
+    static let handlerName = "latencyAudio"
+    static let shared = NativeAudioBridge()
+
+    static let browserUA =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+
+    private weak var webView: WKWebView?
+    private var players: [String: NativePlayer] = [:]
+    var activePlayerId: String?
+
+    var activePlayer: NativePlayer? {
+        if let id = activePlayerId, let p = players[id] { return p }
+        return players.values.first
+    }
+
+    private var currentDuration: Double = 0
+    private var nextHandler: NSObjectProtocol?
+    private var prevHandler: NSObjectProtocol?
+    private var playHandler: NSObjectProtocol?
+    private var pauseHandler: NSObjectProtocol?
+    private var togglePlayPauseHandler: NSObjectProtocol?
+
+    private override init() { super.init() }
+
+    func install(on webView: WKWebView) {
+        self.webView = webView
+        webView.configuration.userContentController.add(self, name: Self.handlerName)
+        setupRemoteCommands()
+    }
+
+    private func player(for id: String) -> NativePlayer {
+        if let existing = players[id] { return existing }
+        let p = NativePlayer(id: id, bridge: self)
+        players[id] = p
+        if activePlayerId == nil {
+            activePlayerId = id
+        }
+        return p
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == Self.handlerName,
+              let body = message.body as? [String: Any],
+              let action = body["action"] as? String else { return }
+
+        let handleId = body["id"] as? String ?? (activePlayerId ?? "default")
+
+        switch action {
+        case "load":
+            guard let urlStr = body["url"] as? String, let url = URL(string: urlStr) else { return }
+            let p = player(for: handleId)
+            p.loadURL(url)
+        case "loadBase64":
+            guard let b64 = body["base64"] as? String else { return }
+            let p = player(for: handleId)
+            p.loadBase64(b64)
+        case "play":
+            Self.activatePlaybackSession()
+            if let p = players[handleId] {
+                p.play()
+            } else {
+                activePlayer?.play()
+            }
+        case "pause":
+            if let p = players[handleId] {
+                p.pause()
+            } else {
+                activePlayer?.pause()
+            }
+        case "seek":
+            if let time = body["time"] as? Double {
+                players[handleId]?.seek(to: time)
+            }
+        case "setVolume":
+            let volNum = (body["volume"] as? NSNumber)?.floatValue ?? (body["volume"] as? Double).map(Float.init)
+            if let vol = volNum {
+                players[handleId]?.setMasterVolume(vol)
+            }
+        case "fade":
+            let targetNum = (body["target"] as? NSNumber)?.floatValue ?? (body["target"] as? Double).map(Float.init) ?? 1.0
+            let durNum = (body["duration"] as? NSNumber)?.doubleValue ?? body["duration"] as? Double ?? 0.0
+            players[handleId]?.setFade(to: targetNum, duration: durNum)
+        case "setActive":
+            activePlayerId = handleId
+        case "destroy":
+            if let p = players.removeValue(forKey: handleId) {
+                p.teardown()
+            }
+            if activePlayerId == handleId {
+                activePlayerId = players.keys.first
+            }
+        case "setEq":
+            let gains = (body["gains"] as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } ?? []
+            EqSettings.shared.update(gains: gains, enabled: body["enabled"] as? Bool ?? false)
+        case "setLeveler":
+            LevelerSettings.shared.update(
+                enabled: body["enabled"] as? Bool ?? false,
+                target: (body["target"] as? NSNumber)?.doubleValue ?? -14,
+                strength: body["strength"] as? String ?? "medium"
+            )
+        case "setMetadata":
+            if let dur = body["duration"] as? Double {
+                players[handleId]?.currentDuration = dur
+            }
+            setMetadata(
+                title: body["title"] as? String ?? "",
+                artist: body["artist"] as? String ?? "",
+                artwork: body["artwork"] as? String,
+                duration: body["duration"] as? Double
+            )
+        case "setPlaybackState":
+            updateNowPlayingProgress(
+                position: body["position"] as? Double,
+                playing: body["playing"] as? Bool ?? false,
+                duration: body["duration"] as? Double
+            )
+        case "getPosition":
+            let sec = players[handleId]?.currentTime() ?? 0
+            sendEvent("positionResult", id: handleId, data: ["position": sec])
+        case "getDuration":
+            let dur = players[handleId]?.duration() ?? 0
+            sendEvent("durationResult", id: handleId, data: ["duration": dur])
+        default:
+            break
+        }
+    }
+
+    // MARK: - Audio session
+
+    @discardableResult
+    static func activatePlaybackSession() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            return true
+        } catch {
+            NativeAudioBridge.shared.reportError("audio session: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func reportError(_ message: String, id: String? = nil) {
+        sendEvent("nativeError", id: id, data: ["message": message])
+    }
+
+    func sendLevels(_ bars: [Double]) {
+        sendEvent("levels", data: ["bars": bars])
     }
 
     // MARK: - Lock Screen
@@ -995,16 +1128,38 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         cc.skipBackwardCommand.isEnabled = false
         cc.changePlaybackPositionCommand.isEnabled = false
         playHandler = cc.playCommand.addTarget { [weak self] _ in
-            self?.player?.play()
-            self?.sendEvent("playingChange", data: ["playing": true])
+            self?.activePlayer?.play()
+            self?.sendEvent("remotePlay", data: [:])
+            if let id = self?.activePlayerId {
+                self?.sendEvent("playingChange", id: id, data: ["playing": true])
+            }
             return .success
         } as? NSObjectProtocol
         pauseHandler = cc.pauseCommand.addTarget { [weak self] _ in
-            self?.player?.pause()
-            self?.sendEvent("playingChange", data: ["playing": false])
+            self?.activePlayer?.pause()
+            self?.sendEvent("remotePause", data: [:])
+            if let id = self?.activePlayerId {
+                self?.sendEvent("playingChange", id: id, data: ["playing": false])
+            }
             return .success
         } as? NSObjectProtocol
         cc.togglePlayPauseCommand.isEnabled = true
+        togglePlayPauseHandler = cc.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if let active = self.activePlayer {
+                if active.isPlaying {
+                    active.pause()
+                    self.sendEvent("remotePause", data: [:])
+                    self.sendEvent("playingChange", id: active.id, data: ["playing": false])
+                } else {
+                    Self.activatePlaybackSession()
+                    active.play()
+                    self.sendEvent("remotePlay", data: [:])
+                    self.sendEvent("playingChange", id: active.id, data: ["playing": true])
+                }
+            }
+            return .success
+        } as? NSObjectProtocol
         nextHandler = cc.nextTrackCommand.addTarget { [weak self] _ in
             self?.sendEvent("nextTrack", data: [:])
             return .success
@@ -1020,11 +1175,6 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
     // MARK: - Metadata
 
     private func setMetadata(title: String, artist: String, artwork: String?, duration: Double?) {
-        // A new track: adopt its duration, or CLEAR the previous one if this track
-        // has no known length. Keeping the old value here is what made a track with
-        // a missing/zero duration inherit the previous track's length on the lock
-        // screen (a "random" duration). Transient state pushes (play/pause/seek) go
-        // through updateNowPlayingProgress, which keeps the last good value.
         if let d = duration, d.isFinite, d > 0 { currentDuration = d } else { currentDuration = 0 }
 
         var info: [String: Any] = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
@@ -1032,16 +1182,12 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         info[MPMediaItemPropertyArtist] = artist
         info[MPMediaItemPropertyAlbumTitle] = "Latency"
         if currentDuration > 0 { info[MPMediaItemPropertyPlaybackDuration] = currentDuration }
-        let pos = player?.currentTime().seconds ?? 0
+        let pos = activePlayer?.currentTime() ?? 0
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = pos.isFinite ? pos : 0
-        info[MPNowPlayingInfoPropertyPlaybackRate] = (player?.timeControlStatus == .playing) ? 1.0 : 0.0
-        // New track → drop the previous artwork until the new one loads.
+        info[MPNowPlayingInfoPropertyPlaybackRate] = (activePlayer?.isPlaying == true) ? 1.0 : 0.0
         info.removeValue(forKey: MPMediaItemPropertyArtwork)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
 
-        // Load artwork off the main thread and MERGE it in (don't overwrite the
-        // dict — that would wipe the elapsed/rate/duration we just set, freezing
-        // the progress bar).
         if let artStr = artwork, let artURL = URL(string: artStr) {
             DispatchQueue.global().async {
                 guard let data = try? Data(contentsOf: artURL), let img = UIImage(data: data) else { return }
@@ -1054,9 +1200,6 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
-    /// Update just the elapsed time / rate / duration so the lock-screen progress
-    /// bar animates. iOS extrapolates position between updates from the rate, so
-    /// this only needs to fire on play/pause/seek, not every tick.
     private func updateNowPlayingProgress(position: Double?, playing: Bool, duration: Double?) {
         if let d = duration, d.isFinite, d > 0 { currentDuration = d }
         var i = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
@@ -1068,13 +1211,18 @@ class NativeAudioBridge: NSObject, WKScriptMessageHandler {
 
     // MARK: - JS Communication
 
-    private func sendEvent(_ name: String, data: [String: Any]) {
+    func sendEvent(_ name: String, id: String? = nil, data: [String: Any]) {
         var json = data
         json["_event"] = name
+        if let id = id {
+            json["_id"] = id
+        }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: json),
               let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
         let js = "window.__nativeAudioEvent && window.__nativeAudioEvent(\(jsonStr))"
-        webView?.evaluateJavaScript(js)
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript(js)
+        }
     }
 }
 

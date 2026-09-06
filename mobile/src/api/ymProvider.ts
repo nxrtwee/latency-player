@@ -13,15 +13,14 @@ import type { PlaybackCallbacks, PlaybackHandle, PlaybackProvider } from '@rende
 import { registerProvider } from '@renderer/providers/registry'
 import { makeTrackAudio } from './graphAudio'
 import { feedMp3, mseMode, type Mp3Feed } from './mp3Mse'
-import { makeFader, NATIVE_FADE_STEP_MS } from './volumeFade'
-import { getNativeAudio } from './nativeAudio'
+import { createNativeAudio } from './nativeAudio'
 
 const ymProvider: PlaybackProvider = {
   id: 'yandex',
   name: 'Yandex Music',
 
   createPlayback(track: Track, cb: PlaybackCallbacks): PlaybackHandle {
-    const native = getNativeAudio()
+    const native = createNativeAudio()
     if (native) return createNativeYM(track, cb, native)
     return createWebYM(track, cb)
   }
@@ -30,7 +29,7 @@ const ymProvider: PlaybackProvider = {
 function createNativeYM(
   track: Track,
   cb: PlaybackCallbacks,
-  native: NonNullable<ReturnType<typeof getNativeAudio>>
+  native: NonNullable<ReturnType<typeof createNativeAudio>>
 ): PlaybackHandle {
   let destroyed = false
   const unsubs: (() => void)[] = []
@@ -66,14 +65,11 @@ function createNativeYM(
 
   let wantPlay = false
 
-  // See scProvider: the fade rides AVPlayer's volume, there being no gain node.
-  const fader = makeFader((level) => void native.setVolume(level), NATIVE_FADE_STEP_MS)
-
   window.api
     .ymResolveStream(track.uri)
     .then((url) => {
       if (destroyed) return
-      native.load(url).then(() => { if (wantPlay) native.play() })
+      native.load(url).then(() => { if (wantPlay && !destroyed) native.play() })
     })
     .catch((e) => cb.onError(`Yandex: ${e instanceof Error ? e.message : String(e)}`))
 
@@ -81,11 +77,11 @@ function createNativeYM(
     play: () => { wantPlay = true; native.play() },
     pause: () => { wantPlay = false; native.pause() },
     seek: (sec) => native.seek(sec),
-    setVolume: (v) => fader.setVolume(v),
+    setVolume: (v) => native.setVolume(v),
     setNormalization: () => {},
-    setFade: (value, rampSec) => fader.setFade(value, rampSec),
-    canOverlap: false,
-    destroy: () => { destroyed = true; fader.destroy(); for (const u of unsubs) u(); native.destroy() }
+    setFade: (value, rampSec) => native.setFade(value, rampSec),
+    canOverlap: true,
+    destroy: () => { destroyed = true; for (const u of unsubs) u(); native.destroy() }
   }
 }
 
