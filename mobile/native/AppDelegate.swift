@@ -507,7 +507,7 @@ final class TapContext {
 
     private weak var player: NativePlayer?
 
-    init(bridge: NativeAudioBridge, player: NativePlayer?) {
+    init(bridge: NativeAudioBridge?, player: NativePlayer?) {
         self.bridge = bridge
         self.player = player
     }
