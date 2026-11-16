@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { createHash } from 'crypto'
 import { app, net } from 'electron'
 import type { Track } from '../shared/types'
@@ -36,7 +37,7 @@ async function ensureDir(): Promise<void> {
 
 /** media:// URL that serves a cached local file (audio or cover). */
 function mediaLocal(absPath: string): string {
-  return 'media://local/' + absPath.replace(/\\/g, '/').replace(/^\//, '')
+  return 'media://local/' + pathToFileURL(absPath).pathname.replace(/^\//, '')
 }
 
 export async function init(): Promise<void> {

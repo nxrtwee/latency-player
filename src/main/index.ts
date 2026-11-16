@@ -112,7 +112,10 @@ function registerMediaProtocol(): void {
       // The full https URL is percent-encoded into the path.
       target = decodeURIComponent(url.pathname.replace(/^\//, ''))
     } else {
-      const rawPath = decodeURIComponent(url.pathname).replace(/^\//, '')
+      // POSIX paths need their leading slash. Only Windows drive paths use
+      // the URL's leading slash as a separator rather than part of the path.
+      const pathname = decodeURIComponent(url.pathname)
+      const rawPath = process.platform === 'win32' ? pathname.replace(/^\//, '') : pathname
       target = pathToFileURL(rawPath).toString()
     }
     const res = await net.fetch(target, { headers: request.headers })

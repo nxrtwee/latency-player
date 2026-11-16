@@ -15,6 +15,53 @@ React + TypeScript**. В основе — архитектура подключ�
 
 ## Загрузки
 
+### NixOS
+
+Из локальной копии репозитория (flake-файлы должны быть добавлены в Git):
+
+```sh
+git add flake.nix flake.lock
+nix run .
+# Установить для текущего пользователя, включая пункт в меню приложений:
+nix profile install .
+```
+
+После публикации flake в GitHub можно запускать и устанавливать без клонирования:
+
+```sh
+nix run github:LightMizu/latency-player
+nix profile install github:LightMizu/latency-player
+```
+
+Для системной установки добавьте input в `/etc/nixos/flake.nix`:
+
+```nix
+inputs.latency-player.url = "github:LightMizu/latency-player";
+```
+
+В существующем `outputs` примите аргумент `latency-player` и добавьте модуль
+в `modules` нужного `nixosConfigurations.<имя>`:
+
+```nix
+({ pkgs, ... }: {
+  environment.systemPackages = [
+    latency-player.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+})
+```
+
+Примените конфигурацию командой `sudo nixos-rebuild switch --flake /etc/nixos#<имя>`.
+Команда запуска — `latency`. Поддерживаются `x86_64-linux` и `aarch64-linux`.
+Flake собирает приложение из исходников и использует Electron из nixpkgs;
+`appimage-run` не требуется. Для команд Nix должны быть включены
+`nix.settings.experimental-features = [ "nix-command" "flakes" ];`.
+
+Nix-пакет запускается через X11 (в Wayland-сессии нужен XWayland) и использует
+GTK-диалог выбора файлов. Это обходит несовместимость Wayland/Vulkan в Electron
+и сбой portal-диалога, который может возвращать отмену после нажатия «Открыть».
+
+### Остальные сборки
+
 Готовые сборки — на вкладке **[Releases](../../releases/latest)**:
 
 | Платформа | Версия | Файл | Установка |
